@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "NeedleAi Development",
+      "Group": "Development",
+      "Host": "postgres-dev",
+      "Port": 5432,
+      "MaintenanceDB": "needleai_dev",
+      "Username": "postgres",
+      "PassFile": "/pgpass",
+      "SSLMode": "prefer"
+    }
+  }
+}
