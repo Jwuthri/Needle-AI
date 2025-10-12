@@ -93,7 +93,7 @@ asyncio.run(test())
 
 ```
 Using SSL/TLS for Redis connection
-Connected to Redis at valkey-needelai-needleai.b.aivencloud.com:28586
+Connected to Redis
 ✅ Redis connected successfully!
 ✅ Test value: Hello Redis!
 ✅ All operations successful!
@@ -128,9 +128,6 @@ celery -A app.core.celery_app beat --loglevel=info
 brew install redis  # macOS
 # or
 sudo apt-get install redis-tools  # Linux
-
-# Connect with SSL (note: requires stunnel or similar for SSL support)
-redis-cli -h valkey-needelai-needleai.b.aivencloud.com -p 28586 --tls --cacert /path/to/ca.crt
 ```
 
 ### Using Python
@@ -224,14 +221,6 @@ async for message in pubsub.listen():
 
 ### Connection Timeout
 
-```bash
-# Check firewall rules
-# Ensure port 28586 is accessible from your IP
-
-# Test basic connectivity
-telnet valkey-needelai-needleai.b.aivencloud.com 28586
-```
-
 ### SSL Certificate Error
 
 ```python
@@ -247,9 +236,6 @@ print(f"CA bundle location: {certifi.where()}")
 ```bash
 # Verify credentials in .env
 echo $REDIS_URL
-
-# Should output:
-# rediss://default:AVNS_MlH2JatRMypE9-uiDF0@valkey-needelai-needleai.b.aivencloud.com:28586
 ```
 
 ### Memory Issues
