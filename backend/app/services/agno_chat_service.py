@@ -3,6 +3,7 @@ Agno-based Chat Service - Complete integration with Agno framework.
 Uses latest Agno API with db parameter for persistence and enable_user_memories.
 """
 
+import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -77,7 +78,6 @@ class AgnoChatService:
                 structured_outputs=self.settings.structured_outputs,
 
                 # Advanced features
-                debug=self.settings.debug,
             )
 
             self._initialized = True
@@ -240,6 +240,7 @@ class AgnoChatService:
             chat_response = ChatResponse(
                 message=response_content,
                 session_id=session_id,
+                message_id=str(uuid.uuid4()),
                 metadata={
                     "model": self.settings.default_model,
                     "provider": "agno",

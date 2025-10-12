@@ -30,18 +30,39 @@ export function ChatView({ companyId, sessionId, onSessionIdChange }: ChatViewPr
     scrollToBottom()
   }, [messages])
 
+  // Load messages when session changes
+  useEffect(() => {
+    const loadSession = async () => {
+      if (!sessionId) {
+        setMessages([])
+        return
+      }
+      
+      try {
+        const token = await getToken()
+        const api = createApiClient(token)
+        const session = await api.getSession(sessionId)
+        
+        const enhancedMessages: EnhancedChatMessage[] = session.messages.map((msg) => ({
+          id: msg.id,
+          content: msg.content,
+          role: msg.role as 'user' | 'assistant' | 'system',
+          timestamp: msg.timestamp,
+          metadata: msg.metadata,
+        }))
+        
+        setMessages(enhancedMessages)
+      } catch (error) {
+        console.error('Failed to load session:', error)
+      }
+    }
+    
+    loadSession()
+  }, [sessionId, getToken])
+
   const handleSendMessage = async (message: string) => {
     if (!message.trim()) return
 
-    // Add user message
-    const userMessage: EnhancedChatMessage = {
-      id: Date.now().toString(),
-      content: message,
-      role: 'user',
-      timestamp: new Date().toISOString(),
-    }
-
-    setMessages((prev) => [...prev, userMessage])
     setIsLoading(true)
 
     try {
@@ -64,19 +85,28 @@ export function ChatView({ companyId, sessionId, onSessionIdChange }: ChatViewPr
         company_id: companyId || undefined,
       })
 
-      // Add assistant message
-      const assistantMessage: EnhancedChatMessage = {
-        id: response.message_id,
-        content: response.message,
-        role: 'assistant',
-        timestamp: response.timestamp,
+      // Fetch updated session with all messages from database
+      const updatedSession = await api.getSession(currentSessionId)
+      
+      // Convert to EnhancedChatMessage format
+      const enhancedMessages: EnhancedChatMessage[] = updatedSession.messages.map((msg) => ({
+        id: msg.id,
+        content: msg.content,
+        role: msg.role as 'user' | 'assistant' | 'system',
+        timestamp: msg.timestamp,
+        metadata: msg.metadata,
         query_type: response.query_type,
         pipeline_steps: response.pipeline_steps,
         sources: response.sources,
         related_questions: response.related_questions,
+      }))
+      
+      setMessages(enhancedMessages)
+      
+      // Notify parent to refresh sessions list
+      if (onSessionIdChange) {
+        onSessionIdChange(currentSessionId)
       }
-
-      setMessages((prev) => [...prev, assistantMessage])
     } catch (error) {
       console.error('Failed to send message:', error)
       // Add error message

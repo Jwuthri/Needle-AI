@@ -29,15 +29,15 @@ class ChatRequest(BaseModel):
     """Request model for chat endpoint."""
     message: str = Field(..., description="The user's message", min_length=1)
     session_id: Optional[str] = Field(default=None, description="Session identifier for conversation continuity")
+    company_id: Optional[str] = Field(default=None, description="Company ID to query reviews from (enables RAG mode)")
     context: Optional[dict] = Field(default=None, description="Additional context for the request")
-    company_ids: Optional[List[str]] = Field(default=None, description="Company IDs to query reviews from (enables RAG mode)")
 
     class Config:
         json_schema_extra = {
             "example": {
                 "message": "What are the main product gaps?",
                 "session_id": "123e4567-e89b-12d3-a456-426614174000",
-                "company_ids": ["comp_123"],
+                "company_id": "comp_123",
                 "context": {}
             }
         }

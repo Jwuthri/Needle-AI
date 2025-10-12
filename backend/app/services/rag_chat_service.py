@@ -4,15 +4,12 @@ Integrates Pinecone vector search with Agno agents.
 """
 
 import time
+import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-try:
-    from agno.agent import Agent
-    from agno.models.openrouter import OpenRouter
-    AGNO_AVAILABLE = True
-except ImportError:
-    AGNO_AVAILABLE = False
+from agno.agent import Agent
+from agno.models.openrouter import OpenRouter
 
 from app.config import get_settings
 from app.exceptions import ConfigurationError, ExternalServiceError
@@ -36,9 +33,6 @@ class RAGChatService:
     """
 
     def __init__(self, settings: Any = None):
-        if not AGNO_AVAILABLE:
-            raise ConfigurationError("Agno package not installed")
-
         self.settings = settings or get_settings()
         self.agent: Optional[Agent] = None
         self.vector_service: Optional[VectorService] = None
@@ -68,7 +62,6 @@ class RAGChatService:
                 ),
                 instructions=self._get_agent_instructions(),
                 structured_outputs=False,
-                debug=self.settings.debug,
             )
 
             self._initialized = True
@@ -229,6 +222,7 @@ If the context doesn't contain enough information, acknowledge this limitation.
             chat_response = ChatResponse(
                 message=response_content,
                 session_id=request.session_id or "default",
+                message_id=str(uuid.uuid4()),
                 metadata={
                     "query_type": query_type,
                     "pipeline_steps": pipeline_steps,

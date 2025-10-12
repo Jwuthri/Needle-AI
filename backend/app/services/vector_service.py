@@ -6,17 +6,8 @@ import asyncio
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-try:
-    from pinecone import Pinecone, ServerlessSpec
-    PINECONE_AVAILABLE = True
-except ImportError:
-    PINECONE_AVAILABLE = False
-
-try:
-    import openai
-    OPENAI_AVAILABLE = True
-except ImportError:
-    OPENAI_AVAILABLE = False
+from pinecone import Pinecone, ServerlessSpec
+from agno.knowledge.embedder.openai import OpenAIEmbedder
 
 from app.config import get_settings
 from app.exceptions import ConfigurationError, ExternalServiceError
@@ -37,16 +28,10 @@ class VectorService:
     """
 
     def __init__(self, settings: Any = None):
-        if not PINECONE_AVAILABLE:
-            raise ConfigurationError("Pinecone package not installed. Install with: pip install pinecone-client")
-        
-        if not OPENAI_AVAILABLE:
-            raise ConfigurationError("OpenAI package not installed. Install with: pip install openai")
-        
         self.settings = settings or get_settings()
         self.pinecone_client: Optional[Pinecone] = None
         self.index = None
-        self.openai_client = None
+        self.embedder = None
         self._initialized = False
 
     async def initialize(self):
@@ -60,18 +45,11 @@ class VectorService:
             if not pinecone_api_key:
                 raise ConfigurationError("Pinecone API key not configured")
 
-            openrouter_api_key = self.settings.get_secret("openrouter_api_key")
-            if not openrouter_api_key:
-                raise ConfigurationError("OpenRouter API key not configured for embeddings")
+            # Initialize embedder
+            self.embedder = OpenAIEmbedder()
 
             # Initialize Pinecone
             self.pinecone_client = Pinecone(api_key=pinecone_api_key)
-            
-            # Initialize OpenAI client for embeddings (via OpenRouter)
-            self.openai_client = openai.AsyncOpenAI(
-                api_key=openrouter_api_key,
-                base_url="https://openrouter.ai/api/v1"
-            )
 
             # Get or create index
             index_name = self.settings.pinecone_index_name
@@ -110,7 +88,7 @@ class VectorService:
 
     async def generate_embedding(self, text: str) -> List[float]:
         """
-        Generate embedding for text using OpenAI embeddings via OpenRouter.
+        Generate embedding for text using Agno's OpenAI embedder.
         
         Args:
             text: Text to embed
@@ -122,13 +100,7 @@ class VectorService:
             await self.initialize()
 
         try:
-            # Use text-embedding-3-small model (cost-effective)
-            response = await self.openai_client.embeddings.create(
-                model="text-embedding-3-small",
-                input=text
-            )
-            
-            embedding = response.data[0].embedding
+            embedding = self.embedder.get_embedding(text)
             return embedding
 
         except Exception as e:

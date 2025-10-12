@@ -62,6 +62,22 @@ export default function ChatPage() {
   const handleSelectSession = (session: ChatSession) => {
     setSessionId(session.session_id)
   }
+  
+  const handleSessionUpdate = (updatedSessionId: string) => {
+    setSessionId(updatedSessionId)
+    // Refresh sessions list
+    const refreshSessions = async () => {
+      try {
+        const token = await getToken()
+        const api = createApiClient(token)
+        const sessionsData = await api.listSessions()
+        setSessions(sessionsData.sessions || [])
+      } catch (error) {
+        console.error('Failed to refresh sessions:', error)
+      }
+    }
+    refreshSessions()
+  }
 
   // Show loading state while checking authentication
   if (!isLoaded || !isSignedIn) {
@@ -117,33 +133,43 @@ export default function ChatPage() {
                 <p className="text-sm text-gray-500 text-center py-8">No previous chats</p>
               ) : (
                 <div className="space-y-2">
-                  {sessions.map((session) => (
-                    <button
-                      key={session.session_id}
-                      onClick={() => handleSelectSession(session)}
-                      className={`
-                        w-full text-left px-3 py-2 rounded-lg transition-all
-                        ${
-                          sessionId === session.session_id
-                            ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-400'
-                            : 'bg-gray-800/30 hover:bg-gray-800/50 text-gray-300 border border-transparent'
-                        }
-                      `}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">
-                            {session.messages[0]?.content.substring(0, 40) || 'New Chat'}
-                            {(session.messages[0]?.content.length || 0) > 40 ? '...' : ''}
-                          </p>
-                          <p className="text-xs text-gray-500 mt-1">
-                            {new Date(session.updated_at).toLocaleDateString()}
-                          </p>
+                  {sessions.map((session) => {
+                    const title = session.metadata?.title || session.messages[0]?.content.substring(0, 40) || 'New Chat'
+                    const companyId = session.metadata?.company_id
+                    const companyName = companies.find(c => c.id === companyId)?.name
+                    
+                    return (
+                      <button
+                        key={session.session_id}
+                        onClick={() => handleSelectSession(session)}
+                        className={`
+                          w-full text-left px-3 py-2 rounded-lg transition-all
+                          ${
+                            sessionId === session.session_id
+                              ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-400'
+                              : 'bg-gray-800/30 hover:bg-gray-800/50 text-gray-300 border border-transparent'
+                          }
+                        `}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">
+                              {title.length > 40 ? title.substring(0, 40) + '...' : title}
+                            </p>
+                            {companyName && (
+                              <p className="text-xs text-emerald-400/60 mt-0.5 truncate">
+                                {companyName}
+                              </p>
+                            )}
+                            <p className="text-xs text-gray-500 mt-1">
+                              {new Date(session.updated_at).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <MessageSquare className="w-4 h-4 text-gray-500 flex-shrink-0 ml-2" />
                         </div>
-                        <MessageSquare className="w-4 h-4 text-gray-500 flex-shrink-0 ml-2" />
-                      </div>
-                    </button>
-                  ))}
+                      </button>
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -204,7 +230,7 @@ export default function ChatPage() {
             <ChatView
               companyId={selectedCompany}
               sessionId={sessionId}
-              onSessionIdChange={setSessionId}
+              onSessionIdChange={handleSessionUpdate}
             />
           ) : (
             <TreeView
