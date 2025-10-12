@@ -184,7 +184,7 @@ class ChatService:
     ):
         """Publish chat events for analytics/monitoring."""
         try:
-            # This would integrate with Kafka/RabbitMQ
+            # This uses Celery tasks for async processing
             # For now, just log the events
             logger.info(
                 "Chat event",

@@ -3,12 +3,12 @@ Redis client for caching and session management.
 """
 
 import json
-import os
 from typing import Any, Dict, Optional
 
 from redis import Redis
 from redis.asyncio import Redis as AsyncRedis
 
+from ..config import get_settings
 from ..utils.logging import get_logger
 
 logger = get_logger("redis_client")
@@ -18,7 +18,8 @@ class RedisClient:
     """Redis client for caching, session storage, and pub/sub."""
 
     def __init__(self):
-        self.redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        settings = get_settings()
+        self.redis_url = settings.redis_url
         self.redis: Optional[AsyncRedis] = None
         self.sync_redis: Optional[Redis] = None
         self._initialized = False
@@ -45,28 +46,51 @@ class RedisClient:
     async def connect(self):
         """Initialize Redis connection."""
         try:
+            # SSL configuration for Aiven/Valkey or any SSL Redis
+            redis_config = {
+                "encoding": "utf-8",
+                "decode_responses": True,
+                "health_check_interval": 30,
+            }
+            
+            # Add SSL settings if using rediss://
+            if self.redis_url.startswith("rediss://"):
+                redis_config.update({
+                    "ssl_cert_reqs": "required",  # Require SSL certificate verification
+                    # Aiven provides valid certificates, so we use the system's CA bundle
+                    "ssl_check_hostname": True,
+                })
+                logger.info("Using SSL/TLS for Redis connection")
+            
             self.redis = AsyncRedis.from_url(
                 self.redis_url,
-                encoding="utf-8",
-                decode_responses=True,
-                health_check_interval=30
+                **redis_config
             )
 
             # Test connection
             await self.redis.ping()
-            logger.info(f"Connected to Redis at {self.redis_url}")
+            logger.info(f"Connected to Redis at {self.redis_url.split('@')[-1]}")  # Don't log password
 
             # Initialize sync client for non-async operations
+            sync_config = {
+                "encoding": "utf-8",
+                "decode_responses": True,
+            }
+            if self.redis_url.startswith("rediss://"):
+                sync_config.update({
+                    "ssl_cert_reqs": "required",
+                    "ssl_check_hostname": True,
+                })
+            
             self.sync_redis = Redis.from_url(
                 self.redis_url,
-                encoding="utf-8",
-                decode_responses=True
+                **sync_config
             )
             
             self._available = True
 
         except Exception as e:
-            logger.warning(f"Redis not available at {self.redis_url}: {e}")
+            logger.warning(f"Redis not available: {e}")
             logger.info("Running without Redis - caching and session features will be disabled")
             self._available = False
             # Don't raise the exception - allow the app to continue without Redis

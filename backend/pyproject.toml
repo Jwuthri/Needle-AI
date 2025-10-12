@@ -36,21 +36,11 @@ dependencies = [
     "redis[hiredis]>=5.0.1",
     "aioredis>=2.0.1",
 
-    # Kafka for message streaming
-    "aiokafka>=0.8.11",
-    "kafka-python>=2.0.2",
-
-    # RabbitMQ for message queuing
-    "aio-pika>=9.3.0",
-    "pika>=1.3.2",
-
     # Database support (conditional)
-    
     "asyncpg>=0.29.0",
     "psycopg2-binary>=2.9.7",  # For sync operations
     "sqlalchemy[asyncio]>=2.0.23",
     "alembic>=1.13.0",
-    
 
     # CORS and multipart support
     "python-multipart>=0.0.6",
@@ -65,9 +55,7 @@ dependencies = [
     "openai>=1.3.7",
 
     # Vector Database support (conditional)
-    
     "pinecone-client>=3.0.0",
-    
 
     # NumPy for vector operations
     "numpy>=1.24.0",

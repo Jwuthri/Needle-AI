@@ -92,14 +92,9 @@ class Settings(BaseSettings):
     redis_socket_timeout: int = Field(default=5, ge=1, le=60, description="Redis socket timeout")
     redis_health_check_interval: int = Field(default=30, ge=5, le=300, description="Redis health check interval")
 
-    # Message Queue Configuration
-    kafka_bootstrap_servers: str = Field(default="localhost:9092", description="Kafka bootstrap servers")
-    kafka_group_id: str = Field(default="needleai_backend", description="Kafka consumer group ID")
-    kafka_auto_offset_reset: str = Field(default="latest", pattern="^(earliest|latest)$", description="Kafka offset reset policy")
-
-    rabbitmq_url: str = Field(default="amqp://guest:guest@localhost:5672/", description="RabbitMQ connection URL")
-    rabbitmq_connection_timeout: int = Field(default=30, ge=1, le=300, description="RabbitMQ connection timeout")
-    rabbitmq_heartbeat: int = Field(default=600, ge=60, le=3600, description="RabbitMQ heartbeat interval")
+    # WebSocket Configuration (for real-time updates)
+    websocket_heartbeat_interval: int = Field(default=30, ge=10, le=300, description="WebSocket heartbeat interval in seconds")
+    websocket_max_connections: int = Field(default=1000, ge=1, le=10000, description="Maximum concurrent WebSocket connections")
 
     # LLM Configuration
     llm_provider: str = Field(default="openrouter", description="LLM provider")

@@ -8,8 +8,6 @@ from typing import Any, Dict
 from app.config import Settings, get_settings
 from app.dependencies import (
     check_database_health,
-    check_kafka_health,
-    check_rabbitmq_health,
     check_redis_health,
 )
 from app.models.base import HealthResponse
@@ -22,22 +20,24 @@ router = APIRouter()
 async def health_check(
     settings: Settings = Depends(get_settings),
     database_health: bool = Depends(check_database_health),
-    redis_health: bool = Depends(check_redis_health),
-    kafka_health: bool = Depends(check_kafka_health),
-    rabbitmq_health: bool = Depends(check_rabbitmq_health)
+    redis_health: bool = Depends(check_redis_health)
 ) -> HealthResponse:
     """
-    Comprehensive health check for all services.
+    Comprehensive health check for all core services.
+    
+    Checks:
+    - PostgreSQL database
+    - Redis cache/session storage
+    - Celery uses Redis (checked via Redis health)
     """
     services_status = {
         "database": "healthy" if database_health else "unhealthy",
         "redis": "healthy" if redis_health else "unhealthy",
-        "kafka": "healthy" if kafka_health else "unhealthy",
-        "rabbitmq": "healthy" if rabbitmq_health else "unhealthy"
+        "celery": "healthy" if redis_health else "unhealthy"  # Celery depends on Redis
     }
 
     # Overall status - healthy only if all services are healthy
-    overall_healthy = all([database_health, redis_health, kafka_health, rabbitmq_health])
+    overall_healthy = all([database_health, redis_health])
 
     return HealthResponse(
         status="healthy" if overall_healthy else "unhealthy",
@@ -61,30 +61,6 @@ async def redis_health_check(
     }
 
 
-@router.get("/kafka")
-async def kafka_health_check(
-    kafka_health: bool = Depends(check_kafka_health)
-) -> Dict[str, Any]:
-    """Check Kafka service health."""
-    return {
-        "service": "kafka",
-        "status": "healthy" if kafka_health else "unhealthy",
-        "timestamp": datetime.now().isoformat()
-    }
-
-
-@router.get("/rabbitmq")
-async def rabbitmq_health_check(
-    rabbitmq_health: bool = Depends(check_rabbitmq_health)
-) -> Dict[str, Any]:
-    """Check RabbitMQ service health."""
-    return {
-        "service": "rabbitmq",
-        "status": "healthy" if rabbitmq_health else "unhealthy",
-        "timestamp": datetime.now().isoformat()
-    }
-
-
 @router.get("/database")
 async def database_health_check(
     database_health: bool = Depends(check_database_health)
@@ -100,15 +76,17 @@ async def database_health_check(
 @router.get("/ready")
 async def readiness_check(
     database_health: bool = Depends(check_database_health),
-    redis_health: bool = Depends(check_redis_health),
-    kafka_health: bool = Depends(check_kafka_health),
-    rabbitmq_health: bool = Depends(check_rabbitmq_health)
+    redis_health: bool = Depends(check_redis_health)
 ) -> Dict[str, Any]:
     """
     Readiness check - returns 200 only if all critical services are available.
     Used by Kubernetes readiness probes.
+    
+    Critical services:
+    - PostgreSQL database
+    - Redis (for caching, sessions, and Celery)
     """
-    ready = all([database_health, redis_health, kafka_health, rabbitmq_health])
+    ready = all([database_health, redis_health])
 
     response = {
         "ready": ready,
@@ -116,8 +94,7 @@ async def readiness_check(
         "services": {
             "database": database_health,
             "redis": redis_health,
-            "kafka": kafka_health,
-            "rabbitmq": rabbitmq_health
+            "celery": redis_health  # Celery depends on Redis
         }
     }
 
@@ -142,84 +119,3 @@ async def liveness_check() -> Dict[str, Any]:
         "alive": True,
         "timestamp": datetime.now().isoformat()
     }
-
-
-@router.get("/database/pools")
-async def database_pool_status():
-    """
-    Get detailed database connection pool status.
-    """
-    try:
-        from app.core.monitoring.database import db_monitoring_service
-        pool_status = await db_monitoring_service.get_all_pool_status()
-        return {
-            "status": "success",
-            "pools": pool_status,
-            "timestamp": datetime.now().isoformat()
-        }
-    except ImportError:
-        return {
-            "status": "unavailable",
-            "message": "Database monitoring not available",
-            "timestamp": datetime.now().isoformat()
-        }
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": str(e),
-            "timestamp": datetime.now().isoformat()
-        }
-
-
-@router.get("/database/health")
-async def database_health_detailed():
-    """
-    Get detailed database health information.
-    """
-    try:
-        from app.core.monitoring.database import db_monitoring_service
-        health_results = await db_monitoring_service.health_check_all()
-        return {
-            "status": "success",
-            "health_checks": health_results,
-            "timestamp": datetime.now().isoformat()
-        }
-    except ImportError:
-        return {
-            "status": "unavailable",
-            "message": "Database monitoring not available",
-            "timestamp": datetime.now().isoformat()
-        }
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": str(e),
-            "timestamp": datetime.now().isoformat()
-        }
-
-
-@router.get("/database/exhaustion")
-async def database_pool_exhaustion():
-    """
-    Check database pool exhaustion status.
-    """
-    try:
-        from app.core.monitoring.database import db_monitoring_service
-        exhaustion_results = await db_monitoring_service.check_all_exhaustion()
-        return {
-            "status": "success",
-            "exhaustion_check": exhaustion_results,
-            "timestamp": datetime.now().isoformat()
-        }
-    except ImportError:
-        return {
-            "status": "unavailable",
-            "message": "Database monitoring not available",
-            "timestamp": datetime.now().isoformat()
-        }
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": str(e),
-            "timestamp": datetime.now().isoformat()
-        }

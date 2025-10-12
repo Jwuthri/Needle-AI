@@ -46,7 +46,7 @@ async def get_redis_client(container: DIContainer = Depends(get_scoped_container
     return await container.get_service(RedisClient)
 
 
-# Note: Kafka and RabbitMQ clients can be added when needed
+# Note: WebSocket manager is available for real-time updates
 
 
 async def get_memory_store(container: DIContainer = Depends(get_scoped_container)) -> MemoryInterface:
@@ -127,28 +127,6 @@ async def check_redis_health(redis_client: RedisClient = Depends(get_redis_clien
         return False
 
 
-# Kafka health check
-async def check_kafka_health() -> bool:
-    """Check Kafka health."""
-    try:
-        # TODO: Implement actual Kafka health check when client is available
-        # For now, return True to avoid blocking the health endpoint
-        return True
-    except Exception:
-        return False
-
-
-# RabbitMQ health check  
-async def check_rabbitmq_health() -> bool:
-    """Check RabbitMQ health."""
-    try:
-        # TODO: Implement actual RabbitMQ health check when client is available
-        # For now, return True to avoid blocking the health endpoint
-        return True
-    except Exception:
-        return False
-
-
 # Validation dependencies
 def validate_session_id(session_id: str) -> str:
     """Validate session ID format."""
@@ -218,7 +196,7 @@ async def initialize_services():
     container = get_container()
     try:
         await container.get_service(RedisClient)
-        # Note: Add Kafka and RabbitMQ service initialization when clients are implemented
+        # Note: WebSocket connections are managed separately via websocket_manager.py
     except Exception as e:
         # Clean up on failure
         await container.dispose()

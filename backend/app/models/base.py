@@ -27,9 +27,9 @@ class HealthResponse(BaseModel):
                 "version": "0.1.0",
                 "environment": "development",
                 "services": {
+                    "database": "healthy",
                     "redis": "healthy",
-                    "kafka": "healthy",
-                    "rabbitmq": "healthy"
+                    "celery": "healthy"
                 }
             }
         }

@@ -77,8 +77,9 @@ class TestingSettings(Settings):
     redis_max_connections: int = 5
 
     # Disable external services for testing
-    kafka_bootstrap_servers: str = "localhost:9092"  # Mock or testcontainers
-    rabbitmq_url: str = "amqp://guest:guest@localhost:5672/"
+    # WebSocket test configuration
+    websocket_heartbeat_interval: int = 10  # Faster for tests
+    websocket_max_connections: int = 100  # Limited for tests
 
     # Fast operations for testing
     celery_task_always_eager: bool = True
@@ -109,7 +110,6 @@ class StagingSettings(Settings):
     testing: bool = False
 
     # Production-like database
-    
     database_url: str = "postgresql://postgres:postgres@localhost:5432/needleai_staging"
     
 

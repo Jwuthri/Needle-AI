@@ -201,8 +201,15 @@ def get_container() -> DIContainer:
 
 
 def _configure_services(container: DIContainer):
-    """Configure all services in the DI container."""
-    # Note: Import message queue clients (Kafka, RabbitMQ) when needed
+    """
+    Configure all services in the DI container.
+    
+    Architecture:
+    - PostgreSQL for persistent data
+    - Redis for caching, sessions, and Celery broker
+    - Celery for background tasks (scraping, sentiment, indexing)
+    - WebSocket for real-time updates
+    """
     from app.core.memory.base import MemoryInterface
     from app.database.repositories import (
         ApiKeyRepository,
@@ -216,7 +223,6 @@ def _configure_services(container: DIContainer):
 
     # Register infrastructure services as singletons
     container.register_singleton(RedisClient)
-    # Note: Register message queue clients (Kafka, RabbitMQ) when implemented
 
     # Register repositories as scoped (per-request)
     container.register_scoped(UserRepository)
