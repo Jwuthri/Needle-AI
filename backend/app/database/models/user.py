@@ -25,6 +25,7 @@ class User(Base):
     """User account model."""
     __tablename__ = "users"
 
+    # ID can be Clerk ID or auto-generated UUID
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     email = Column(String(255), unique=True, index=True, nullable=True)
     username = Column(String(100), unique=True, index=True, nullable=True)

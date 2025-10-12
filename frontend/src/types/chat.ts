@@ -16,6 +16,31 @@ export interface ChatMessage {
   metadata?: Record<string, any>;
 }
 
+// Enhanced chat with RAG and pipeline visualization
+export interface ReviewSource {
+  review_id: string;
+  content: string;
+  author: string;
+  source: string; // reddit/twitter/csv
+  sentiment: number;
+  url?: string;
+  relevance_score: number;
+}
+
+export interface QueryPipelineStep {
+  name: string; // "Query preprocessing", "Vector search", etc.
+  duration_ms: number;
+  status: string;
+  metadata: Record<string, any>;
+}
+
+export interface EnhancedChatMessage extends ChatMessage {
+  query_type?: string;
+  pipeline_steps?: QueryPipelineStep[];
+  sources?: ReviewSource[];
+  related_questions?: string[];
+}
+
 export interface ChatSession {
   session_id: string;
   messages: Message[];
@@ -27,6 +52,7 @@ export interface ChatSession {
 export interface ChatRequest {
   message: string;
   session_id?: string;
+  company_id?: string;
   context?: Record<string, any>;
 }
 
@@ -36,6 +62,10 @@ export interface ChatResponse {
   message_id: string;
   timestamp: string;
   metadata?: Record<string, any>;
+  query_type?: string;
+  pipeline_steps?: QueryPipelineStep[];
+  sources?: ReviewSource[];
+  related_questions?: string[];
 }
 
 export interface WebSocketMessage {

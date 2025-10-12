@@ -150,13 +150,13 @@ def upgrade() -> None:
         sa.Column('author', sa.String(length=255), nullable=True),
         sa.Column('url', sa.String(length=500), nullable=True),
         sa.Column('sentiment_score', sa.Float(), nullable=True),
-        sa.Column('metadata', sa.JSON(), nullable=False),
+        sa.Column('extra_metadata', sa.JSON(), nullable=False),
         sa.Column('vector_id', sa.String(), nullable=True),
         sa.Column('scraped_at', sa.DateTime(), nullable=False),
         sa.Column('processed_at', sa.DateTime(), nullable=True),
         sa.Column('review_date', sa.DateTime(), nullable=True),
         sa.ForeignKeyConstraint(['company_id'], ['companies.id'], ),
-        sa.ForeignKeyConstraint('scraping_job_id'], ['scraping_jobs.id'], ),
+        sa.ForeignKeyConstraint(['scraping_job_id'], ['scraping_jobs.id'], ),
         sa.ForeignKeyConstraint(['source_id'], ['review_sources.id'], ),
         sa.PrimaryKeyConstraint('id')
     )

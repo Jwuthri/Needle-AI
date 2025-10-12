@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision = '003_add_llm_call_logging'
-down_revision = '002_product_review_platform'
+revision = '003'
+down_revision = '002'
 branch_labels = None
 depends_on = None
 
@@ -52,7 +52,7 @@ def upgrade():
         sa.Column('review_id', sa.String(), nullable=True),
         sa.Column('trace_id', sa.String(), nullable=True),
         sa.Column('parent_call_id', sa.String(), nullable=True),
-        sa.Column('metadata', sa.JSON(), nullable=True),
+        sa.Column('extra_metadata', sa.JSON(), nullable=True),
         sa.Column('tags', sa.JSON(), nullable=True),
         sa.Column('created_at', sa.DateTime(), nullable=False),
         sa.PrimaryKeyConstraint('id')

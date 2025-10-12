@@ -4,7 +4,7 @@ Clerk authentication integration for NeedleAi.
 
 from datetime import datetime, timedelta
 from functools import wraps
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import httpx
 import jwt
@@ -14,6 +14,7 @@ from app.utils.logging import get_logger
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = get_logger("clerk_auth")
 
@@ -240,6 +241,112 @@ async def require_current_user(
         )
 
 
+async def _get_db_session():
+    """Internal helper to get database session."""
+    from app.database.session import get_async_db_session
+    async for session in get_async_db_session():
+        return session
+
+
+async def get_current_db_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    clerk_provider: ClerkAuthProvider = Depends(get_clerk_provider),
+    db: AsyncSession = Depends(_get_db_session)
+) -> Optional[Tuple[ClerkUser, Optional["User"]]]:
+    """
+    Get current authenticated user and sync to database.
+    Returns tuple of (ClerkUser, database User) or None if not authenticated.
+    
+    Note: This automatically creates/updates the user in the database on every auth.
+    
+    Args:
+        credentials: HTTP Bearer token credentials
+        clerk_provider: Clerk authentication provider
+        db: Database session (injected automatically)
+    
+    Returns:
+        Tuple of (ClerkUser, User) or None if no auth
+    """
+    if not credentials:
+        return None
+
+    try:
+        from app.database.models.user import User
+        from app.services.user_sync_service import UserSyncService
+        
+        # Verify Clerk token
+        clerk_user = await clerk_provider.verify_token(credentials.credentials)
+        
+        # Sync to database
+        db_user = None
+        try:
+            db_user = await UserSyncService.sync_clerk_user(db, clerk_user)
+            logger.debug(f"Synced user {clerk_user.id} to database")
+        except Exception as e:
+            logger.error(f"Failed to sync user {clerk_user.id} to database: {e}")
+            # Don't fail auth if DB sync fails - graceful degradation
+        
+        return (clerk_user, db_user)
+    except UnauthorizedError:
+        return None
+
+
+async def require_current_db_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    clerk_provider: ClerkAuthProvider = Depends(get_clerk_provider),
+    db: AsyncSession = Depends(_get_db_session)
+) -> Tuple[ClerkUser, "User"]:
+    """
+    Get current authenticated user and sync to database (required).
+    Raises HTTPException if no valid token provided.
+    
+    Note: This automatically creates/updates the user in the database on every auth.
+    
+    Args:
+        credentials: HTTP Bearer token credentials
+        clerk_provider: Clerk authentication provider
+        db: Database session (injected automatically)
+    
+    Returns:
+        Tuple of (ClerkUser, database User)
+    
+    Raises:
+        HTTPException: If authentication fails or database sync fails
+    """
+    if not credentials:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+
+    try:
+        from app.database.models.user import User
+        from app.services.user_sync_service import UserSyncService
+        
+        # Verify Clerk token
+        clerk_user = await clerk_provider.verify_token(credentials.credentials)
+        
+        # Sync to database (required)
+        try:
+            db_user = await UserSyncService.sync_clerk_user(db, clerk_user)
+            logger.info(f"Synced user {clerk_user.id} ({clerk_user.email}) to database")
+        except Exception as e:
+            logger.error(f"Failed to sync user {clerk_user.id} to database: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to sync user to database"
+            )
+        
+        return (clerk_user, db_user)
+    except UnauthorizedError as e:
+        raise HTTPException(
+            status_code=401,
+            detail=str(e),
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+
+
 def require_auth(func):
     """
     Decorator to require authentication for a function.
@@ -319,6 +426,8 @@ __all__ = [
     "get_clerk_provider",
     "get_current_user",
     "require_current_user",
+    "get_current_db_user",
+    "require_current_db_user",
     "require_auth",
     "validate_clerk_config",
     "clerk_auth_middleware"

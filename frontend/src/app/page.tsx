@@ -2,22 +2,43 @@
 
 import React from 'react'
 import { motion } from 'framer-motion'
-import { MessageCircle, Code, Zap } from 'lucide-react'
+import { MessageCircle, BarChart3, Database, Sparkles, ArrowRight } from 'lucide-react'
 import Link from 'next/link'
+import { SignInButton, SignUpButton, useUser } from '@clerk/nextjs'
+import { useRouter } from 'next/navigation'
 
-export default function HomePage() {
+export default function LandingPage() {
+  const { isSignedIn } = useUser()
+  const router = useRouter()
+
+  React.useEffect(() => {
+    if (isSignedIn) {
+      router.push('/dashboard')
+    }
+  }, [isSignedIn, router])
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-950 via-blue-950 to-purple-950">
       {/* Navigation */}
-      <nav className="flex items-center justify-between px-6 py-4">
-        <div className="text-white font-bold tracking-wider">
-          AI Agent App
+      <nav className="flex items-center justify-between px-6 py-4 border-b border-gray-800/50">
+        <div className="flex items-center space-x-3">
+          <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-green-600 rounded-lg flex items-center justify-center">
+            <span className="text-white font-bold text-xl">N</span>
+          </div>
+          <span className="text-white font-bold tracking-wider text-xl">NeedleAI</span>
         </div>
-        <Link href="/chat">
-          <button className="text-white/80 hover:text-white transition-colors">
-            Go to Chat
-          </button>
-        </Link>
+        <div className="flex items-center space-x-4">
+          <SignInButton mode="modal">
+            <button className="text-white/80 hover:text-white transition-colors px-4 py-2">
+              Sign In
+            </button>
+          </SignInButton>
+          <SignUpButton mode="modal">
+            <button className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white rounded-lg transition-all duration-200">
+              Get Started
+            </button>
+          </SignUpButton>
+        </div>
       </nav>
 
       <div className="container mx-auto px-6 py-16">
@@ -27,9 +48,9 @@ export default function HomePage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8 }}
-            className="text-6xl md:text-7xl font-bold bg-gradient-to-r from-purple-400 via-pink-500 to-blue-500 bg-clip-text text-transparent mb-6"
+            className="text-6xl md:text-7xl font-bold bg-gradient-to-r from-emerald-400 via-green-500 to-blue-500 bg-clip-text text-transparent mb-6"
           >
-            AI-Powered Chat
+            Product Review Analysis
           </motion.h1>
 
           <motion.p
@@ -38,45 +59,47 @@ export default function HomePage() {
             transition={{ duration: 0.8, delay: 0.2 }}
             className="text-xl text-white/80 mb-8 max-w-2xl mx-auto"
           >
-            Chat with advanced AI. Get instant, intelligent responses to any question.
+            Discover insights from customer reviews across Reddit, Twitter, and more. 
+            Chat with your data using AI-powered analysis.
           </motion.p>
+
+          {/* CTA Button */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.4 }}
+            className="mb-16"
+          >
+            <SignUpButton mode="modal">
+              <button className="px-8 py-4 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white font-medium rounded-lg transition-all duration-200 hover:scale-105 text-lg inline-flex items-center space-x-2">
+                <span>Start Analyzing</span>
+                <ArrowRight className="w-5 h-5" />
+              </button>
+            </SignUpButton>
+          </motion.div>
 
           {/* Terminal Demo */}
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.8, delay: 0.4 }}
+            transition={{ duration: 0.8, delay: 0.6 }}
             className="max-w-3xl mx-auto mb-12"
           >
-            <div className="bg-gray-900/50 rounded-lg border border-gray-700/50 p-6 text-left">
+            <div className="bg-gray-900/50 rounded-lg border border-emerald-500/30 p-6 text-left">
               <div className="flex items-center mb-4">
                 <div className="flex space-x-2">
                   <div className="w-3 h-3 bg-red-500 rounded-full"></div>
                   <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
                   <div className="w-3 h-3 bg-green-500 rounded-full"></div>
                 </div>
-                <div className="ml-4 text-white/60 text-sm font-mono">ai-chat-terminal</div>
+                <div className="ml-4 text-emerald-400/60 text-sm font-mono">user@company ~ $</div>
               </div>
               <div className="font-mono text-sm space-y-2">
-                <div className="text-green-400">$ What's the best approach for learning machine learning? ✦</div>
-                <div className="text-blue-400">Analyzing query... Generating comprehensive response...</div>
-                <div className="text-yellow-400">💬 Response ready! Here's a detailed learning path for you. ■</div>
+                <div className="text-emerald-400">$ What are the main complaints about our competitor? ✦</div>
+                <div className="text-blue-400">→ Analyzing 1,247 reviews... Vector search complete...</div>
+                <div className="text-white/80">💡 Top complaints: Slow customer support (342 mentions), Complex pricing (189 mentions), Limited integrations (156 mentions) ■</div>
               </div>
             </div>
-          </motion.div>
-
-          {/* Get Started Button */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.6 }}
-            className="mb-16"
-          >
-            <Link href="/chat">
-              <button className="px-8 py-4 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-medium rounded-lg transition-all duration-200 hover:scale-105 text-lg">
-                Start Chatting →
-              </button>
-            </Link>
           </motion.div>
         </div>
 
@@ -87,44 +110,84 @@ export default function HomePage() {
           transition={{ duration: 0.8, delay: 0.8 }}
           className="grid md:grid-cols-3 gap-8"
         >
-          {/* Intelligent Conversations */}
-          <div className="text-center p-6">
-            <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
+          {/* AI Chat Analysis */}
+          <div className="text-center p-6 bg-gray-900/30 rounded-xl border border-gray-800/50">
+            <div className="w-16 h-16 bg-gradient-to-br from-emerald-500 to-green-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
               <MessageCircle className="w-8 h-8 text-white" />
             </div>
-            <h3 className="text-2xl font-bold text-white mb-4">Smart Conversations</h3>
+            <h3 className="text-2xl font-bold text-white mb-4">AI Chat Analysis</h3>
             <p className="text-white/70 leading-relaxed">
-              Engage in natural, intelligent conversations with advanced AI technology
+              Ask questions about your product reviews in natural language. Get instant insights powered by RAG and LLMs.
             </p>
           </div>
 
-          {/* Instant Responses */}
-          <div className="text-center p-6">
+          {/* Real-time Scraping */}
+          <div className="text-center p-6 bg-gray-900/30 rounded-xl border border-gray-800/50">
             <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
-              <Zap className="w-8 h-8 text-white" />
+              <Database className="w-8 h-8 text-white" />
             </div>
-            <h3 className="text-2xl font-bold text-white mb-4">Lightning Fast</h3>
+            <h3 className="text-2xl font-bold text-white mb-4">Multi-Source Scraping</h3>
             <p className="text-white/70 leading-relaxed">
-              Get instant responses with real-time processing and optimized performance
+              Collect reviews from Reddit, Twitter, and custom sources. Import CSV files or scrape automatically.
             </p>
           </div>
 
-          {/* Always Available */}
-          <div className="text-center p-6">
-            <div className="w-16 h-16 bg-gradient-to-br from-green-500 to-emerald-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
-              <Code className="w-8 h-8 text-white" />
+          {/* Visual Analytics */}
+          <div className="text-center p-6 bg-gray-900/30 rounded-xl border border-gray-800/50">
+            <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl flex items-center justify-center mx-auto mb-6">
+              <BarChart3 className="w-8 h-8 text-white" />
             </div>
-            <h3 className="text-2xl font-bold text-white mb-4">Always Available</h3>
+            <h3 className="text-2xl font-bold text-white mb-4">Visual Analytics</h3>
             <p className="text-white/70 leading-relaxed">
-              24/7 availability with persistent conversations and session history
+              Explore sentiment trends, discover product gaps, and track competitor mentions with interactive visualizations.
             </p>
+          </div>
+        </motion.div>
+
+        {/* How It Works */}
+        <motion.div
+          initial={{ opacity: 0, y: 40 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 1.0 }}
+          className="mt-20 text-center"
+        >
+          <h2 className="text-4xl font-bold text-white mb-12">How It Works</h2>
+          <div className="grid md:grid-cols-4 gap-6 max-w-5xl mx-auto">
+            <div className="relative">
+              <div className="w-12 h-12 bg-emerald-500/20 border-2 border-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4 text-emerald-400 font-bold">
+                1
+              </div>
+              <h4 className="text-white font-semibold mb-2">Add Company</h4>
+              <p className="text-white/60 text-sm">Create a profile for the product you want to analyze</p>
+            </div>
+            <div className="relative">
+              <div className="w-12 h-12 bg-emerald-500/20 border-2 border-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4 text-emerald-400 font-bold">
+                2
+              </div>
+              <h4 className="text-white font-semibold mb-2">Collect Data</h4>
+              <p className="text-white/60 text-sm">Scrape reviews or upload CSV files from various sources</p>
+            </div>
+            <div className="relative">
+              <div className="w-12 h-12 bg-emerald-500/20 border-2 border-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4 text-emerald-400 font-bold">
+                3
+              </div>
+              <h4 className="text-white font-semibold mb-2">Ask Questions</h4>
+              <p className="text-white/60 text-sm">Chat with AI to discover insights from your data</p>
+            </div>
+            <div className="relative">
+              <div className="w-12 h-12 bg-emerald-500/20 border-2 border-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4 text-emerald-400 font-bold">
+                4
+              </div>
+              <h4 className="text-white font-semibold mb-2">Take Action</h4>
+              <p className="text-white/60 text-sm">Use insights to improve your product strategy</p>
+            </div>
           </div>
         </motion.div>
       </div>
 
       {/* Footer */}
-      <footer className="text-center py-8 text-white/40 text-sm">
-        © 2025 Ai Agent App. All rights reserved.
+      <footer className="text-center py-8 text-white/40 text-sm border-t border-gray-800/50 mt-20">
+        © 2025 NeedleAI. All rights reserved.
       </footer>
     </div>
   )

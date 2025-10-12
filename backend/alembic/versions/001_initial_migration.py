@@ -29,7 +29,7 @@ def upgrade() -> None:
         sa.Column('updated_at', sa.DateTime(), nullable=False),
         sa.Column('last_login_at', sa.DateTime(), nullable=True),
         sa.Column('preferences', sa.JSON(), nullable=True),
-        sa.Column('metadata', sa.JSON(), nullable=True),
+        sa.Column('extra_metadata', sa.JSON(), nullable=True),
         sa.Column('total_requests', sa.Integer(), nullable=True),
         sa.Column('total_tokens_used', sa.Integer(), nullable=True),
         sa.PrimaryKeyConstraint('id')
@@ -51,7 +51,7 @@ def upgrade() -> None:
         sa.Column('updated_at', sa.DateTime(), nullable=False),
         sa.Column('last_message_at', sa.DateTime(), nullable=True),
         sa.Column('settings', sa.JSON(), nullable=True),
-        sa.Column('metadata', sa.JSON(), nullable=True),
+        sa.Column('extra_metadata', sa.JSON(), nullable=True),
         sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
         sa.PrimaryKeyConstraint('id')
     )
@@ -68,7 +68,7 @@ def upgrade() -> None:
         sa.Column('token_count', sa.Integer(), nullable=True),
         sa.Column('processing_time_ms', sa.Integer(), nullable=True),
         sa.Column('created_at', sa.DateTime(), nullable=False),
-        sa.Column('metadata', sa.JSON(), nullable=True),
+        sa.Column('extra_metadata', sa.JSON(), nullable=True),
         sa.Column('parent_message_id', sa.String(), nullable=True),
         sa.ForeignKeyConstraint(['parent_message_id'], ['chat_messages.id'], ),
         sa.ForeignKeyConstraint(['session_id'], ['chat_sessions.id'], ),
@@ -97,7 +97,7 @@ def upgrade() -> None:
         sa.Column('error_message', sa.Text(), nullable=True),
         sa.Column('created_at', sa.DateTime(), nullable=False),
         sa.Column('completed_at', sa.DateTime(), nullable=True),
-        sa.Column('metadata', sa.JSON(), nullable=True),
+        sa.Column('extra_metadata', sa.JSON(), nullable=True),
         sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
         sa.PrimaryKeyConstraint('id')
     )
@@ -121,7 +121,7 @@ def upgrade() -> None:
         sa.Column('last_used_at', sa.DateTime(), nullable=True),
         sa.Column('created_at', sa.DateTime(), nullable=False),
         sa.Column('expires_at', sa.DateTime(), nullable=True),
-        sa.Column('metadata', sa.JSON(), nullable=True),
+        sa.Column('extra_metadata', sa.JSON(), nullable=True),
         sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint('key_hash')
@@ -143,7 +143,7 @@ def upgrade() -> None:
         sa.Column('created_at', sa.DateTime(), nullable=False),
         sa.Column('started_at', sa.DateTime(), nullable=True),
         sa.Column('completed_at', sa.DateTime(), nullable=True),
-        sa.Column('metadata', sa.JSON(), nullable=True),
+        sa.Column('extra_metadata', sa.JSON(), nullable=True),
         sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
         sa.PrimaryKeyConstraint('id')
     )

@@ -130,6 +130,150 @@ class ApiClient {
       health: string
     }>('/')
   }
+
+  // Company endpoints
+  async createCompany(data: { name: string; domain: string; industry: string }): Promise<any> {
+    return this.request('/api/v1/companies/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async listCompanies(): Promise<{ companies: any[] }> {
+    return this.request('/api/v1/companies/')
+  }
+
+  async getCompany(id: string): Promise<any> {
+    return this.request(`/api/v1/companies/${id}`)
+  }
+
+  async updateCompany(id: string, data: { name?: string; domain?: string; industry?: string }): Promise<any> {
+    return this.request(`/api/v1/companies/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async deleteCompany(id: string): Promise<{ message: string }> {
+    return this.request(`/api/v1/companies/${id}`, {
+      method: 'DELETE',
+    })
+  }
+
+  // Scraping endpoints
+  async listScrapingSources(): Promise<{ sources: any[] }> {
+    return this.request('/api/v1/scraping/sources')
+  }
+
+  async startScrapingJob(data: { company_id: string; source_id: string; total_reviews_target: number }): Promise<any> {
+    return this.request('/api/v1/scraping/jobs', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async getScrapingJob(id: string): Promise<any> {
+    return this.request(`/api/v1/scraping/jobs/${id}`)
+  }
+
+  async listScrapingJobs(companyId?: string): Promise<{ jobs: any[] }> {
+    const url = companyId ? `/api/v1/scraping/jobs?company_id=${companyId}` : '/api/v1/scraping/jobs'
+    return this.request(url)
+  }
+
+  async estimateScrapingCost(sourceId: string, totalReviews: number): Promise<any> {
+    return this.request('/api/v1/scraping/estimate', {
+      method: 'POST',
+      body: JSON.stringify({ source_id: sourceId, total_reviews: totalReviews }),
+    })
+  }
+
+  // Analytics endpoints
+  async getAnalyticsOverview(companyId: string, dateFrom?: string, dateTo?: string): Promise<any> {
+    let url = `/api/v1/analytics/${companyId}/overview`
+    const params = new URLSearchParams()
+    if (dateFrom) params.append('date_from', dateFrom)
+    if (dateTo) params.append('date_to', dateTo)
+    const queryString = params.toString()
+    if (queryString) url += `?${queryString}`
+    return this.request(url)
+  }
+
+  async getCompanyInsights(companyId: string): Promise<any> {
+    return this.request(`/api/v1/analytics/${companyId}/insights`)
+  }
+
+  async getReviews(params: {
+    company_id: string
+    page?: number
+    page_size?: number
+    source?: string
+    sentiment?: string
+    date_from?: string
+    date_to?: string
+    search?: string
+  }): Promise<any> {
+    const queryParams = new URLSearchParams()
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined) queryParams.append(key, value.toString())
+    })
+    return this.request(`/api/v1/analytics/${params.company_id}/reviews?${queryParams.toString()}`)
+  }
+
+  // Credits endpoints
+  async getCreditBalance(): Promise<any> {
+    return this.request('/api/v1/payments/credits')
+  }
+
+  async createCheckoutSession(data: { pricing_tier_id: string; success_url: string; cancel_url: string }): Promise<any> {
+    return this.request('/api/v1/payments/checkout', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  }
+
+  async getCreditTransactions(page?: number, pageSize?: number): Promise<any> {
+    const params = new URLSearchParams()
+    if (page !== undefined) params.append('page', page.toString())
+    if (pageSize !== undefined) params.append('page_size', pageSize.toString())
+    const queryString = params.toString()
+    const url = queryString ? `/api/v1/payments/transactions?${queryString}` : '/api/v1/payments/transactions'
+    return this.request(url)
+  }
+
+  // Data import endpoints
+  async uploadCSV(companyId: string, file: File): Promise<any> {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('company_id', companyId)
+
+    const url = `${this.baseUrl}/api/v1/data-imports/csv`
+    const headers: Record<string, string> = {}
+    if (this.token) {
+      headers.Authorization = `Bearer ${this.token}`
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: formData,
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
+
+    return response.json()
+  }
+
+  async getDataImportStatus(importId: string): Promise<any> {
+    return this.request(`/api/v1/data-imports/${importId}/status`)
+  }
+
+  async listDataImports(companyId?: string): Promise<{ imports: any[] }> {
+    const url = companyId ? `/api/v1/data-imports?company_id=${companyId}` : '/api/v1/data-imports'
+    return this.request(url)
+  }
 }
 
 // Default unauthenticated client (for public endpoints)

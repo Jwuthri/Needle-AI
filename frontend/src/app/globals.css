@@ -3,27 +3,14 @@
 @tailwind utilities;
 
 :root {
-  --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 214, 219, 220;
-  --background-end-rgb: 255, 255, 255;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --foreground-rgb: 255, 255, 255;
-    --background-start-rgb: 0, 0, 0;
-    --background-end-rgb: 0, 0, 0;
-  }
+  --foreground-rgb: 255, 255, 255;
+  --background-start-rgb: 3, 7, 18;
+  --background-end-rgb: 3, 7, 18;
 }
 
 body {
   color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
+  background: rgb(var(--background-start-rgb));
 }
 
 @layer base {
@@ -31,28 +18,117 @@ body {
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-gray-950 text-white antialiased;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    @apply w-2 h-2;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-gray-900;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-emerald-500/30 rounded-full hover:bg-emerald-500/50;
   }
 }
 
 @layer components {
+  /* Terminal cursor animation */
+  @keyframes blink-cursor {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0;
+    }
+  }
+
+  .terminal-cursor {
+    animation: blink-cursor 1s step-end infinite;
+  }
+
+  /* Green glow effect */
+  .glow-emerald {
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+  }
+
+  .glow-emerald-lg {
+    box-shadow: 0 0 40px rgba(16, 185, 129, 0.4);
+  }
+
+  /* Chat message styles */
   .chat-message {
-    @apply p-4 rounded-lg mb-4 max-w-[80%] break-words;
+    @apply p-4 rounded-lg mb-4 max-w-[85%] break-words;
   }
 
   .chat-message.user {
-    @apply bg-blue-500 text-white ml-auto;
+    @apply bg-blue-500/10 border border-blue-500/30 text-white ml-auto;
   }
 
   .chat-message.assistant {
-    @apply bg-gray-100 text-gray-900 mr-auto dark:bg-gray-800 dark:text-gray-100;
+    @apply bg-gray-800/50 border border-gray-700/50 text-white mr-auto;
   }
 
-  .typing-dots {
-    @apply flex space-x-1;
+  /* Terminal styles */
+  .terminal-input {
+    @apply font-mono bg-gray-900/80 border-2 border-emerald-500/30 rounded-xl text-white placeholder-gray-500;
+    @apply focus:outline-none focus:border-emerald-500;
   }
 
-  .typing-dot {
-    @apply w-2 h-2 bg-gray-500 rounded-full animate-pulse;
+  /* Pipeline visualization */
+  .pipeline-step {
+    @apply relative p-6 bg-gray-900/50 border-2 rounded-xl transition-all;
+  }
+
+  .pipeline-step.completed {
+    @apply border-emerald-500/50 bg-emerald-500/10;
+  }
+
+  .pipeline-step.running {
+    @apply border-yellow-500/50 bg-yellow-500/10;
+  }
+
+  .pipeline-step.failed {
+    @apply border-red-500/50 bg-red-500/10;
+  }
+
+  /* Prose styles for markdown */
+  .prose {
+    @apply max-w-none;
+  }
+
+  .prose p {
+    @apply mb-4 text-white/90 leading-relaxed;
+  }
+
+  .prose code {
+    @apply font-mono text-emerald-400 bg-gray-800/50 px-2 py-1 rounded text-sm;
+  }
+
+  .prose pre {
+    @apply bg-gray-900 border border-gray-800 rounded-lg p-4 overflow-x-auto mb-4;
+  }
+
+  .prose pre code {
+    @apply bg-transparent px-0 py-0;
+  }
+
+  .prose ul, .prose ol {
+    @apply mb-4 pl-6;
+  }
+
+  .prose li {
+    @apply mb-2 text-white/90;
+  }
+
+  .prose h1, .prose h2, .prose h3, .prose h4 {
+    @apply text-white font-bold mb-4 mt-6;
+  }
+
+  .prose blockquote {
+    @apply border-l-4 border-emerald-500 pl-4 italic text-white/70 my-4;
   }
 }

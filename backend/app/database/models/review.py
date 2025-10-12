@@ -31,7 +31,7 @@ class Review(Base):
     sentiment_score = Column(Float, nullable=True)  # -1.0 (negative) to 1.0 (positive)
     
     # Additional metadata (e.g., upvotes, platform-specific data)
-    metadata = Column(JSON, default={}, nullable=False)
+    extra_metadata = Column(JSON, default={}, nullable=False)
 
     # Vector database reference
     vector_id = Column(String, nullable=True, index=True)  # Pinecone vector ID

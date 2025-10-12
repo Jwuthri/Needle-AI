@@ -13,7 +13,7 @@ from rich.traceback import install as install_rich_traceback
 console = Console()
 
 # Install rich traceback for better error display
-install_rich_traceback(show_locals=True)
+install_rich_traceback(show_locals=False)
 
 # Global logger instance
 _logger: Optional[logging.Logger] = None
@@ -31,8 +31,8 @@ def setup_logging(log_level: str = "INFO", environment: str = "development"):
         datefmt="<%d %b %Y | %H:%M:%S>",
         handlers=[
             RichHandler(
-                rich_tracebacks=True,
-                tracebacks_show_locals=True,
+                rich_tracebacks=False,
+                tracebacks_show_locals=False,
                 show_time=True,
                 show_level=True,
                 show_path=True,
@@ -67,8 +67,8 @@ def setup_cli_logging(level: str = "INFO", verbose: bool = False):
         datefmt="<%d %b %Y | %H:%M:%S>",
         handlers=[
             RichHandler(
-                rich_tracebacks=True,
-                tracebacks_show_locals=verbose,
+                rich_tracebacks=False,
+                tracebacks_show_locals=False,
                 show_time=False,
                 show_level=True,
                 show_path=verbose,

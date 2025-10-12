@@ -103,7 +103,7 @@ class LLMCall(Base):
     parent_call_id = Column(String, nullable=True, index=True)  # Parent call if nested
     
     # Metadata for debugging
-    metadata = Column(JSON, nullable=True)  # Additional context
+    extra_metadata = Column(JSON, nullable=True)  # Additional context
     tags = Column(JSON, nullable=True)  # Tags for filtering (e.g., ["production", "rag"])
     
     # Timestamps
