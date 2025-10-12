@@ -35,7 +35,7 @@ def setup_logging(log_level: str = "INFO", environment: str = "development"):
                 tracebacks_show_locals=False,
                 show_time=True,
                 show_level=True,
-                show_path=True,
+                show_path=False,  # Don't show full paths
                 markup=True,
             )
         ],
@@ -47,6 +47,16 @@ def setup_logging(log_level: str = "INFO", environment: str = "development"):
         logger = logging.getLogger(logger_name)
         logger.handlers.clear()
         logger.propagate = True
+
+    # Silence noisy SQLAlchemy logging - only show warnings
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+    logging.getLogger("sqlalchemy.pool").setLevel(logging.WARNING)
+    logging.getLogger("sqlalchemy.dialects").setLevel(logging.WARNING)
+    logging.getLogger("sqlalchemy.orm").setLevel(logging.WARNING)
+    
+    # Keep app config validation at INFO level
+    logging.getLogger("app.config_validation").setLevel(logging.INFO)
+    logging.getLogger("app.database_session").setLevel(logging.INFO)
 
     # Set global logger
     _logger = logging.getLogger("app")

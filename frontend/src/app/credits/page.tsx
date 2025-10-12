@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Coins, CreditCard, TrendingDown, TrendingUp } from 'lucide-react'
 import { useAuth } from '@clerk/nextjs'
@@ -13,13 +14,22 @@ const pricingTiers = [
 ]
 
 export default function CreditsPage() {
-  const { getToken } = useAuth()
+  const router = useRouter()
+  const { isLoaded, isSignedIn, getToken } = useAuth()
   const [balance, setBalance] = useState(0)
   const [transactions, setTransactions] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (isLoaded && !isSignedIn) {
+      router.push('/sign-in')
+    }
+  }, [isLoaded, isSignedIn, router])
+
+  useEffect(() => {
     const fetchData = async () => {
+      if (!isSignedIn) return
+      
       try {
         const token = await getToken()
         const api = createApiClient(token)
@@ -39,9 +49,9 @@ export default function CreditsPage() {
     }
 
     fetchData()
-  }, [getToken])
+  }, [getToken, isSignedIn])
 
-  if (loading) {
+  if (!isLoaded || !isSignedIn || loading) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-950">
         <div className="text-emerald-400 text-lg">Loading credits...</div>

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Table, BarChart3, Calendar, Download } from 'lucide-react'
 import { useAuth } from '@clerk/nextjs'
@@ -12,17 +12,26 @@ type ViewMode = 'table' | 'graph'
 
 export default function AnalyticsPage() {
   const searchParams = useSearchParams()
-  const { getToken } = useAuth()
+  const router = useRouter()
+  const { isLoaded, isSignedIn, getToken } = useAuth()
   const [viewMode, setViewMode] = useState<ViewMode>('table')
   const [selectedCompany, setSelectedCompany] = useState<string | null>(
     searchParams.get('company_id')
   )
   const [companies, setCompanies] = useState<Company[]>([])
   const [analytics, setAnalytics] = useState<any>(null)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (isLoaded && !isSignedIn) {
+      router.push('/sign-in')
+    }
+  }, [isLoaded, isSignedIn, router])
 
   useEffect(() => {
     const fetchCompanies = async () => {
+      if (!isSignedIn) return
+      
       try {
         const token = await getToken()
         const api = createApiClient(token)
@@ -30,15 +39,17 @@ export default function AnalyticsPage() {
         setCompanies(data.companies || [])
       } catch (error) {
         console.error('Failed to fetch companies:', error)
+      } finally {
+        setLoading(false)
       }
     }
 
     fetchCompanies()
-  }, [getToken])
+  }, [getToken, isSignedIn])
 
   useEffect(() => {
     const fetchAnalytics = async () => {
-      if (!selectedCompany) return
+      if (!selectedCompany || !isSignedIn) return
 
       setLoading(true)
       try {
@@ -54,7 +65,15 @@ export default function AnalyticsPage() {
     }
 
     fetchAnalytics()
-  }, [selectedCompany, getToken])
+  }, [selectedCompany, getToken, isSignedIn])
+
+  if (!isLoaded || !isSignedIn) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-950">
+        <div className="text-emerald-400 text-lg">Loading...</div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gray-950 p-8">

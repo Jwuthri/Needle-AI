@@ -48,7 +48,7 @@ def create_async_database_engine() -> AsyncEngine:
         # In-memory SQLite for testing
         return create_async_engine(
             "sqlite+aiosqlite:///:memory:",
-            echo=settings.environment == "development",
+            echo=False,  # Use Rich logging instead
             poolclass=StaticPool,
             connect_args={"check_same_thread": False},
             future=True
@@ -60,7 +60,7 @@ def create_async_database_engine() -> AsyncEngine:
         # SQLite configuration
         return create_async_engine(
             database_url,
-            echo=settings.environment == "development",
+            echo=False,  # Use Rich logging instead
             poolclass=StaticPool,
             connect_args={"check_same_thread": False},
             future=True
@@ -69,7 +69,7 @@ def create_async_database_engine() -> AsyncEngine:
         # PostgreSQL configuration
         return create_async_engine(
             database_url,
-            echo=settings.environment == "development",
+            echo=False,  # Use Rich logging instead
             pool_size=20,
             max_overflow=30,
             pool_pre_ping=True,
@@ -80,7 +80,7 @@ def create_async_database_engine() -> AsyncEngine:
         # Generic configuration
         return create_async_engine(
             database_url,
-            echo=settings.environment == "development",
+            echo=False,  # Use Rich logging instead
             future=True
         )
 

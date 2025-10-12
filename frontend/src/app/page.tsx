@@ -6,10 +6,16 @@ import { MessageCircle, BarChart3, Database, Sparkles, ArrowRight } from 'lucide
 import Link from 'next/link'
 import { SignInButton, SignUpButton, useUser } from '@clerk/nextjs'
 import { useRouter } from 'next/navigation'
+import { Logo } from '@/components/ui/logo'
+import { Button } from '@/components/ui/button'
+import { useUserSync } from '@/hooks/use-user-sync'
 
 export default function LandingPage() {
   const { isSignedIn } = useUser()
   const router = useRouter()
+  
+  // Sync user to database when they sign in
+  useUserSync()
 
   React.useEffect(() => {
     if (isSignedIn) {
@@ -21,22 +27,19 @@ export default function LandingPage() {
     <div className="min-h-screen bg-gradient-to-br from-gray-950 via-blue-950 to-purple-950">
       {/* Navigation */}
       <nav className="flex items-center justify-between px-6 py-4 border-b border-gray-800/50">
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-green-600 rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold text-xl">N</span>
-          </div>
-          <span className="text-white font-bold tracking-wider text-xl">NeedleAI</span>
-        </div>
+        <Link href="/" className="flex items-center">
+          <Logo className="h-10" />
+        </Link>
         <div className="flex items-center space-x-4">
           <SignInButton mode="modal">
-            <button className="text-white/80 hover:text-white transition-colors px-4 py-2">
+            <Button variant="ghost" size="sm">
               Sign In
-            </button>
+            </Button>
           </SignInButton>
           <SignUpButton mode="modal">
-            <button className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white rounded-lg transition-all duration-200">
+            <Button variant="primary" size="sm">
               Get Started
-            </button>
+            </Button>
           </SignUpButton>
         </div>
       </nav>
@@ -71,10 +74,10 @@ export default function LandingPage() {
             className="mb-16"
           >
             <SignUpButton mode="modal">
-              <button className="px-8 py-4 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white font-medium rounded-lg transition-all duration-200 hover:scale-105 text-lg inline-flex items-center space-x-2">
+              <Button size="lg" className="hover:scale-105">
                 <span>Start Analyzing</span>
                 <ArrowRight className="w-5 h-5" />
-              </button>
+              </Button>
             </SignUpButton>
           </motion.div>
 

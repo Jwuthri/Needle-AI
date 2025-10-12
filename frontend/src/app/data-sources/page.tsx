@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Upload, Play, Clock, CheckCircle, XCircle } from 'lucide-react'
 import { useAuth } from '@clerk/nextjs'
@@ -10,17 +10,26 @@ import { Company } from '@/types/company'
 
 export default function DataSourcesPage() {
   const searchParams = useSearchParams()
-  const { getToken } = useAuth()
+  const router = useRouter()
+  const { isLoaded, isSignedIn, getToken } = useAuth()
   const [selectedCompany, setSelectedCompany] = useState<string | null>(
     searchParams.get('company_id')
   )
   const [companies, setCompanies] = useState<Company[]>([])
   const [sources, setSources] = useState<any[]>([])
   const [jobs, setJobs] = useState<any[]>([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (isLoaded && !isSignedIn) {
+      router.push('/sign-in')
+    }
+  }, [isLoaded, isSignedIn, router])
 
   useEffect(() => {
     const fetchData = async () => {
+      if (!isSignedIn) return
+      
       try {
         const token = await getToken()
         const api = createApiClient(token)
@@ -36,11 +45,21 @@ export default function DataSourcesPage() {
         setJobs(jobsData.jobs || [])
       } catch (error) {
         console.error('Failed to fetch data:', error)
+      } finally {
+        setLoading(false)
       }
     }
 
     fetchData()
-  }, [getToken, selectedCompany])
+  }, [getToken, selectedCompany, isSignedIn])
+
+  if (!isLoaded || !isSignedIn || loading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-950">
+        <div className="text-emerald-400 text-lg">Loading...</div>
+      </div>
+    )
+  }
 
   const getJobStatusIcon = (status: string) => {
     switch (status) {

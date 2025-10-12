@@ -12,13 +12,21 @@ import { CompanyFormModal } from '@/components/companies/company-form-modal'
 export default function CompanyDetailPage() {
   const params = useParams()
   const router = useRouter()
-  const { getToken } = useAuth()
+  const { isLoaded, isSignedIn, getToken } = useAuth()
   const [company, setCompany] = useState<Company | null>(null)
   const [loading, setLoading] = useState(true)
   const [showEditModal, setShowEditModal] = useState(false)
   const companyId = params.id as string
 
+  useEffect(() => {
+    if (isLoaded && !isSignedIn) {
+      router.push('/sign-in')
+    }
+  }, [isLoaded, isSignedIn, router])
+
   const fetchCompany = async () => {
+    if (!isSignedIn) return
+    
     try {
       const token = await getToken()
       const api = createApiClient(token)
@@ -32,10 +40,10 @@ export default function CompanyDetailPage() {
   }
 
   useEffect(() => {
-    if (companyId) {
+    if (companyId && isSignedIn) {
       fetchCompany()
     }
-  }, [companyId, getToken])
+  }, [companyId, getToken, isSignedIn])
 
   const handleDelete = async () => {
     if (!confirm(`Are you sure you want to delete ${company?.name}?`)) return
@@ -51,7 +59,7 @@ export default function CompanyDetailPage() {
     }
   }
 
-  if (loading) {
+  if (!isLoaded || !isSignedIn || loading) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-950">
         <div className="text-emerald-400 text-lg">Loading company...</div>

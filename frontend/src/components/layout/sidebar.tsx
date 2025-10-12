@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { Logo } from '@/components/ui/logo'
 
 interface SidebarProps {
   conversations?: Array<{
@@ -43,18 +44,16 @@ export function Sidebar({ conversations = [] }: SidebarProps) {
     >
       {/* Logo/Brand */}
       <div className="p-6 border-b border-gray-800">
-        <Link href="/dashboard" className="flex items-center space-x-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-green-600 rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold text-xl">N</span>
-          </div>
-          {!isCollapsed && (
-            <motion.span
+        <Link href="/dashboard" className="flex items-center justify-center">
+          {isCollapsed ? (
+            <Logo variant="minimal" className="w-10 h-10" />
+          ) : (
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="text-white font-bold text-lg tracking-wide"
             >
-              NeedleAI
-            </motion.span>
+              <Logo className="h-8" />
+            </motion.div>
           )}
         </Link>
       </div>

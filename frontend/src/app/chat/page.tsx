@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { MessageSquare, GitBranch } from 'lucide-react'
 import { ChatView } from '@/components/chat/chat-view'
 import { TreeView } from '@/components/chat/tree-view'
@@ -13,7 +13,8 @@ type ViewMode = 'chat' | 'tree'
 
 export default function ChatPage() {
   const searchParams = useSearchParams()
-  const { getToken } = useAuth()
+  const router = useRouter()
+  const { isLoaded, isSignedIn, getToken } = useAuth()
   const [viewMode, setViewMode] = useState<ViewMode>('chat')
   const [selectedCompany, setSelectedCompany] = useState<string | null>(
     searchParams.get('company_id')
@@ -21,8 +22,17 @@ export default function ChatPage() {
   const [companies, setCompanies] = useState<Company[]>([])
   const [sessionId, setSessionId] = useState<string>()
 
+  // Redirect to sign-in if not authenticated
+  useEffect(() => {
+    if (isLoaded && !isSignedIn) {
+      router.push('/sign-in')
+    }
+  }, [isLoaded, isSignedIn, router])
+
   useEffect(() => {
     const fetchCompanies = async () => {
+      if (!isSignedIn) return
+      
       try {
         const token = await getToken()
         const api = createApiClient(token)
@@ -34,7 +44,16 @@ export default function ChatPage() {
     }
 
     fetchCompanies()
-  }, [getToken])
+  }, [getToken, isSignedIn])
+
+  // Show loading state while checking authentication
+  if (!isLoaded || !isSignedIn) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-gray-950">
+        <div className="text-gray-400">Loading...</div>
+      </div>
+    )
+  }
 
   return (
     <div className="h-screen flex flex-col bg-gray-950">

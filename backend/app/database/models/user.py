@@ -32,7 +32,6 @@ class User(Base):
     full_name = Column(String(255), nullable=True)
     hashed_password = Column(String(255), nullable=True)
     status = Column(SQLEnum(UserStatusEnum), default=UserStatusEnum.ACTIVE)
-    is_superuser = Column(Boolean, default=False)
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -42,10 +41,6 @@ class User(Base):
     # User preferences and metadata
     preferences = Column(JSON, default={})
     extra_metadata = Column(JSON, default={})
-
-    # API usage tracking
-    total_requests = Column(Integer, default=0)
-    total_tokens_used = Column(Integer, default=0)
 
     # Relationships
     chat_sessions = relationship("ChatSession", back_populates="user", cascade="all, delete-orphan")

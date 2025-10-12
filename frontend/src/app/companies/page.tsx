@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Plus, Search } from 'lucide-react'
 import { useAuth } from '@clerk/nextjs'
@@ -10,13 +11,22 @@ import { CompanyFormModal } from '@/components/companies/company-form-modal'
 import { Company } from '@/types/company'
 
 export default function CompaniesPage() {
-  const { getToken } = useAuth()
+  const router = useRouter()
+  const { isLoaded, isSignedIn, getToken } = useAuth()
   const [companies, setCompanies] = useState<Company[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
 
+  useEffect(() => {
+    if (isLoaded && !isSignedIn) {
+      router.push('/sign-in')
+    }
+  }, [isLoaded, isSignedIn, router])
+
   const fetchCompanies = async () => {
+    if (!isSignedIn) return
+    
     try {
       const token = await getToken()
       const api = createApiClient(token)
@@ -31,7 +41,7 @@ export default function CompaniesPage() {
 
   useEffect(() => {
     fetchCompanies()
-  }, [getToken])
+  }, [getToken, isSignedIn])
 
   const handleCreateCompany = () => {
     setShowCreateModal(false)
@@ -43,7 +53,7 @@ export default function CompaniesPage() {
     company.domain.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
-  if (loading) {
+  if (!isLoaded || !isSignedIn || loading) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-950">
         <div className="text-emerald-400 text-lg">Loading companies...</div>

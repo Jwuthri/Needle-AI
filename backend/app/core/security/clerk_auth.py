@@ -67,7 +67,16 @@ class ClerkAuthProvider:
         self.settings = settings
         self.jwks_cache: Optional[Dict[str, Any]] = None
         self.jwks_cache_expiry: Optional[datetime] = None
-        self.jwks_url = "https://clerk.dev/.well-known/jwks.json"
+        
+        # Construct JWKS URL based on configuration
+        if settings.clerk_frontend_api_url:
+            # Use Frontend API URL + /.well-known/jwks.json
+            self.jwks_url = f"{settings.clerk_frontend_api_url.rstrip('/')}/.well-known/jwks.json"
+            logger.info(f"Using Clerk Frontend API for JWKS: {self.jwks_url}")
+        else:
+            # Fall back to Backend API endpoint (works for all instances)
+            self.jwks_url = "https://api.clerk.com/v1/jwks"
+            logger.info("Using Clerk Backend API for JWKS (no frontend API URL configured)")
 
     async def get_jwks(self) -> Dict[str, Any]:
         """Get JWKS (JSON Web Key Set) from Clerk, with caching."""
@@ -80,8 +89,13 @@ class ClerkAuthProvider:
             return self.jwks_cache
 
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(self.jwks_url, timeout=10.0)
+            # Prepare headers - Backend API requires authentication
+            headers = {}
+            if "api.clerk.com" in self.jwks_url and self.settings.clerk_secret_key:
+                headers["Authorization"] = f"Bearer {self.settings.clerk_secret_key.get_secret_value()}"
+            
+            async with httpx.AsyncClient(follow_redirects=True) as client:
+                response = await client.get(self.jwks_url, headers=headers, timeout=10.0)
                 response.raise_for_status()
 
                 self.jwks_cache = response.json()
@@ -129,9 +143,33 @@ class ClerkAuthProvider:
                 options={"verify_aud": False}  # Clerk doesn't use standard aud claim
             )
 
-            # Create and return ClerkUser
+            # Debug: Log what fields we got from Clerk
+            logger.debug(f"Clerk JWT fields: {list(decoded_token.keys())}")
+            logger.debug(f"Clerk JWT data: {decoded_token}")
+
+            # Create ClerkUser from JWT
             user = ClerkUser(decoded_token)
-            logger.info(f"Successfully verified token for user: {user.id}")
+            
+            # If email is missing, fetch full user details from Clerk API
+            if not user.email or not user.full_name:
+                logger.info(f"JWT missing user details, fetching from Clerk API for user: {user.id}")
+                try:
+                    full_user_data = await self.get_user_by_id(user.id)
+                    if full_user_data:
+                        # Merge API data with JWT data
+                        decoded_token.update({
+                            "email": full_user_data.get("email_addresses", [{}])[0].get("email_address", ""),
+                            "username": full_user_data.get("username", ""),
+                            "given_name": full_user_data.get("first_name", ""),
+                            "family_name": full_user_data.get("last_name", ""),
+                            "picture": full_user_data.get("image_url", ""),
+                        })
+                        user = ClerkUser(decoded_token)
+                        logger.info(f"Fetched full user details from Clerk API")
+                except Exception as e:
+                    logger.warning(f"Failed to fetch full user details: {e}")
+            
+            logger.info(f"Successfully verified token for user: {user.id} (email: {user.email})")
 
             return user
 
@@ -156,7 +194,7 @@ class ClerkAuthProvider:
 
             async with httpx.AsyncClient() as client:
                 response = await client.get(
-                    f"https://api.clerk.dev/v1/users/{user_id}",
+                    f"https://api.clerk.com/v1/users/{user_id}",
                     headers=headers,
                     timeout=10.0
                 )
@@ -245,7 +283,7 @@ async def _get_db_session():
     """Internal helper to get database session."""
     from app.database.session import get_async_db_session
     async for session in get_async_db_session():
-        return session
+        yield session
 
 
 async def get_current_db_user(
@@ -280,10 +318,12 @@ async def get_current_db_user(
         # Sync to database
         db_user = None
         try:
-            db_user = await UserSyncService.sync_clerk_user(db, clerk_user)
+            db_user = await UserSyncService.sync_clerk_user(db, clerk_user, commit=False)
+            await db.commit()  # Explicitly commit the transaction
             logger.debug(f"Synced user {clerk_user.id} to database")
         except Exception as e:
             logger.error(f"Failed to sync user {clerk_user.id} to database: {e}")
+            await db.rollback()
             # Don't fail auth if DB sync fails - graceful degradation
         
         return (clerk_user, db_user)
@@ -329,10 +369,12 @@ async def require_current_db_user(
         
         # Sync to database (required)
         try:
-            db_user = await UserSyncService.sync_clerk_user(db, clerk_user)
+            db_user = await UserSyncService.sync_clerk_user(db, clerk_user, commit=False)
+            await db.commit()  # Explicitly commit the transaction
             logger.info(f"Synced user {clerk_user.id} ({clerk_user.email}) to database")
         except Exception as e:
             logger.error(f"Failed to sync user {clerk_user.id} to database: {e}", exc_info=True)
+            await db.rollback()
             raise HTTPException(
                 status_code=500,
                 detail="Failed to sync user to database"

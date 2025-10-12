@@ -28,12 +28,15 @@ from app.models.base import APIInfo
 from fastapi import FastAPI
 
 
-from .utils.logging import get_logger
-
-logger = get_logger("main")
+from .utils.logging import get_logger, setup_logging
 
 # Get settings
 settings = get_settings()
+
+# Setup logging FIRST before anything else
+setup_logging(log_level=settings.log_level, environment=settings.environment)
+
+logger = get_logger("main")
 
 
 @asynccontextmanager

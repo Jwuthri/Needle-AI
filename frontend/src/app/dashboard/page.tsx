@@ -1,14 +1,28 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Building2, MessageSquare, Database, TrendingUp, Plus, Activity } from 'lucide-react'
 import Link from 'next/link'
 import { useAuth } from '@clerk/nextjs'
 import { createApiClient } from '@/lib/api'
+import { useUserSync } from '@/hooks/use-user-sync'
 
 export default function DashboardPage() {
-  const { getToken } = useAuth()
+  const router = useRouter()
+  const { isLoaded, isSignedIn, getToken } = useAuth()
+  
+  // Redirect to sign-in if not authenticated
+  useEffect(() => {
+    if (isLoaded && !isSignedIn) {
+      router.push('/sign-in')
+    }
+  }, [isLoaded, isSignedIn, router])
+  
+  // Sync user to database when they land on dashboard
+  useUserSync()
+  
   const [stats, setStats] = useState({
     totalCompanies: 0,
     totalReviews: 0,
@@ -20,6 +34,8 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const fetchDashboardData = async () => {
+      if (!isSignedIn) return
+      
       try {
         const token = await getToken()
         const api = createApiClient(token)
@@ -60,9 +76,10 @@ export default function DashboardPage() {
     }
 
     fetchDashboardData()
-  }, [getToken])
+  }, [getToken, isSignedIn])
 
-  if (loading) {
+  // Show loading state while checking authentication or loading data
+  if (!isLoaded || !isSignedIn || loading) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-950">
         <div className="text-emerald-400 text-lg">Loading dashboard...</div>

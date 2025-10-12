@@ -168,7 +168,7 @@ class BaseAppException(Exception):
             "status_code": self.status_code,
             "retryable": self.retryable,
             "details": [detail.dict() for detail in self.details],
-            "context": self.context.dict(exclude={"stack_trace"}),  # Exclude stack trace from public output
+            "context": self.context.dict(exclude={"stack_trace", "timestamp"}),  # Exclude datetime fields
             "timestamp": self.context.timestamp.isoformat()
         }
 

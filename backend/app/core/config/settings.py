@@ -182,6 +182,10 @@ class Settings(BaseSettings):
     clerk_publishable_key: str = Field(default="", description="Clerk publishable key")
     clerk_secret_key: Optional[SecretStr] = Field(default=None, description="Clerk secret key")
     clerk_jwt_key: Optional[SecretStr] = Field(default=None, description="Clerk JWT verification key")
+    clerk_frontend_api_url: Optional[str] = Field(
+        default=None, 
+        description="Clerk Frontend API URL (e.g., https://your-domain.clerk.accounts.dev)"
+    )
 
     # Rate Limiting
     rate_limit_requests: int = Field(default=100, ge=1, le=10000, description="Requests per time window")

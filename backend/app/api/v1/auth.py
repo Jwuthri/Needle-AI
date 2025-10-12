@@ -12,6 +12,8 @@ from app.core.security.clerk_auth import (
     get_clerk_provider,
     get_current_user,
     require_current_user,
+    require_current_db_user,
+    get_current_db_user,
 )
 from app.utils.logging import get_logger
 from fastapi import APIRouter, Depends, Request
@@ -94,36 +96,38 @@ class ClerkConfigResponse(BaseModel):
 
 @router.get("/me", response_model=UserProfileResponse)
 async def get_current_user_profile(
-    current_user: ClerkUser = Depends(require_current_user),
-    request: Request = None
+    user_data: tuple = Depends(require_current_db_user)
 ) -> UserProfileResponse:
     """
-    Get the current authenticated user's profile.
+    Get the current authenticated user's profile and sync to database.
 
     Requires valid JWT token in Authorization header.
+    This endpoint automatically creates/updates the user in the database.
+    
+    Call this endpoint after user login to ensure the user is synced to the database.
     """
-    try:
-        user_data = current_user.to_dict()
+    clerk_user, db_user = user_data
+    user_dict = clerk_user.to_dict()
+    
+    logger.info(f"User profile retrieved: {clerk_user.email} (DB ID: {db_user.id})")
 
-        return UserProfileResponse(
-            id=user_data["id"],
-            email=user_data["email"],
-            username=user_data["username"],
-            first_name=user_data["first_name"],
-            last_name=user_data["last_name"],
-            full_name=user_data["full_name"],
-            image_url=user_data["image_url"],
-            created_at=user_data["created_at"],
-            updated_at=user_data["updated_at"],
-            metadata=user_data["metadata"]
-        )
-
-    except Exception as e:
-        logger.error(f"Error getting user profile: {e}")
-        return APIResponseWrapper.server_error(
-            message="Failed to retrieve user profile",
-            request=request
-        )
+    return UserProfileResponse(
+        id=user_dict["id"],
+        email=user_dict["email"],
+        username=user_dict["username"],
+        first_name=user_dict["first_name"],
+        last_name=user_dict["last_name"],
+        full_name=user_dict["full_name"],
+        image_url=user_dict["image_url"],
+        created_at=user_dict["created_at"],
+        updated_at=user_dict["updated_at"],
+        metadata={
+            **user_dict["metadata"],
+            "database_synced": True,
+            "database_id": db_user.id,
+            "last_login": db_user.last_login_at.isoformat() if db_user.last_login_at else None
+        }
+    )
 
 
 @router.get("/status", response_model=AuthStatusResponse)
