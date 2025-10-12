@@ -20,11 +20,170 @@ from app.services.conversation_service import ConversationService
 from app.services.llm_logger import LLMLogger
 from app.database.models.llm_call import LLMCallTypeEnum
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
+import json
 from app.utils.logging import get_logger
 
 logger = get_logger("chat_api")
 
 router = APIRouter()
+
+
+@router.post("/stream")
+async def send_message_stream(
+    request: ChatRequest,
+    orchestrator = Depends(get_orchestrator_service),
+    current_user: Optional[ClerkUser] = Depends(get_current_user),
+    _rate_limit_check = Depends(check_rate_limit),
+    db = Depends(get_db)
+):
+    """
+    Send a message to the chat and get streaming AI responses.
+    
+    Returns Server-Sent Events (SSE) stream with:
+    - status updates (analyzing, retrieving data, etc.)
+    - content chunks (streaming response text)
+    - tree_update (execution tree updates)
+    - complete (final response with metadata)
+    - error (if something goes wrong)
+    
+    Each event is JSON with {type, data} structure.
+    """
+    try:
+        # breakpoint()
+        from app.database.repositories.chat_session import ChatSessionRepository
+        from app.database.repositories.chat_message import ChatMessageRepository
+        from app.database.models.chat_message import MessageRoleEnum
+        import uuid
+        
+        user_id = current_user.id if current_user else None
+        
+        # Ensure session exists in database
+        session_id = request.session_id or str(uuid.uuid4())
+        db_session = await ChatSessionRepository.get_by_id(db, session_id)
+        if not db_session:
+            # Create session with company_id in metadata
+            db_session = await ChatSessionRepository.create(
+                db, 
+                user_id=user_id, 
+                id=session_id,
+                extra_metadata={"company_id": request.company_id} if request.company_id else {}
+            )
+            await db.commit()
+            logger.info(f"Created database session {session_id}")
+        
+        # Save user message to database
+        user_message = await ChatMessageRepository.create(
+            db=db,
+            session_id=session_id,
+            content=request.message,
+            role=MessageRoleEnum.USER
+        )
+        await db.commit()
+        logger.info(f"Saved user message {user_message.id} to database")
+        
+        # Stream processing function - doesn't use DB for streaming, only for final save
+        async def event_stream():
+            from app.database.session import get_async_session
+            from datetime import datetime, date
+            import asyncio
+            
+            def make_json_serializable(obj):
+                """Recursively convert any object to be JSON serializable."""
+                if obj is None:
+                    return None
+                elif isinstance(obj, (datetime, date)):
+                    return obj.isoformat()
+                elif hasattr(obj, "model_dump"):
+                    # Pydantic model
+                    return obj.model_dump(mode='json')
+                elif isinstance(obj, dict):
+                    return {k: make_json_serializable(v) for k, v in obj.items()}
+                elif isinstance(obj, (list, tuple)):
+                    return [make_json_serializable(item) for item in obj]
+                elif isinstance(obj, (str, int, float, bool)):
+                    return obj
+                else:
+                    # For any other type, try str() as fallback
+                    return str(obj)
+            
+            accumulated_content = ""
+            final_tree = None
+            update_count = 0
+            
+            try:
+                # Send initial connection confirmation
+                yield f"data: {json.dumps({'type': 'connected', 'data': {}})}\n\n"
+                
+                # Process stream without database (to avoid session lifecycle issues)
+                async for update in orchestrator.process_message_stream(
+                    request=request,
+                    user_id=user_id,
+                    db=None  # No DB during streaming to avoid lifecycle issues
+                ):
+                    update_count += 1
+                    
+                    # Accumulate content for database storage
+                    if update["type"] == "content":
+                        accumulated_content += update["data"]["content"]
+                        logger.debug(f"Streaming content update #{update_count}: {len(update['data']['content'])} chars")
+                    elif update["type"] == "tree_update":
+                        final_tree = update["data"]
+                    
+                    # Make entire update JSON serializable
+                    serializable_update = make_json_serializable(update)
+                    
+                    # Yield the SSE data
+                    sse_data = f"data: {json.dumps(serializable_update)}\n\n"
+                    yield sse_data
+                    
+                    # Force a small delay to ensure data is flushed
+                    # This helps with buffering issues
+                    if update["type"] == "content":
+                        await asyncio.sleep(0.001)  # 1ms delay for content chunks
+                
+                logger.info(f"Stream completed: {update_count} updates sent, {len(accumulated_content)} chars total")
+                
+                # Save final response to database in a separate session
+                if accumulated_content:
+                    try:
+                        async with get_async_session() as save_db:
+                            assistant_message = await ChatMessageRepository.create(
+                                db=save_db,
+                                session_id=session_id,
+                                content=accumulated_content,
+                                role=MessageRoleEnum.ASSISTANT,
+                                metadata={"execution_tree": final_tree} if final_tree else None
+                            )
+                            await save_db.commit()
+                            logger.info(f"Saved assistant message {assistant_message.id} to database")
+                    except Exception as db_error:
+                        logger.error(f"Failed to save final message to DB: {db_error}")
+                
+            except Exception as e:
+                logger.error(f"Stream error: {e}", exc_info=True)
+                error_event = {
+                    "type": "error",
+                    "data": {"error": str(e)}
+                }
+                yield f"data: {json.dumps(error_event)}\n\n"
+        
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"  # Disable nginx buffering
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Chat stream error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Stream failed: {str(e)}"
+        )
 
 
 @router.post("/", response_model=ChatResponse)

@@ -418,6 +418,58 @@ class Settings(BaseSettings):
             base_url = re.sub(r'/\d+$', f'/{db}', base_url)
 
         return base_url
+    
+    def parse_database_url(self) -> Dict[str, str]:
+        """
+        Parse database URL into components.
+        
+        Returns:
+            Dictionary with host, port, user, password, and database name
+        """
+        if not self.database_url:
+            return {
+                "user": "postgres",
+                "password": "",
+                "host": "localhost",
+                "port": "5432",
+                "database": "needleai"
+            }
+        
+        # Parse PostgreSQL URL: postgresql://user:password@host:port/database
+        # or SQLite: sqlite:///path/to/db.sqlite
+        if self.database_url.startswith("sqlite"):
+            return {
+                "user": "",
+                "password": "",
+                "host": "",
+                "port": "",
+                "database": self.database_url.split("///")[-1]
+            }
+        
+        # Parse PostgreSQL-style URL
+        match = re.match(
+            r'(?:postgresql|postgres)://(?:([^:]+):([^@]+)@)?([^:/]+)(?::(\d+))?/(.+)',
+            self.database_url
+        )
+        
+        if match:
+            user, password, host, port, database = match.groups()
+            return {
+                "user": user or "postgres",
+                "password": password or "",
+                "host": host or "localhost",
+                "port": port or "5432",
+                "database": database or "needleai"
+            }
+        
+        # Fallback defaults
+        return {
+            "user": "postgres",
+            "password": "",
+            "host": "localhost",
+            "port": "5432",
+            "database": "needleai"
+        }
 
     # Pydantic v2 Model Configuration (updated from v1 Config class)
     model_config = SettingsConfigDict(

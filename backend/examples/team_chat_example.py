@@ -96,11 +96,11 @@ class LLMTeamChat:
     async def _create_shared_db(self) -> Optional[PostgresDb]:
         """Create shared database for team persistence."""
         try:
-            password = self.settings.get_secret("database_password")
+            db_config = self.settings.parse_database_url()
             db_url = (
-                f"postgresql+psycopg://{self.settings.database_user}:{password}"
-                f"@{self.settings.database_host}:{self.settings.database_port}"
-                f"/{self.settings.database_name}"
+                f"postgresql+psycopg://{db_config['user']}:{db_config['password']}"
+                f"@{db_config['host']}:{db_config['port']}"
+                f"/{db_config['database']}"
             )
             
             db = PostgresDb(

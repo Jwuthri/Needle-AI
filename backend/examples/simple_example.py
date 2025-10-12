@@ -87,11 +87,11 @@ async def persistent_memory_example():
     settings = get_settings()
     
     # Create PostgreSQL DB for persistence
-    password = settings.get_secret("database_password")
+    db_config = settings.parse_database_url()
     db_url = (
-        f"postgresql+psycopg://{settings.database_user}:{password}"
-        f"@{settings.database_host}:{settings.database_port}"
-        f"/{settings.database_name}"
+        f"postgresql+psycopg://{db_config['user']}:{db_config['password']}"
+        f"@{db_config['host']}:{db_config['port']}"
+        f"/{db_config['database']}"
     )
     
     postgres_db = PostgresDb(

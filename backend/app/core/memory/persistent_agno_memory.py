@@ -122,11 +122,11 @@ class PersistentAgnoMemory:
 
     def _get_postgres_url(self) -> str:
         """Get PostgreSQL connection URL."""
-        password = self.settings.get_secret("database_password")
+        db_config = self.settings.parse_database_url()
         return (
-            f"postgresql://{self.settings.database_user}:{password}"
-            f"@{self.settings.database_host}:{self.settings.database_port}"
-            f"/{self.settings.database_name}"
+            f"postgresql://{db_config['user']}:{db_config['password']}"
+            f"@{db_config['host']}:{db_config['port']}"
+            f"/{db_config['database']}"
         )
 
     def _get_instructions(self) -> str:
@@ -203,15 +203,17 @@ class PersistenceStrategy:
 # Production configuration examples
 def get_production_memory_config(settings: Any) -> dict:
     """Get production-ready memory configuration."""
+    
+    db_config = settings.parse_database_url()
 
     return {
         # PostgreSQL configuration for persistence (primary)
         "postgres": {
-            "host": settings.database_host,
-            "port": settings.database_port,
-            "database": settings.database_name,
-            "user": settings.database_user,
-            "password": settings.get_secret("database_password"),
+            "host": db_config['host'],
+            "port": db_config['port'],
+            "database": db_config['database'],
+            "user": db_config['user'],
+            "password": db_config['password'],
             
             # Backup settings
             "backup_enabled": True,
