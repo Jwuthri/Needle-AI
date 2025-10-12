@@ -100,8 +100,8 @@ class ConfigValidator:
         try:
             parsed = urlparse(self.settings.redis_url)
 
-            if parsed.scheme != "redis":
-                self._add_error("redis_url", f"Invalid Redis scheme: {parsed.scheme}", parsed.scheme)
+            if parsed.scheme not in ("redis", "rediss"):
+                self._add_error("redis_url", f"Invalid Redis scheme: {parsed.scheme}. Must be 'redis://' or 'rediss://'", parsed.scheme)
 
             # Check connection parameters
             if self.settings.redis_max_connections < 1:

@@ -8,7 +8,8 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 try:
-    from agno import Agent
+    from agno.agent import Agent
+    from agno.models.openrouter import OpenRouter
     AGNO_AVAILABLE = True
 except ImportError:
     AGNO_AVAILABLE = False
@@ -57,22 +58,17 @@ class RAGChatService:
             api_key = self.settings.get_secret("openrouter_api_key")
             if not api_key:
                 raise ConfigurationError("OpenRouter API key not configured")
+            
+            api_key_str = str(api_key) if hasattr(api_key, '__str__') else api_key
 
             self.agent = Agent(
-                model=self.settings.default_model,
-                provider="openrouter",
-                api_key=api_key,
-                
+                model=OpenRouter(
+                    id=self.settings.default_model,
+                    api_key=api_key_str,
+                ),
                 instructions=self._get_agent_instructions(),
-                
-                # Agent configuration
-                temperature=0.7,
-                max_tokens=self.settings.max_tokens,
                 structured_outputs=False,
                 debug=self.settings.debug,
-                
-                # Performance
-                max_retries=3,
             )
 
             self._initialized = True
@@ -196,8 +192,8 @@ If the context doesn't contain enough information, acknowledge this limitation.
             step_start = time.time()
             prompt = self._build_prompt(query, context, query_type)
             
-            response = await self.agent.run(
-                message=prompt,
+            response = await self.agent.arun(
+                prompt,
                 session_id=request.session_id or "default"
             )
 

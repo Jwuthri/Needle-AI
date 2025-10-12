@@ -35,14 +35,18 @@ async def analyze_sentiment_batch_async(task: Task, review_ids: List[str]) -> di
     settings = get_settings()
     
     try:
-        from agno import Agent
+        from agno.agent import Agent
+        from agno.models.openrouter import OpenRouter
         
-        # Create sentiment analysis agent
+        # Create sentiment analysis agent with latest API
         api_key = settings.get_secret("openrouter_api_key")
+        api_key_str = str(api_key) if hasattr(api_key, '__str__') else api_key
+        
         agent = Agent(
-            model=settings.default_model,
-            provider="openrouter",
-            api_key=api_key,
+            model=OpenRouter(
+                id=settings.default_model,
+                api_key=api_key_str,
+            ),
             instructions="""
             You are a sentiment analysis expert. Analyze the sentiment of customer reviews and provide a score.
             
@@ -55,8 +59,6 @@ async def analyze_sentiment_batch_async(task: Task, review_ids: List[str]) -> di
             
             Respond with ONLY a number between -1.0 and 1.0.
             """,
-            temperature=0.3,  # Lower temperature for consistent scoring
-            max_tokens=10
         )
         
     except ImportError:
@@ -74,9 +76,9 @@ async def analyze_sentiment_batch_async(task: Task, review_ids: List[str]) -> di
                 if not review or review.sentiment_score is not None:
                     continue  # Skip if already analyzed
 
-                # Analyze sentiment with LLM
+                # Analyze sentiment with LLM using async arun()
                 prompt = f"Review: {review.content[:500]}"  # Truncate long reviews
-                response = await agent.run(message=prompt)
+                response = await agent.arun(prompt)
                 
                 # Parse sentiment score
                 try:

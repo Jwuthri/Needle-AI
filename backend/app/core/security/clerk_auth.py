@@ -92,7 +92,7 @@ class ClerkAuthProvider:
             # Prepare headers - Backend API requires authentication
             headers = {}
             if "api.clerk.com" in self.jwks_url and self.settings.clerk_secret_key:
-                headers["Authorization"] = f"Bearer {self.settings.clerk_secret_key.get_secret_value()}"
+                headers["Authorization"] = f"Bearer {self.settings.clerk_secret_key}"
             
             async with httpx.AsyncClient(follow_redirects=True) as client:
                 response = await client.get(self.jwks_url, headers=headers, timeout=10.0)

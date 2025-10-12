@@ -6,7 +6,8 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 try:
-    from agno import Agent
+    from agno.agent import Agent
+    from agno.models.openrouter import OpenRouter
     AGNO_AVAILABLE = True
 except ImportError:
     AGNO_AVAILABLE = False
@@ -46,11 +47,14 @@ class AnalyticsService:
             api_key = self.settings.get_secret("openrouter_api_key")
             if not api_key:
                 raise ConfigurationError("OpenRouter API key not configured")
+            
+            api_key_str = str(api_key) if hasattr(api_key, '__str__') else api_key
 
             self.agent = Agent(
-                model=self.settings.default_model,
-                provider="openrouter",
-                api_key=api_key,
+                model=OpenRouter(
+                    id=self.settings.default_model,
+                    api_key=api_key_str,
+                ),
                 instructions="""
                 You are a product analytics expert specializing in customer feedback analysis.
                 
@@ -64,8 +68,6 @@ class AnalyticsService:
                 Provide actionable, data-driven insights in a concise format.
                 Focus on what matters most to product improvement.
                 """,
-                temperature=0.7,
-                max_tokens=1000
             )
 
             logger.info("Analytics service initialized")
@@ -196,7 +198,7 @@ Provide a JSON response with:
 Format as JSON.
 """
 
-            response = await self.agent.run(message=prompt)
+            response = await self.agent.arun(prompt)
             
             # Parse response (simplified - in production, use structured output)
             if isinstance(response, str):

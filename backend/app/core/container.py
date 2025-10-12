@@ -239,10 +239,23 @@ def _configure_services(container: DIContainer):
         lifetime=ServiceLifetime.SCOPED,
         factory=_create_chat_service
     )
-    container.register_scoped(ConversationService)
+    container.register_scoped(ConversationService, factory=_create_conversation_service)
     container.register_scoped(MemoryInterface, factory=_create_memory_store)
 
     logger.info("All services registered in DI container")
+
+
+async def _create_conversation_service():
+    """Factory for ConversationService."""
+    from app.config import get_settings
+    from app.core.memory.base import MemoryInterface
+    from app.services.conversation_service import ConversationService
+
+    container = get_container()
+    settings = get_settings()
+    memory_store = await container.get_service(MemoryInterface)
+    
+    return ConversationService(memory_store, settings)
 
 
 async def _create_chat_service():

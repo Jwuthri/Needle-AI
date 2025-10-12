@@ -1,30 +1,24 @@
 """
-Working LLM Team Example with Agno 2.0.11, OpenRouter, and Pinecone
-===================================================================
+LLM Team Example with Latest Agno API
+======================================
 
 A production-ready chat application featuring:
 - Multi-agent team collaboration with OpenRouter models
-- Pinecone vector database for persistent memory
+- Latest Agno API with db parameter for persistence
 - Specialized tools for each agent
-- Real-time chat interface
-
-This example shows how to build a working AI team that can:
-- Research topics (Research Agent)
-- Write code (Developer Agent)
-- Review and improve content (QA Agent)
-- Coordinate the whole process (Orchestrator Agent)
+- Real-time async chat interface
 """
 
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-# Working Agno imports for 2.0.11 with OpenRouter and Pinecone
 from agno.agent import Agent
-from agno.memory import MemoryManager
+from agno.db.postgres import PostgresDb
 from agno.models.openrouter import OpenRouter
+from agno.models.openai import OpenAIChat
 from agno.team import Team
-from agno.tools.calculator import CalculatorTools
+from agno.tools.calculator import Calculator
 from agno.tools.file import FileTools
 from agno.tools.python import PythonTools
 from app.exceptions import ConfigurationError
@@ -52,13 +46,13 @@ class TaskStatus(str, Enum):
 
 class LLMTeamChat:
     """
-    Working LLM Team Chat Application with Agno 2.0.11.
-
+    LLM Team Chat Application using latest Agno API.
+    
     Features:
-    - Multi-agent collaboration with OpenRouter models
-    - Pinecone vector database for memory
+    - Multi-agent collaboration with OpenRouter/OpenAI models
+    - PostgreSQL persistence for conversation history
     - Specialized tools for each agent
-    - Real-time chat interface
+    - Async processing with arun()
     """
 
     def __init__(self, settings: Any):
@@ -69,27 +63,27 @@ class LLMTeamChat:
         self._initialized = False
 
     async def initialize(self):
-        """Initialize the complete LLM team with agents and memory."""
+        """Initialize the complete LLM team with agents."""
         if self._initialized:
             return
 
         try:
-            # Create shared memory
-            shared_memory = await self._create_shared_memory()
+            # Create shared database for persistence
+            db = await self._create_shared_db()
 
             # Create specialized agents
             self.agents = {
-                AgentRole.ORCHESTRATOR: await self._create_orchestrator_agent(shared_memory),
-                AgentRole.RESEARCHER: await self._create_researcher_agent(shared_memory),
-                AgentRole.DEVELOPER: await self._create_developer_agent(shared_memory),
-                AgentRole.QA_REVIEWER: await self._create_qa_agent(shared_memory)
+                AgentRole.ORCHESTRATOR: await self._create_orchestrator_agent(db),
+                AgentRole.RESEARCHER: await self._create_researcher_agent(db),
+                AgentRole.DEVELOPER: await self._create_developer_agent(db),
+                AgentRole.QA_REVIEWER: await self._create_qa_agent(db)
             }
 
-            # Create the team with correct parameter name
+            # Create the team
             self.team = Team(
-                members=list(self.agents.values()),
+                agents=list(self.agents.values()),
                 name="AI Development Team",
-                instructions="You are a collaborative AI team. Work together to provide comprehensive solutions."
+                description="Collaborative AI team for comprehensive solutions",
             )
 
             self._initialized = True
@@ -99,103 +93,141 @@ class LLMTeamChat:
             logger.error(f"Failed to initialize LLM team: {e}")
             raise ConfigurationError(f"Team initialization failed: {e}")
 
-    async def _create_shared_memory(self) -> MemoryManager:
-        """Create shared memory for the team."""
-        # For now, use basic memory manager
-        # TODO: Add Pinecone integration when settings are available
-        return MemoryManager()
+    async def _create_shared_db(self) -> Optional[PostgresDb]:
+        """Create shared database for team persistence."""
+        try:
+            password = self.settings.get_secret("database_password")
+            db_url = (
+                f"postgresql+psycopg://{self.settings.database_user}:{password}"
+                f"@{self.settings.database_host}:{self.settings.database_port}"
+                f"/{self.settings.database_name}"
+            )
+            
+            db = PostgresDb(
+                db_url=db_url,
+                table_name="agno_team",
+            )
+            logger.info("Created shared PostgreSQL database for team")
+            return db
+        except Exception as e:
+            logger.warning(f"Failed to create shared db: {e}, continuing without persistence")
+            return None
 
-    async def _create_orchestrator_agent(self, memory: MemoryManager) -> Agent:
+    async def _create_orchestrator_agent(self, db: Optional[PostgresDb]) -> Agent:
         """Create the orchestrator agent that coordinates the team."""
 
         tools = [
             PythonTools(),
             FileTools(),
-            CalculatorTools()
+            Calculator(),
         ]
 
         return Agent(
             name="Orchestrator",
-            model=OpenRouter(id="openai/gpt-4o-mini"),
-            memory_manager=memory,
+            role="Team Coordinator",
+            model=self._get_model("openai/gpt-4o-mini"),
+            db=db,
+            enable_user_memories=True if db else False,
+            read_chat_history=True,
             tools=tools,
             instructions="""
             You are the Orchestrator Agent, the leader of a specialized AI team.
-
+            
             Your responsibilities:
             1. Understand user requests and break them into tasks
             2. Coordinate with team members (Researcher, Developer, QA)
             3. Synthesize final results for users
-
+            
             Always provide comprehensive and well-structured responses.
             """
         )
 
-    async def _create_researcher_agent(self, memory: MemoryManager) -> Agent:
+    async def _create_researcher_agent(self, db: Optional[PostgresDb]) -> Agent:
         """Create the research specialist agent."""
 
         return Agent(
             name="Researcher",
-            model=OpenRouter(id="anthropic/claude-3.5-sonnet"),
-            memory_manager=memory,
-            tools=[PythonTools(), CalculatorTools()],
+            role="Information Specialist",
+            model=self._get_model("anthropic/claude-3.5-sonnet"),
+            db=db,
+            enable_user_memories=True if db else False,
+            read_chat_history=True,
+            tools=[PythonTools(), Calculator()],
             instructions="""
             You are the Research Agent, the team's information specialist.
-
+            
             Your expertise includes:
             1. Information gathering and analysis
             2. Fact-checking and verification
             3. Data analysis and insights
-
+            
             Always provide well-sourced, factual information with confidence levels.
             """
         )
 
-    async def _create_developer_agent(self, memory: MemoryManager) -> Agent:
+    async def _create_developer_agent(self, db: Optional[PostgresDb]) -> Agent:
         """Create the developer/engineer agent."""
 
         return Agent(
             name="Developer",
-            model=OpenRouter(id="openai/gpt-4o"),
-            memory_manager=memory,
+            role="Technical Specialist",
+            model=self._get_model("openai/gpt-4o"),
+            db=db,
+            enable_user_memories=True if db else False,
+            read_chat_history=True,
             tools=[PythonTools(), FileTools()],
             instructions="""
             You are the Developer Agent, the team's technical specialist.
-
+            
             Your capabilities include:
             1. Software development and architecture
             2. Code review and optimization
             3. Technical problem solving
-
+            
             Always write clean, documented, and testable code.
             """
         )
 
-    async def _create_qa_agent(self, memory: MemoryManager) -> Agent:
+    async def _create_qa_agent(self, db: Optional[PostgresDb]) -> Agent:
         """Create the quality assurance agent."""
 
         return Agent(
             name="QA_Reviewer",
-            model=OpenRouter(id="anthropic/claude-3.5-sonnet"),
-            memory_manager=memory,
+            role="Quality Assurance",
+            model=self._get_model("anthropic/claude-3.5-sonnet"),
+            db=db,
+            enable_user_memories=True if db else False,
+            read_chat_history=True,
             tools=[PythonTools(), FileTools()],
             instructions="""
             You are the QA Agent, ensuring quality and reliability.
-
+            
             Your responsibilities:
             1. Code review and quality assessment
             2. Testing and validation
             3. Process improvement recommendations
-
+            
             Always provide constructive feedback with specific recommendations.
             """
         )
 
+    def _get_model(self, model_id: str):
+        """Get model instance based on provider."""
+        if model_id.startswith("openai/") or model_id.startswith("anthropic/"):
+            # OpenRouter model
+            api_key = self.settings.get_secret("openrouter_api_key")
+            api_key_str = str(api_key) if hasattr(api_key, '__str__') else api_key
+            return OpenRouter(id=model_id, api_key=api_key_str)
+        else:
+            # OpenAI model
+            api_key = self.settings.get_secret("openai_api_key")
+            api_key_str = str(api_key) if hasattr(api_key, '__str__') else api_key
+            return OpenAIChat(id=model_id, api_key=api_key_str)
+
     async def process_chat_request(self, request: ChatRequest, user_id: str = None) -> ChatResponse:
         """
         Process a chat request through the LLM team.
-
-        This is the main entry point for chat interactions.
+        Uses latest async API with arun().
         """
         if not self._initialized:
             await self.initialize()
@@ -212,19 +244,21 @@ class LLMTeamChat:
             }
             self.task_history.append(task)
 
-            # Process through the team
-            team_response = await self.team.run(
-                message=request.message,
-                session_id=request.session_id
+            # Process through the team using async arun()
+            run_response = await self.team.arun(
+                request.message,
+                stream=False,
+                session_id=request.session_id,
+                user_id=user_id,
             )
 
             # Extract the final response
-            if hasattr(team_response, 'content'):
-                response_content = team_response.content
-            elif isinstance(team_response, dict):
-                response_content = team_response.get('final_response', str(team_response))
+            if hasattr(run_response, 'content'):
+                response_content = run_response.content
+            elif isinstance(run_response, str):
+                response_content = run_response
             else:
-                response_content = str(team_response)
+                response_content = str(run_response)
 
             # Update task status
             task["status"] = TaskStatus.COMPLETED
@@ -277,6 +311,7 @@ class LLMTeamChat:
         for role, agent in self.agents.items():
             status["agents"][role] = {
                 "name": agent.name,
+                "role": getattr(agent, 'role', 'unknown'),
                 "model": getattr(agent.model, 'id', 'unknown'),
                 "tools_count": len(getattr(agent, 'tools', [])),
                 "active": True
@@ -323,9 +358,10 @@ def create_team_chat_config(settings) -> Dict[str, Any]:
             }
         },
 
-        "memory_settings": {
-            "provider": "pinecone",  # When configured
-            "fallback": "basic"
+        "persistence_settings": {
+            "provider": "postgres",
+            "enable_user_memories": True,
+            "read_chat_history": True,
         },
 
         "tools_settings": {

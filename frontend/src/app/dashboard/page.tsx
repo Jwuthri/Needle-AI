@@ -105,7 +105,7 @@ export default function DashboardPage() {
             className="bg-gray-900/50 border border-gray-800/50 rounded-xl p-6 hover:border-emerald-500/30 transition-colors"
           >
             <div className="flex items-center justify-between mb-4">
-              <div className="w-12 h-12 bg-emerald-500/10 rounded-lg flex items-center justify-center">
+              <div className="w-12 h-12 bg-emerald-500/10 rounded-xl flex items-center justify-center">
                 <Building2 className="w-6 h-6 text-emerald-400" />
               </div>
               <div className="text-2xl font-bold text-white">{stats.totalCompanies}</div>
@@ -120,7 +120,7 @@ export default function DashboardPage() {
             className="bg-gray-900/50 border border-gray-800/50 rounded-xl p-6 hover:border-emerald-500/30 transition-colors"
           >
             <div className="flex items-center justify-between mb-4">
-              <div className="w-12 h-12 bg-blue-500/10 rounded-lg flex items-center justify-center">
+              <div className="w-12 h-12 bg-blue-500/10 rounded-xl flex items-center justify-center">
                 <MessageSquare className="w-6 h-6 text-blue-400" />
               </div>
               <div className="text-2xl font-bold text-white">{stats.totalReviews.toLocaleString()}</div>
@@ -135,7 +135,7 @@ export default function DashboardPage() {
             className="bg-gray-900/50 border border-gray-800/50 rounded-xl p-6 hover:border-emerald-500/30 transition-colors"
           >
             <div className="flex items-center justify-between mb-4">
-              <div className="w-12 h-12 bg-purple-500/10 rounded-lg flex items-center justify-center">
+              <div className="w-12 h-12 bg-purple-500/10 rounded-xl flex items-center justify-center">
                 <TrendingUp className="w-6 h-6 text-purple-400" />
               </div>
               <div className="text-2xl font-bold text-white">{stats.creditsRemaining.toLocaleString()}</div>
@@ -150,7 +150,7 @@ export default function DashboardPage() {
             className="bg-gray-900/50 border border-gray-800/50 rounded-xl p-6 hover:border-emerald-500/30 transition-colors"
           >
             <div className="flex items-center justify-between mb-4">
-              <div className="w-12 h-12 bg-orange-500/10 rounded-lg flex items-center justify-center">
+              <div className="w-12 h-12 bg-orange-500/10 rounded-xl flex items-center justify-center">
                 <Activity className="w-6 h-6 text-orange-400" />
               </div>
               <div className="text-2xl font-bold text-white">{stats.activeJobs}</div>
@@ -170,19 +170,19 @@ export default function DashboardPage() {
             <h2 className="text-xl font-bold text-white mb-6">Quick Actions</h2>
             <div className="space-y-3">
               <Link href="/companies">
-                <button className="w-full flex items-center space-x-3 px-4 py-3 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 rounded-lg text-emerald-400 transition-colors">
+                <button className="w-full flex items-center space-x-3 px-4 py-3 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 rounded-xl text-emerald-400 transition-all duration-200 hover:shadow-lg hover:shadow-emerald-500/20">
                   <Plus className="w-5 h-5" />
                   <span className="font-medium">Add New Company</span>
                 </button>
               </Link>
               <Link href="/chat">
-                <button className="w-full flex items-center space-x-3 px-4 py-3 bg-gray-800/50 hover:bg-gray-800 border border-gray-700 rounded-lg text-white transition-colors">
+                <button className="w-full flex items-center space-x-3 px-4 py-3 bg-gray-800/50 hover:bg-gray-800 border border-gray-700 rounded-xl text-white transition-colors">
                   <MessageSquare className="w-5 h-5" />
                   <span className="font-medium">Start Chat Session</span>
                 </button>
               </Link>
               <Link href="/data-sources">
-                <button className="w-full flex items-center space-x-3 px-4 py-3 bg-gray-800/50 hover:bg-gray-800 border border-gray-700 rounded-lg text-white transition-colors">
+                <button className="w-full flex items-center space-x-3 px-4 py-3 bg-gray-800/50 hover:bg-gray-800 border border-gray-700 rounded-xl text-white transition-colors">
                   <Database className="w-5 h-5" />
                   <span className="font-medium">Import Data</span>
                 </button>
@@ -202,7 +202,7 @@ export default function DashboardPage() {
               {recentActivity.length > 0 ? (
                 recentActivity.map((activity) => (
                   <div key={activity.id} className="flex items-start space-x-3 pb-4 border-b border-gray-800/50 last:border-0">
-                    <div className="w-8 h-8 bg-emerald-500/10 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <div className="w-8 h-8 bg-emerald-500/10 rounded-xl flex items-center justify-center flex-shrink-0">
                       <Activity className="w-4 h-4 text-emerald-400" />
                     </div>
                     <div className="flex-1 min-w-0">

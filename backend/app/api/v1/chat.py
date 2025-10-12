@@ -85,6 +85,51 @@ async def send_message(
         )
 
 
+@router.post("/sessions", response_model=ChatSession)
+async def create_session(
+    conversation_service: ConversationService = Depends(get_conversation_service_dep),
+    current_user: Optional[ClerkUser] = Depends(get_current_user)
+) -> ChatSession:
+    """
+    Create a new chat session.
+    
+    Creates a new empty session that can be used for subsequent chat messages.
+    """
+    try:
+        import uuid
+        from datetime import datetime
+        
+        user_id = current_user.id if current_user else None
+        session_id = str(uuid.uuid4())
+        
+        # Store empty session in memory
+        await conversation_service.memory.store_session(
+            session_id=session_id,
+            messages=[],
+            metadata={"user_id": user_id} if user_id else {},
+            user_id=user_id
+        )
+        
+        # Create session response
+        session = ChatSession(
+            session_id=session_id,
+            messages=[],
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+            metadata={"user_id": user_id} if user_id else {}
+        )
+        
+        logger.info(f"Created new session {session_id} for user {user_id}")
+        return session
+        
+    except Exception as e:
+        logger.error(f"Failed to create session: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create session: {str(e)}"
+        )
+
+
 @router.get("/sessions", response_model=List[ChatSession])
 async def list_sessions(
     conversation_service: ConversationService = Depends(get_conversation_service_dep),

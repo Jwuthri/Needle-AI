@@ -86,11 +86,11 @@ export default function AnalyticsPage() {
           </div>
 
           <div className="flex items-center space-x-4">
-            <button className="flex items-center space-x-2 px-4 py-2 bg-gray-800/50 border border-gray-700 rounded-lg text-white hover:bg-gray-800 transition-colors">
+            <button className="flex items-center space-x-2 px-4 py-2 bg-gray-800/50 border border-gray-700 rounded-xl text-white hover:bg-gray-800 transition-colors">
               <Calendar className="w-4 h-4" />
               <span>Date Range</span>
             </button>
-            <button className="flex items-center space-x-2 px-4 py-2 bg-gray-800/50 border border-gray-700 rounded-lg text-white hover:bg-gray-800 transition-colors">
+            <button className="flex items-center space-x-2 px-4 py-2 bg-gray-800/50 border border-gray-700 rounded-xl text-white hover:bg-gray-800 transition-colors">
               <Download className="w-4 h-4" />
               <span>Export</span>
             </button>
@@ -102,7 +102,7 @@ export default function AnalyticsPage() {
           <select
             value={selectedCompany || ''}
             onChange={(e) => setSelectedCompany(e.target.value || null)}
-            className="px-4 py-2 bg-gray-800/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+            className="px-4 py-2 bg-gray-800/50 border border-gray-700 rounded-xl text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
           >
             <option value="">Select a company...</option>
             {companies.map((company) => (
@@ -112,10 +112,10 @@ export default function AnalyticsPage() {
             ))}
           </select>
 
-          <div className="flex items-center space-x-2 bg-gray-800/50 rounded-lg p-1">
+          <div className="flex items-center space-x-2 bg-gray-800/50 rounded-xl p-1">
             <button
               onClick={() => setViewMode('table')}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-all ${
+              className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-all ${
                 viewMode === 'table'
                   ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                   : 'text-gray-400 hover:text-white'
@@ -126,7 +126,7 @@ export default function AnalyticsPage() {
             </button>
             <button
               onClick={() => setViewMode('graph')}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-all ${
+              className={`flex items-center space-x-2 px-4 py-2 rounded-xl transition-all ${
                 viewMode === 'graph'
                   ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                   : 'text-gray-400 hover:text-white'

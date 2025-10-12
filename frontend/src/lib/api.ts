@@ -1,28 +1,6 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+import type { ChatRequest, ChatResponse, ChatSession } from '@/types/chat'
 
-export interface ChatRequest {
-  message: string
-  session_id?: string
-  context?: Record<string, any>
-}
-
-export interface ChatResponse {
-  message: string
-  session_id: string
-  message_id: string
-  timestamp: string
-  metadata?: Record<string, any>
-}
-
-export interface ChatSession {
-  session_id: string
-  messages: Array<{
-    id: string
-    content: string
-    role: 'user' | 'assistant' | 'system'
-    timestamp: string
-  }>
-}
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
 
 export interface HealthResponse {
   status: 'healthy' | 'unhealthy'
@@ -93,28 +71,35 @@ class ApiClient {
   }
 
   async sendMessage(request: ChatRequest): Promise<ChatResponse> {
-    return this.request<ChatResponse>('/api/v1/chat/', {
+    return this.request<ChatResponse>('/chat/', {
       method: 'POST',
       body: JSON.stringify(request),
     })
   }
 
-  async getSession(sessionId: string): Promise<ChatSession> {
-    return this.request<ChatSession>(`/api/v1/chat/sessions/${sessionId}`)
+  async createSession(): Promise<ChatSession> {
+    return this.request<ChatSession>('/chat/sessions', {
+      method: 'POST',
+    })
   }
 
-  async listSessions(): Promise<{ sessions: Array<{ session_id: string; message_count: number; last_activity: string | null }> }> {
-    return this.request<{ sessions: Array<{ session_id: string; message_count: number; last_activity: string | null }> }>('/api/v1/chat/sessions')
+  async getSession(sessionId: string): Promise<ChatSession> {
+    return this.request<ChatSession>(`/chat/sessions/${sessionId}`)
+  }
+
+  async listSessions(): Promise<{ sessions: ChatSession[] }> {
+    const sessions = await this.request<ChatSession[]>('/chat/sessions')
+    return { sessions }
   }
 
   async deleteSession(sessionId: string): Promise<{ message: string }> {
-    return this.request<{ message: string }>(`/api/v1/chat/sessions/${sessionId}`, {
+    return this.request<{ message: string }>(`/chat/sessions/${sessionId}`, {
       method: 'DELETE',
     })
   }
 
   async healthCheck(): Promise<HealthResponse> {
-    return this.request<HealthResponse>('/api/v1/health/')
+    return this.request<HealthResponse>('/health/')
   }
 
   async getRoot(): Promise<{
@@ -123,66 +108,68 @@ class ApiClient {
     docs: string
     health: string
   }> {
-    return this.request<{
-      message: string
-      version: string
-      docs: string
-      health: string
-    }>('/')
+    // Root endpoint is at server root, not under /api/v1
+    const baseUrl = this.baseUrl.replace('/api/v1', '')
+    const url = `${baseUrl}/`
+    const response = await fetch(url)
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
+    return response.json()
   }
 
   // Company endpoints
   async createCompany(data: { name: string; domain: string; industry: string }): Promise<any> {
-    return this.request('/api/v1/companies/', {
+    return this.request('/companies/', {
       method: 'POST',
       body: JSON.stringify(data),
     })
   }
 
   async listCompanies(): Promise<{ companies: any[] }> {
-    return this.request('/api/v1/companies/')
+    return this.request('/companies/')
   }
 
   async getCompany(id: string): Promise<any> {
-    return this.request(`/api/v1/companies/${id}`)
+    return this.request(`/companies/${id}`)
   }
 
   async updateCompany(id: string, data: { name?: string; domain?: string; industry?: string }): Promise<any> {
-    return this.request(`/api/v1/companies/${id}`, {
-      method: 'PUT',
+    return this.request(`/companies/${id}`, {
+      method: 'PATCH',
       body: JSON.stringify(data),
     })
   }
 
   async deleteCompany(id: string): Promise<{ message: string }> {
-    return this.request(`/api/v1/companies/${id}`, {
+    return this.request(`/companies/${id}`, {
       method: 'DELETE',
     })
   }
 
   // Scraping endpoints
   async listScrapingSources(): Promise<{ sources: any[] }> {
-    return this.request('/api/v1/scraping/sources')
+    return this.request('/scraping/sources')
   }
 
   async startScrapingJob(data: { company_id: string; source_id: string; total_reviews_target: number }): Promise<any> {
-    return this.request('/api/v1/scraping/jobs', {
+    return this.request('/scraping/jobs', {
       method: 'POST',
       body: JSON.stringify(data),
     })
   }
 
   async getScrapingJob(id: string): Promise<any> {
-    return this.request(`/api/v1/scraping/jobs/${id}`)
+    return this.request(`/scraping/jobs/${id}`)
   }
 
   async listScrapingJobs(companyId?: string): Promise<{ jobs: any[] }> {
-    const url = companyId ? `/api/v1/scraping/jobs?company_id=${companyId}` : '/api/v1/scraping/jobs'
+    const url = companyId ? `/scraping/jobs?company_id=${companyId}` : '/scraping/jobs'
     return this.request(url)
   }
 
   async estimateScrapingCost(sourceId: string, totalReviews: number): Promise<any> {
-    return this.request('/api/v1/scraping/estimate', {
+    return this.request('/scraping/estimate', {
       method: 'POST',
       body: JSON.stringify({ source_id: sourceId, total_reviews: totalReviews }),
     })
@@ -190,7 +177,7 @@ class ApiClient {
 
   // Analytics endpoints
   async getAnalyticsOverview(companyId: string, dateFrom?: string, dateTo?: string): Promise<any> {
-    let url = `/api/v1/analytics/${companyId}/overview`
+    let url = `/analytics/${companyId}/overview`
     const params = new URLSearchParams()
     if (dateFrom) params.append('date_from', dateFrom)
     if (dateTo) params.append('date_to', dateTo)
@@ -200,7 +187,7 @@ class ApiClient {
   }
 
   async getCompanyInsights(companyId: string): Promise<any> {
-    return this.request(`/api/v1/analytics/${companyId}/insights`)
+    return this.request(`/analytics/${companyId}/insights`)
   }
 
   async getReviews(params: {
@@ -217,16 +204,16 @@ class ApiClient {
     Object.entries(params).forEach(([key, value]) => {
       if (value !== undefined) queryParams.append(key, value.toString())
     })
-    return this.request(`/api/v1/analytics/${params.company_id}/reviews?${queryParams.toString()}`)
+    return this.request(`/analytics/${params.company_id}/reviews?${queryParams.toString()}`)
   }
 
   // Credits endpoints
   async getCreditBalance(): Promise<any> {
-    return this.request('/api/v1/payments/credits')
+    return this.request('/payments/credits')
   }
 
   async createCheckoutSession(data: { pricing_tier_id: string; success_url: string; cancel_url: string }): Promise<any> {
-    return this.request('/api/v1/payments/checkout', {
+    return this.request('/payments/checkout', {
       method: 'POST',
       body: JSON.stringify(data),
     })
@@ -237,7 +224,7 @@ class ApiClient {
     if (page !== undefined) params.append('page', page.toString())
     if (pageSize !== undefined) params.append('page_size', pageSize.toString())
     const queryString = params.toString()
-    const url = queryString ? `/api/v1/payments/transactions?${queryString}` : '/api/v1/payments/transactions'
+    const url = queryString ? `/payments/transactions?${queryString}` : '/payments/transactions'
     return this.request(url)
   }
 
@@ -247,7 +234,7 @@ class ApiClient {
     formData.append('file', file)
     formData.append('company_id', companyId)
 
-    const url = `${this.baseUrl}/api/v1/data-imports/csv`
+    const url = `${this.baseUrl}/data-imports/csv`
     const headers: Record<string, string> = {}
     if (this.token) {
       headers.Authorization = `Bearer ${this.token}`
@@ -267,11 +254,11 @@ class ApiClient {
   }
 
   async getDataImportStatus(importId: string): Promise<any> {
-    return this.request(`/api/v1/data-imports/${importId}/status`)
+    return this.request(`/data-imports/${importId}/status`)
   }
 
   async listDataImports(companyId?: string): Promise<{ imports: any[] }> {
-    const url = companyId ? `/api/v1/data-imports?company_id=${companyId}` : '/api/v1/data-imports'
+    const url = companyId ? `/data-imports?company_id=${companyId}` : '/data-imports'
     return this.request(url)
   }
 }

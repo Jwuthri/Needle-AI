@@ -72,7 +72,10 @@ export function TerminalInput({ onSendMessage, disabled, companyName }: Terminal
           </span>
         </div>
 
-        <div className="flex items-center">
+        <div 
+          className="flex items-center cursor-text"
+          onClick={() => inputRef.current?.focus()}
+        >
           <input
             ref={inputRef}
             type="text"
@@ -81,8 +84,7 @@ export function TerminalInput({ onSendMessage, disabled, companyName }: Terminal
             onKeyDown={handleKeyDown}
             disabled={disabled}
             placeholder={disabled ? 'Select a company to start...' : 'Type your query...'}
-            className="flex-1 px-4 py-4 bg-transparent text-white placeholder-gray-500 focus:outline-none font-mono disabled:opacity-50"
-            style={{ caretColor: 'transparent' }}
+            className="flex-1 px-4 py-4 bg-transparent text-white placeholder-gray-500 focus:outline-none font-mono disabled:opacity-50 disabled:cursor-not-allowed cursor-text"
           />
           {!disabled && input && showCursor && (
             <span className="text-emerald-400 font-mono animate-pulse">▋</span>
@@ -93,7 +95,7 @@ export function TerminalInput({ onSendMessage, disabled, companyName }: Terminal
             whileTap={{ scale: 0.95 }}
             type="submit"
             disabled={!input.trim() || disabled}
-            className="m-2 p-3 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 disabled:from-gray-700 disabled:to-gray-700 text-white rounded-lg transition-all duration-200 disabled:scale-100 disabled:opacity-50"
+            className="m-2 p-3 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 disabled:from-gray-700 disabled:to-gray-700 text-white rounded-xl transition-all duration-200 disabled:scale-100 disabled:opacity-50 shadow-lg shadow-emerald-500/20 hover:shadow-xl hover:shadow-emerald-500/30 disabled:shadow-none"
           >
             <Send className="w-5 h-5" />
           </motion.button>

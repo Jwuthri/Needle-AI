@@ -88,3 +88,35 @@ class ConversationService:
         except Exception as e:
             logger.error(f"Error clearing messages for session {session_id}: {e}")
             return False
+    
+    async def create_session(
+        self,
+        session_id: str,
+        user_id: Optional[str] = None
+    ) -> ChatSession:
+        """Create a new chat session."""
+        try:
+            from datetime import datetime
+            
+            # Store empty session in memory
+            await self.memory.store_session(
+                session_id=session_id,
+                messages=[],
+                metadata={"user_id": user_id} if user_id else {},
+                user_id=user_id
+            )
+            
+            # Create session response
+            session = ChatSession(
+                session_id=session_id,
+                messages=[],
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
+                metadata={"user_id": user_id} if user_id else {}
+            )
+            
+            logger.info(f"Created session {session_id}")
+            return session
+        except Exception as e:
+            logger.error(f"Error creating session {session_id}: {e}")
+            raise

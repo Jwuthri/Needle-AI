@@ -110,7 +110,7 @@ dependencies = [
     "pyclerk>=0.1.8",
 
     # Stripe Payments
-    "stripe>=8.0.0",
+    "stripe>=13.0.0",
 
     # Apify Web Scraping
     "apify-client>=1.6.0",
@@ -126,6 +126,7 @@ dependencies = [
     # Web scraping utilities (if needed)
     "beautifulsoup4>=4.12.0",
     "lxml>=4.9.0",
+    "aiohttp>=3.9.0",  # Async HTTP client for scrapers
 
     # Sentiment analysis (optional - can use LLM instead)
     "textblob>=0.17.0",  # Simple sentiment analysis

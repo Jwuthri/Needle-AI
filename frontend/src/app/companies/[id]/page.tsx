@@ -121,13 +121,13 @@ export default function CompanyDetailPage() {
             <div className="flex space-x-2">
               <button
                 onClick={() => setShowEditModal(true)}
-                className="p-3 bg-gray-800/50 hover:bg-gray-800 border border-gray-700 rounded-lg text-white transition-colors"
+                className="p-3 bg-gray-800/50 hover:bg-gray-800 border border-gray-700 rounded-xl text-white transition-colors"
               >
                 <Edit className="w-5 h-5" />
               </button>
               <button
                 onClick={handleDelete}
-                className="p-3 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 rounded-lg text-red-400 transition-colors"
+                className="p-3 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 rounded-xl text-red-400 transition-colors"
               >
                 <Trash2 className="w-5 h-5" />
               </button>
@@ -136,19 +136,19 @@ export default function CompanyDetailPage() {
 
           {/* Stats */}
           <div className="grid grid-cols-3 gap-6">
-            <div className="bg-gray-800/30 rounded-lg p-4">
+            <div className="bg-gray-800/30 rounded-xl p-4">
               <div className="text-3xl font-bold text-white mb-1">
                 {company.total_reviews?.toLocaleString() || 0}
               </div>
               <div className="text-white/40 text-sm">Total Reviews</div>
             </div>
-            <div className="bg-gray-800/30 rounded-lg p-4">
+            <div className="bg-gray-800/30 rounded-xl p-4">
               <div className="text-3xl font-bold text-white mb-1">
                 {company.last_scrape ? new Date(company.last_scrape).toLocaleDateString() : 'Never'}
               </div>
               <div className="text-white/40 text-sm">Last Scrape</div>
             </div>
-            <div className="bg-gray-800/30 rounded-lg p-4">
+            <div className="bg-gray-800/30 rounded-xl p-4">
               <div className="text-3xl font-bold text-white mb-1">
                 {new Date(company.created_at).toLocaleDateString()}
               </div>

@@ -1,6 +1,6 @@
 """
 Agno + OpenRouter LLM client implementation for NeedleAi.
-Unified access to 500+ models through Agno's powerful agent framework.
+Updated to use latest Agno API.
 """
 
 import os
@@ -13,18 +13,16 @@ from app.utils.logging import get_logger
 
 try:
     from agno.agent import Agent
-    from agno.models.message import Message
     from agno.models.openrouter import OpenRouter
 except ImportError:
     Agent = None
     OpenRouter = None
-    Message = None
 
 logger = get_logger("openrouter_client")
 
 
 class AgnoOpenRouterClient(BaseLLMClient):
-    """Agno + OpenRouter unified LLM client implementation."""
+    """Agno + OpenRouter unified LLM client implementation using latest API."""
 
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
@@ -45,16 +43,11 @@ class AgnoOpenRouterClient(BaseLLMClient):
         # Set OpenRouter API key as environment variable for Agno
         os.environ["OPENROUTER_API_KEY"] = self.api_key
 
-        # Initialize Agno agent with OpenRouter model
+        # Initialize Agno agent with OpenRouter model using latest API
         self.agent = Agent(
-            model=OpenRouter(id=self.model),
+            model=OpenRouter(id=self.model, api_key=self.api_key),
             markdown=True,
-            show_tool_calls=True,
-            # Add memory and other Agno capabilities
-            memory=config.get("use_memory", True),
-            # Enable structured outputs
             structured_outputs=config.get("structured_outputs", False),
-            # Add instructions/system prompt support
             instructions=config.get("instructions", None)
         )
 
@@ -67,23 +60,18 @@ class AgnoOpenRouterClient(BaseLLMClient):
         system_prompt: Optional[str] = None,
         **kwargs
     ) -> str:
-        """Generate a response using Agno + OpenRouter."""
+        """Generate a response using Agno + OpenRouter with latest async API."""
         try:
             # Update agent instructions if system prompt provided
             if system_prompt and system_prompt != self.agent.instructions:
                 self.agent.instructions = system_prompt
 
-            # Add conversation history to agent memory if provided
-            if conversation_history:
-                for msg in conversation_history:
-                    # Add previous messages to agent's memory
-                    self.agent.memory.add(
-                        role=msg.role.value,
-                        content=msg.content
-                    )
-
-            # Generate response using Agno agent
-            response = self.agent.run(message)
+            # Generate response using Agno agent with async arun()
+            response = await self.agent.arun(
+                message,
+                session_id=kwargs.get('session_id', 'default'),
+                user_id=kwargs.get('user_id')
+            )
 
             # Return the agent's response content
             if hasattr(response, 'content'):
@@ -108,21 +96,21 @@ class AgnoOpenRouterClient(BaseLLMClient):
         model: Optional[str] = None,
         **kwargs
     ) -> str:
-        """Generate a completion using Agno + OpenRouter."""
+        """Generate a completion using Agno + OpenRouter with latest async API."""
         try:
             # Create a new agent if model specified is different
             agent_to_use = self.agent
             if model and model != self.model:
                 agent_to_use = Agent(
-                    model=OpenRouter(id=model),
+                    model=OpenRouter(id=model, api_key=self.api_key),
                     markdown=True,
                     instructions=system_message
                 )
             elif system_message:
                 agent_to_use.instructions = system_message
 
-            # Generate completion using Agno agent
-            response = agent_to_use.run(prompt)
+            # Generate completion using Agno agent with async arun()
+            response = await agent_to_use.arun(prompt)
 
             # Return the agent's response content
             if hasattr(response, 'content'):
@@ -149,8 +137,8 @@ class AgnoOpenRouterClient(BaseLLMClient):
     ) -> AsyncGenerator[str, None]:
         """Generate a streaming completion using Agno + OpenRouter."""
         try:
-            # For now, Agno doesn't support streaming, so we'll return the full response
-            # in chunks. In the future, Agno may add streaming support.
+            # For now, Agno doesn't support streaming in all cases, so we'll return the full response
+            # in chunks. Check if streaming is available in future Agno versions.
             response = await self.generate_completion(
                 prompt, max_tokens, temperature, top_p, stop_sequences, system_message, model, **kwargs
             )
@@ -171,8 +159,8 @@ class AgnoOpenRouterClient(BaseLLMClient):
     async def health_check(self) -> bool:
         """Check Agno + OpenRouter health."""
         try:
-            # Simple test request using Agno
-            response = self.agent.run("Hello")
+            # Simple test request using Agno with async arun()
+            response = await self.agent.arun("Hello")
             return bool(response)
         except Exception as e:
             logger.error(f"Health check failed: {e}")
@@ -190,8 +178,6 @@ class AgnoOpenRouterClient(BaseLLMClient):
             "supports_streaming": True,
             "unified_api": True,
             "supports_agents": True,
-            "supports_memory": True,
-            "supports_tools": True,
             "agno_framework": True
         }
 
@@ -223,12 +209,10 @@ class AgnoOpenRouterClient(BaseLLMClient):
         """Switch to a different model by creating a new Agno agent."""
         self.model = model
 
-        # Create new agent with the new model
+        # Create new agent with the new model using latest API
         self.agent = Agent(
-            model=OpenRouter(id=model),
+            model=OpenRouter(id=model, api_key=self.api_key),
             markdown=True,
-            show_tool_calls=True,
-            memory=True,
             instructions=self.agent.instructions if hasattr(self.agent, 'instructions') else None
         )
 
@@ -242,8 +226,6 @@ class AgnoOpenRouterClient(BaseLLMClient):
             "supports_streaming": True,
             "supports_function_calling": True,
             "supports_agents": True,
-            "supports_memory": True,
-            "supports_tools": True,
             "context_length": "varies",  # Model-dependent
             "agno_enhanced": True
         }

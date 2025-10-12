@@ -119,7 +119,7 @@ export default function CreditsPage() {
                 </div>
 
                 <button
-                  className={`w-full py-3 rounded-lg font-medium transition-all ${
+                  className={`w-full py-3 rounded-xl font-medium transition-all ${
                     tier.popular
                       ? 'bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white'
                       : 'bg-gray-800 hover:bg-gray-700 text-white'
@@ -146,10 +146,10 @@ export default function CreditsPage() {
               {transactions.map((transaction) => (
                 <div
                   key={transaction.id}
-                  className="flex items-center justify-between p-4 bg-gray-800/30 border border-gray-700/30 rounded-lg"
+                  className="flex items-center justify-between p-4 bg-gray-800/30 border border-gray-700/30 rounded-xl"
                 >
                   <div className="flex items-center space-x-3">
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
                       transaction.type === 'purchase'
                         ? 'bg-emerald-500/10 text-emerald-400'
                         : 'bg-red-500/10 text-red-400'

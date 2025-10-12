@@ -42,12 +42,12 @@ export function CompanyCard({ company, onUpdate }: CompanyCardProps) {
       <div className="absolute top-4 right-4">
         <button
           onClick={() => setShowMenu(!showMenu)}
-          className="p-2 text-gray-400 hover:text-white transition-colors rounded-lg hover:bg-gray-800/50"
+          className="p-2 text-gray-400 hover:text-white transition-colors rounded-xl hover:bg-gray-800/50"
         >
           <MoreVertical className="w-5 h-5" />
         </button>
         {showMenu && (
-          <div className="absolute right-0 mt-2 w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-10">
+          <div className="absolute right-0 mt-2 w-48 bg-gray-800 border border-gray-700 rounded-xl shadow-xl z-10">
             <button
               onClick={() => {
                 router.push(`/companies/${company.id}`)
@@ -71,7 +71,7 @@ export function CompanyCard({ company, onUpdate }: CompanyCardProps) {
       </div>
 
       {/* Icon */}
-      <div className="w-12 h-12 bg-emerald-500/10 rounded-lg flex items-center justify-center mb-4">
+      <div className="w-12 h-12 bg-emerald-500/10 rounded-xl flex items-center justify-center mb-4">
         <Building2 className="w-6 h-6 text-emerald-400" />
       </div>
 
@@ -107,14 +107,14 @@ export function CompanyCard({ company, onUpdate }: CompanyCardProps) {
       <div className="flex space-x-2">
         <button
           onClick={() => router.push(`/chat?company_id=${company.id}`)}
-          className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 rounded-lg text-emerald-400 transition-colors text-sm"
+          className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 rounded-xl text-emerald-400 transition-all duration-200 hover:shadow-lg hover:shadow-emerald-500/20 text-sm"
         >
           <MessageSquare className="w-4 h-4" />
           <span>Chat</span>
         </button>
         <button
           onClick={() => router.push(`/analytics?company_id=${company.id}`)}
-          className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-gray-800/50 hover:bg-gray-800 border border-gray-700 rounded-lg text-white transition-colors text-sm"
+          className="flex-1 flex items-center justify-center space-x-2 px-4 py-2 bg-gray-800/50 hover:bg-gray-800 border border-gray-700 rounded-xl text-white transition-colors text-sm"
         >
           <BarChart3 className="w-4 h-4" />
           <span>Analytics</span>

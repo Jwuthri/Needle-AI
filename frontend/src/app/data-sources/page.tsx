@@ -89,7 +89,7 @@ export default function DataSourcesPage() {
           <select
             value={selectedCompany || ''}
             onChange={(e) => setSelectedCompany(e.target.value || null)}
-            className="px-4 py-2 bg-gray-800/50 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+            className="px-4 py-2 bg-gray-800/50 border border-gray-700 rounded-xl text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
           >
             <option value="">Select a company...</option>
             {companies.map((company) => (
@@ -123,7 +123,7 @@ export default function DataSourcesPage() {
                   sources.map((source) => (
                     <div
                       key={source.id}
-                      className="p-4 bg-gray-800/50 border border-gray-700/50 rounded-lg hover:border-emerald-500/30 transition-colors"
+                      className="p-4 bg-gray-800/50 border border-gray-700/50 rounded-xl hover:border-emerald-500/30 transition-colors"
                     >
                       <div className="flex items-center justify-between mb-2">
                         <h3 className="text-white font-semibold">{source.name}</h3>
@@ -132,7 +132,7 @@ export default function DataSourcesPage() {
                         </span>
                       </div>
                       <p className="text-white/60 text-sm mb-4">{source.description || 'Scrape reviews from this source'}</p>
-                      <button className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 rounded-lg text-emerald-400 transition-colors">
+                      <button className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 rounded-xl text-emerald-400 transition-all duration-200 hover:shadow-lg hover:shadow-emerald-500/20">
                         <Play className="w-4 h-4" />
                         <span>Start Job</span>
                       </button>
@@ -161,7 +161,7 @@ export default function DataSourcesPage() {
                 <div className="text-white/40 text-sm mb-4">
                   Drag and drop or click to browse
                 </div>
-                <button className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors">
+                <button className="px-6 py-2 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white rounded-xl transition-all duration-200 shadow-lg shadow-emerald-500/20 hover:shadow-xl hover:shadow-emerald-500/30">
                   Browse Files
                 </button>
               </div>
@@ -183,7 +183,7 @@ export default function DataSourcesPage() {
               {jobs.map((job) => (
                 <div
                   key={job.id}
-                  className="p-4 bg-gray-800/50 border border-gray-700/50 rounded-lg"
+                  className="p-4 bg-gray-800/50 border border-gray-700/50 rounded-xl"
                 >
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center space-x-3">

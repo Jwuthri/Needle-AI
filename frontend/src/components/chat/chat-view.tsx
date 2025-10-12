@@ -6,7 +6,8 @@ import { Sparkles } from 'lucide-react'
 import { useAuth } from '@clerk/nextjs'
 import { createApiClient } from '@/lib/api'
 import { TerminalInput } from './terminal-input'
-import { MessageWithSources } from './message-with-sources'
+import { EnhancedMessage } from './enhanced-message'
+import { NeedleWelcome } from './needle-welcome'
 import { EnhancedChatMessage } from '@/types/chat'
 
 interface ChatViewProps {
@@ -47,16 +48,21 @@ export function ChatView({ companyId, sessionId, onSessionIdChange }: ChatViewPr
       const token = await getToken()
       const api = createApiClient(token)
 
+      // Create a new session if one doesn't exist
+      let currentSessionId = sessionId
+      if (!currentSessionId) {
+        const newSession = await api.createSession()
+        currentSessionId = newSession.session_id
+        if (onSessionIdChange) {
+          onSessionIdChange(currentSessionId)
+        }
+      }
+
       const response = await api.sendMessage({
         message,
-        session_id: sessionId,
+        session_id: currentSessionId,
         company_id: companyId || undefined,
       })
-
-      // Update session ID if this is a new session
-      if (!sessionId && response.session_id && onSessionIdChange) {
-        onSessionIdChange(response.session_id)
-      }
 
       // Add assistant message
       const assistantMessage: EnhancedChatMessage = {
@@ -94,54 +100,20 @@ export function ChatView({ companyId, sessionId, onSessionIdChange }: ChatViewPr
         <div className="max-w-4xl mx-auto space-y-6">
           {/* Welcome Message */}
           {messages.length === 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="text-center py-12"
-            >
-              <div className="w-20 h-20 bg-gradient-to-br from-emerald-500 to-green-600 rounded-full flex items-center justify-center mx-auto mb-6">
-                <Sparkles className="w-10 h-10 text-white" />
-              </div>
-              <h2 className="text-2xl font-bold text-white mb-4">
-                {companyId ? 'Ready to Analyze' : 'Select a Company'}
-              </h2>
-              <p className="text-white/70 mb-8 max-w-md mx-auto">
-                {companyId
-                  ? 'Ask questions about reviews, discover insights, or explore customer sentiment.'
-                  : 'Please select a company from the dropdown above to start chatting.'}
-              </p>
-
-              {/* Example prompts */}
-              {companyId && (
-                <div className="grid md:grid-cols-2 gap-4 max-w-2xl mx-auto">
-                  {[
-                    { emoji: '🔍', title: 'Product Gaps', prompt: 'What are the main product gaps mentioned in reviews?' },
-                    { emoji: '😊', title: 'Sentiment', prompt: 'What is the overall sentiment of our reviews?' },
-                    { emoji: '🏆', title: 'Competitors', prompt: 'Which competitors are mentioned most often?' },
-                    { emoji: '💡', title: 'Features', prompt: 'What features are customers requesting?' },
-                  ].map((example) => (
-                    <motion.button
-                      key={example.prompt}
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={() => handleSendMessage(example.prompt)}
-                      className="p-4 bg-gray-800/50 border border-gray-700/50 rounded-lg text-left hover:border-emerald-500/50 transition-all group"
-                    >
-                      <div className="text-white font-medium mb-2">{example.emoji} {example.title}</div>
-                      <div className="text-white/60 text-sm group-hover:text-white/80 transition-colors">
-                        {example.prompt}
-                      </div>
-                    </motion.button>
-                  ))}
-                </div>
-              )}
-            </motion.div>
+            <NeedleWelcome
+              onPromptSelect={handleSendMessage}
+              companySelected={!!companyId}
+            />
           )}
 
           {/* Messages */}
           <AnimatePresence>
             {messages.map((message) => (
-              <MessageWithSources key={message.id} message={message} />
+              <EnhancedMessage 
+                key={message.id} 
+                message={message}
+                onQuestionClick={handleSendMessage}
+              />
             ))}
           </AnimatePresence>
 

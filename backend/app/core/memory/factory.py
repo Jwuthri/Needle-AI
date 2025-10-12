@@ -32,15 +32,16 @@ class MemoryFactory:
     with fallback to custom implementations.
     """
 
-    # Provider priority: Agno first, simple custom as fallback
+    # Provider mapping - only custom implementations
+    # Vector DBs are configured directly via agno Agent.knowledge, not via memory store
     PROVIDER_MAPPING = {
-        "pinecone": [MemoryProvider.AGNO_PINECONE],        # Agno only (much better than old custom)
-        "weaviate": [MemoryProvider.AGNO_WEAVIATE],        # Agno only (much better than old custom)
-        "qdrant": [MemoryProvider.AGNO_QDRANT],            # Agno only
-        "chromadb": [MemoryProvider.AGNO_CHROMADB],        # Agno only
-        "redis": [MemoryProvider.AGNO_REDIS, MemoryProvider.CUSTOM_REDIS],  # Agno + custom fallback
-        "in-memory": [MemoryProvider.CUSTOM_IN_MEMORY],    # Custom only (simple fallback)
-        "chat": [MemoryProvider.AGNO_CHAT],                # Agno only
+        "pinecone": [MemoryProvider.CUSTOM_IN_MEMORY],     # Pinecone via agno Agent.knowledge
+        "weaviate": [MemoryProvider.CUSTOM_IN_MEMORY],     # Weaviate via agno Agent.knowledge
+        "qdrant": [MemoryProvider.CUSTOM_IN_MEMORY],       # Qdrant via agno Agent.knowledge
+        "chromadb": [MemoryProvider.CUSTOM_IN_MEMORY],     # ChromaDB via agno Agent.knowledge
+        "redis": [MemoryProvider.CUSTOM_REDIS],            # Custom Redis
+        "in-memory": [MemoryProvider.CUSTOM_IN_MEMORY],    # In-memory fallback
+        "chat": [MemoryProvider.CUSTOM_IN_MEMORY],         # Chat via agno Agent
     }
 
     @classmethod
@@ -111,33 +112,8 @@ class MemoryFactory:
     ) -> MemoryInterface:
         """Create a specific memory provider instance."""
 
-        # Import here to avoid circular imports and optional dependencies
-        if provider_option == MemoryProvider.AGNO_PINECONE:
-            from app.core.memory.agno_memory import AgnoPineconeMemory
-            return AgnoPineconeMemory(settings)
-
-        elif provider_option == MemoryProvider.AGNO_WEAVIATE:
-            from app.core.memory.agno_memory import AgnoWeaviateMemory
-            return AgnoWeaviateMemory(settings)
-
-        elif provider_option == MemoryProvider.AGNO_QDRANT:
-            from app.core.memory.agno_memory import AgnoQdrantMemory
-            return AgnoQdrantMemory(settings)
-
-        elif provider_option == MemoryProvider.AGNO_CHROMADB:
-            from app.core.memory.agno_memory import AgnoChromaMemory
-            return AgnoChromaMemory(settings)
-
-        elif provider_option == MemoryProvider.AGNO_CHAT:
-            from app.core.memory.agno_memory import AgnoChatMemory
-            return AgnoChatMemory(settings)
-
-        elif provider_option == MemoryProvider.AGNO_REDIS:
-            from app.core.memory.agno_memory import AgnoRedisMemory
-            return AgnoRedisMemory(settings, redis_client)
-
-        # Custom fallback implementations (simple ones only)
-        elif provider_option == MemoryProvider.CUSTOM_REDIS:
+        # Only custom implementations (agno memory wrappers deprecated)
+        if provider_option == MemoryProvider.CUSTOM_REDIS:
             from app.core.memory.redis_memory import RedisMemory
             if not redis_client:
                 raise ConfigurationError("Redis client required for Redis memory")
@@ -188,17 +164,11 @@ class MemoryFactory:
             validation_report["valid"] = False
             return validation_report
 
-        # Check Agno availability
-        try:
-            from app.core.memory.agno_memory import AgnoMemoryFactory
-            agno_validation = AgnoMemoryFactory.validate_provider_config(provider, settings)
-            validation_report["agno_available"] = agno_validation["valid"]
-            if not agno_validation["valid"]:
-                validation_report["warnings"].extend([
-                    f"Agno {provider}: {error}" for error in agno_validation["errors"]
-                ])
-        except ImportError:
-            validation_report["warnings"].append("Agno not available - will use custom implementation")
+        # Agno memory wrappers deprecated - vector DBs handled directly by agno Agent
+        if provider not in ["redis", "in-memory"]:
+            validation_report["warnings"].append(
+                f"{provider} should be configured via agno Agent.knowledge, using in-memory for ConversationService"
+            )
 
         # Check custom implementation availability
         custom_errors = cls._validate_custom_config(provider, settings)
@@ -221,15 +191,12 @@ class MemoryFactory:
         """Validate custom implementation configuration."""
         errors = []
 
-        if provider == "pinecone":
-            errors.append("Pinecone only available through Agno - install agno package")
-
-        elif provider == "weaviate":
-            errors.append("Weaviate only available through Agno - install agno package")
-
-        elif provider == "redis":
+        if provider == "redis":
             if not getattr(settings, "redis_url", None):
                 errors.append("Redis URL missing")
+        elif provider not in ["in-memory"]:
+            # Vector DBs should be configured via agno Agent, not memory store
+            pass
 
         return errors
 
@@ -256,9 +223,10 @@ async def create_memory_from_settings(settings: Any, redis_client: Optional[Any]
 
 
 async def create_agno_memory_only(provider: str, settings: Any) -> MemoryInterface:
-    """Create Agno memory only (no custom fallback)."""
-    from app.core.memory.agno_memory import AgnoMemoryFactory
-    return await AgnoMemoryFactory.create_memory(provider, settings)
+    """Deprecated - agno memory wrappers removed."""
+    raise ConfigurationError(
+        "Agno memory wrappers deprecated. Vector DBs should be configured via agno Agent.knowledge parameter"
+    )
 
 
 async def create_custom_memory_only(provider: str, settings: Any, redis_client: Optional[Any] = None) -> MemoryInterface:

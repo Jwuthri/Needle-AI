@@ -10,7 +10,7 @@ from functools import lru_cache
 from typing import Dict, List, Optional
 from pathlib import Path
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Load environment variables from .env file
@@ -87,7 +87,7 @@ class Settings(BaseSettings):
 
     # Redis Configuration
     redis_url: str = Field(default="redis://localhost:6379/0", description="Redis connection URL")
-    redis_password: Optional[SecretStr] = Field(default=None, description="Redis password")
+    redis_password: Optional[str] = Field(default=None, description="Redis password")
     redis_max_connections: int = Field(default=100, ge=1, le=1000, description="Redis max connections")
     redis_socket_timeout: int = Field(default=5, ge=1, le=60, description="Redis socket timeout")
     redis_health_check_interval: int = Field(default=30, ge=5, le=300, description="Redis health check interval")
@@ -98,7 +98,7 @@ class Settings(BaseSettings):
 
     # LLM Configuration
     llm_provider: str = Field(default="openrouter", description="LLM provider")
-    openrouter_api_key: Optional[SecretStr] = Field(default=None, description="OpenRouter API key")
+    openrouter_api_key: Optional[str] = Field(default=None, description="OpenRouter API key")
     default_model: str = Field(default="gpt-5", description="Default LLM model")
     max_tokens: int = Field(default=1000, ge=1, le=32000, description="Maximum tokens per request")
     temperature: float = Field(default=0.7, ge=0.0, le=2.0, description="LLM temperature")
@@ -117,19 +117,19 @@ class Settings(BaseSettings):
 
     
     # Pinecone Configuration
-    pinecone_api_key: Optional[SecretStr] = Field(default=None, description="Pinecone API key")
+    pinecone_api_key: Optional[str] = Field(default=None, description="Pinecone API key")
     pinecone_environment: str = Field(default="gcp-starter", description="Pinecone environment")
     pinecone_index_name: str = Field(default="product-reviews", description="Pinecone index name for reviews")
     
     # Apify Configuration (Web Scraping)
-    apify_api_token: Optional[SecretStr] = Field(default=None, description="Apify API token")
+    apify_api_token: Optional[str] = Field(default=None, description="Apify API token")
     apify_reddit_actor_id: str = Field(default="", description="Apify Reddit scraper actor ID")
     apify_twitter_actor_id: str = Field(default="", description="Apify Twitter scraper actor ID")
     
     # Stripe Configuration (Payments)
-    stripe_secret_key: Optional[SecretStr] = Field(default=None, description="Stripe secret key")
+    stripe_secret_key: Optional[str] = Field(default=None, description="Stripe secret key")
     stripe_publishable_key: str = Field(default="", description="Stripe publishable key")
-    stripe_webhook_secret: Optional[SecretStr] = Field(default=None, description="Stripe webhook secret")
+    stripe_webhook_secret: Optional[str] = Field(default=None, description="Stripe webhook secret")
     stripe_currency: str = Field(default="usd", description="Default currency for Stripe")
     
     # Review Scraping Costs (per review in credits)
@@ -153,8 +153,8 @@ class Settings(BaseSettings):
     websocket_max_connections: int = Field(default=1000, ge=1, le=10000, description="Max concurrent WebSocket connections")
 
     # Security Configuration
-    secret_key: SecretStr = Field(
-        default_factory=lambda: SecretStr(secrets.token_urlsafe(32)),
+    secret_key: str = Field(
+        default_factory=lambda: secrets.token_urlsafe(32),
         min_length=32,
         description="Secret key for JWT tokens"
     )
@@ -180,8 +180,8 @@ class Settings(BaseSettings):
 
     # Clerk Configuration
     clerk_publishable_key: str = Field(default="", description="Clerk publishable key")
-    clerk_secret_key: Optional[SecretStr] = Field(default=None, description="Clerk secret key")
-    clerk_jwt_key: Optional[SecretStr] = Field(default=None, description="Clerk JWT verification key")
+    clerk_secret_key: Optional[str] = Field(default=None, description="Clerk secret key")
+    clerk_jwt_key: Optional[str] = Field(default=None, description="Clerk JWT verification key")
     clerk_frontend_api_url: Optional[str] = Field(
         default=None, 
         description="Clerk Frontend API URL (e.g., https://your-domain.clerk.accounts.dev)"
@@ -338,10 +338,7 @@ class Settings(BaseSettings):
     @classmethod
     def validate_secret_key(cls, v):
         """Validate secret key length."""
-        if isinstance(v, SecretStr):
-            secret_value = v.get_secret_value()
-        else:
-            secret_value = str(v)
+        secret_value = str(v)
 
         if len(secret_value) < 32:
             raise ValueError("Secret key must be at least 32 characters long")
@@ -370,10 +367,7 @@ class Settings(BaseSettings):
 
     def get_secret(self, key: str) -> Optional[str]:
         """Get secret value by key."""
-        field_value = getattr(self, key, None)
-        if isinstance(field_value, SecretStr):
-            return field_value.get_secret_value()
-        return field_value
+        return getattr(self, key, None)
 
     def is_development(self) -> bool:
         """Check if running in development environment."""
