@@ -5,6 +5,9 @@ import { motion } from 'framer-motion'
 import { User, Sparkles, ChevronDown, ChevronUp, ExternalLink, Copy, ThumbsUp, ThumbsDown } from 'lucide-react'
 import { EnhancedChatMessage } from '@/types/chat'
 import ReactMarkdown from 'react-markdown'
+import { ExecutionTree } from './execution-tree'
+import { VisualizationRenderer } from './visualization-renderer'
+import { SourceCitations } from './source-citations'
 
 interface MessageWithSourcesProps {
   message: EnhancedChatMessage
@@ -63,64 +66,51 @@ export function MessageWithSources({ message }: MessageWithSourcesProps) {
                 {message.query_type.replace('_', ' ')}
               </div>
             )}
+          </div>
 
-            {/* Sources */}
-            {message.sources && message.sources.length > 0 && (
-              <div className="mt-4 pt-4 border-t border-gray-700/50">
-                <button
-                  onClick={() => setShowSources(!showSources)}
-                  className="flex items-center space-x-2 text-emerald-400 hover:text-emerald-300 transition-colors text-sm"
-                >
-                  <span className="font-medium">{message.sources.length} sources</span>
-                  {showSources ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                </button>
+          {/* Visualization */}
+          {!isUser && message.visualization && (
+            <div className="mt-4">
+              <VisualizationRenderer config={message.visualization} />
+            </div>
+          )}
 
-                {showSources && (
-                  <div className="mt-3 space-y-2">
-                    {message.sources.map((source) => (
-                      <div
-                        key={source.review_id}
-                        className="p-3 bg-gray-900/50 border border-gray-700/30 rounded-lg"
-                      >
-                        <div className="flex items-start justify-between mb-2">
-                          <div className="flex items-center space-x-2">
-                            <span className="text-white/80 text-sm font-medium">{source.author}</span>
-                            <span className="text-white/40 text-xs">•</span>
-                            <span className="text-white/40 text-xs">{source.source}</span>
-                            <span className={`text-xs font-medium ${getSentimentColor(source.sentiment)}`}>
-                              {getSentimentLabel(source.sentiment)}
-                            </span>
-                          </div>
-                          {source.url && (
-                            <a
-                              href={source.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-emerald-400 hover:text-emerald-300"
-                            >
-                              <ExternalLink className="w-4 h-4" />
-                            </a>
-                          )}
-                        </div>
-                        <p className="text-white/60 text-sm line-clamp-3">{source.content}</p>
-                        <div className="mt-2 text-xs text-white/40">
-                          Relevance: {(source.relevance_score * 100).toFixed(0)}%
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+          {/* Source Citations */}
+          {!isUser && message.sources && message.sources.length > 0 && (
+            <div className="mt-4">
+              <SourceCitations 
+                sources={message.sources.map((source: any, idx: number) => ({
+                  id: source.review_id || `source-${idx}`,
+                  index: idx + 1,
+                  author: source.author || 'Anonymous',
+                  source: source.source || 'Unknown',
+                  url: source.url,
+                  date: source.date,
+                  sentiment: getSentimentLabel(source.sentiment),
+                  relevance_score: source.relevance_score,
+                  quote: source.content?.substring(0, 150) + '...',
+                  full_content: source.content,
+                }))}
+              />
+            </div>
+          )}
 
-            {/* Related Questions */}
-            {message.related_questions && message.related_questions.length > 0 && (
-              <div className="mt-4 pt-4 border-t border-gray-700/50">
+          {/* Execution Tree */}
+          {!isUser && message.execution_tree && (
+            <div className="mt-4">
+              <ExecutionTree tree={message.execution_tree} />
+            </div>
+          )}
+
+          {/* Related Questions */}
+          {!isUser && message.related_questions && message.related_questions.length > 0 && (
+            <div className="mt-4">
+              <div className="border border-gray-200 rounded-lg bg-white p-4">
                 <button
                   onClick={() => setShowRelatedQuestions(!showRelatedQuestions)}
-                  className="flex items-center space-x-2 text-white/60 hover:text-white transition-colors text-sm"
+                  className="flex items-center space-x-2 text-gray-700 hover:text-gray-900 transition-colors text-sm font-medium"
                 >
-                  <span className="font-medium">Related questions</span>
+                  <span>Related questions</span>
                   {showRelatedQuestions ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                 </button>
 
@@ -129,7 +119,7 @@ export function MessageWithSources({ message }: MessageWithSourcesProps) {
                     {message.related_questions.map((question, idx) => (
                       <button
                         key={idx}
-                        className="w-full text-left p-2 text-sm text-white/60 hover:text-emerald-400 hover:bg-gray-900/30 rounded transition-colors"
+                        className="w-full text-left p-2 text-sm text-gray-600 hover:text-blue-600 hover:bg-gray-50 rounded transition-colors"
                       >
                         → {question}
                       </button>
@@ -137,8 +127,8 @@ export function MessageWithSources({ message }: MessageWithSourcesProps) {
                   </div>
                 )}
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Message Actions */}
           {!isUser && !message.error && (

@@ -49,6 +49,20 @@ async def get_redis_client(container: DIContainer = Depends(get_scoped_container
 # Note: WebSocket manager is available for real-time updates
 
 
+# Orchestrator service (singleton)
+_orchestrator_instance = None
+
+
+async def get_orchestrator_service():
+    """Get orchestrator service instance (singleton)."""
+    global _orchestrator_instance
+    if _orchestrator_instance is None:
+        from app.services.orchestrator_service import OrchestratorService
+        _orchestrator_instance = OrchestratorService()
+        await _orchestrator_instance.initialize()
+    return _orchestrator_instance
+
+
 async def get_memory_store(container: DIContainer = Depends(get_scoped_container)) -> MemoryInterface:
     """Get memory store implementation."""
     return await container.get_service(MemoryInterface)

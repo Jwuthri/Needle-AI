@@ -130,6 +130,10 @@ dependencies = [
 
     # Sentiment analysis (optional - can use LLM instead)
     "textblob>=0.17.0",  # Simple sentiment analysis
+
+    # Web search and NLP for orchestrator
+    "duckduckgo-search>=6.0.0",  # Free web search
+    "scikit-learn>=1.5.0",  # For TF-IDF and analytics
 ]
 
 [project.optional-dependencies]

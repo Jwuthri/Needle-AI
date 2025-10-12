@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, KeyboardEvent } from 'react'
 import { motion } from 'framer-motion'
 import { Send, Terminal } from 'lucide-react'
+import { useUser } from '@clerk/nextjs'
 
 interface TerminalInputProps {
   onSendMessage: (message: string) => void
@@ -11,11 +12,14 @@ interface TerminalInputProps {
 }
 
 export function TerminalInput({ onSendMessage, disabled, companyName }: TerminalInputProps) {
+  const { user } = useUser()
   const [input, setInput] = useState('')
   const [history, setHistory] = useState<string[]>([])
   const [historyIndex, setHistoryIndex] = useState(-1)
   const [showCursor, setShowCursor] = useState(true)
   const inputRef = useRef<HTMLInputElement>(null)
+  
+  const userEmail = user?.primaryEmailAddress?.emailAddress || 'user'
 
   // Blinking cursor effect
   useEffect(() => {
@@ -68,7 +72,7 @@ export function TerminalInput({ onSendMessage, disabled, companyName }: Terminal
         <div className="flex items-center px-4 py-3 border-b border-gray-800/50 bg-gray-800/30">
           <Terminal className="w-4 h-4 text-emerald-400 mr-2" />
           <span className="text-emerald-400 font-mono text-sm">
-            user@{companyName || 'needleai'} ~ $
+            {userEmail} ~ $
           </span>
         </div>
 

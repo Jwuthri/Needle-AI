@@ -43,12 +43,30 @@ class ChatRequest(BaseModel):
         }
 
 
+class ExecutionStep(BaseModel):
+    """A step in the execution tree."""
+    id: str = Field(..., description="Step identifier")
+    name: str = Field(..., description="Step name")
+    type: str = Field(..., description="Step type (agent, tool, decision)")
+    status: str = Field(..., description="Step status (pending, running, completed, failed)")
+    duration_ms: Optional[int] = Field(default=None, description="Duration in milliseconds")
+    input_summary: Optional[str] = Field(default=None, description="Input summary")
+    output_summary: Optional[str] = Field(default=None, description="Output summary")
+    error: Optional[str] = Field(default=None, description="Error message if failed")
+    metadata: Optional[dict] = Field(default=None, description="Additional metadata")
+    children: List["ExecutionStep"] = Field(default_factory=list, description="Child steps")
+
+
 class ChatResponse(BaseModel):
     """Response model for chat endpoint."""
     message: str = Field(..., description="The AI assistant's response")
     session_id: str = Field(..., description="Session identifier")
     message_id: str = Field(..., description="Unique identifier for this response message")
     timestamp: datetime = Field(default_factory=datetime.now, description="When the response was generated")
+    output_format: Optional[str] = Field(default="text", description="Output format (text, visualization, cited_summary)")
+    visualization: Optional[dict] = Field(default=None, description="Visualization configuration if applicable")
+    sources: Optional[List[dict]] = Field(default=None, description="Source citations")
+    execution_tree: Optional[dict] = Field(default=None, description="Execution tree for UI visualization")
     metadata: Optional[dict] = Field(default=None, description="Additional response metadata")
 
     class Config:
@@ -57,7 +75,8 @@ class ChatResponse(BaseModel):
                 "message": "Hello! I'm doing well, thank you for asking. How can I help you today?",
                 "session_id": "123e4567-e89b-12d3-a456-426614174000",
                 "message_id": "987fcdeb-51a2-43d7-8f29-123456789abc",
-                "timestamp": "2024-01-01T12:00:00.000Z"
+                "timestamp": "2024-01-01T12:00:00.000Z",
+                "output_format": "text"
             }
         }
 

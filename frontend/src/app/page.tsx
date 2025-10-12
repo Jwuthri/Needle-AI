@@ -11,11 +11,13 @@ import { Button } from '@/components/ui/button'
 import { useUserSync } from '@/hooks/use-user-sync'
 
 export default function LandingPage() {
-  const { isSignedIn } = useUser()
+  const { isSignedIn, user } = useUser()
   const router = useRouter()
   
   // Sync user to database when they sign in
   useUserSync()
+  
+  const userEmail = user?.primaryEmailAddress?.emailAddress || 'user'
 
   React.useEffect(() => {
     if (isSignedIn) {
@@ -95,7 +97,7 @@ export default function LandingPage() {
                   <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
                   <div className="w-3 h-3 bg-green-500 rounded-full"></div>
                 </div>
-                <div className="ml-4 text-emerald-400/60 text-sm font-mono">user@company ~ $</div>
+                <div className="ml-4 text-emerald-400/60 text-sm font-mono">{userEmail} ~ $</div>
               </div>
               <div className="font-mono text-sm space-y-2">
                 <div className="text-emerald-400">$ What are the main complaints about our competitor? ✦</div>

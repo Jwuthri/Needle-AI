@@ -34,11 +34,58 @@ export interface QueryPipelineStep {
   metadata: Record<string, any>;
 }
 
+export interface ExecutionNode {
+  id: string;
+  name: string;
+  type: string;
+  status: string;
+  start_time?: string;
+  end_time?: string;
+  duration_ms?: number;
+  input_summary?: string;
+  output_summary?: string;
+  error?: string;
+  metadata?: Record<string, any>;
+  children: ExecutionNode[];
+}
+
+export interface ExecutionTreeData {
+  tree_id: string;
+  query: string;
+  session_id?: string;
+  created_at: string;
+  root: ExecutionNode;
+}
+
+export interface ChartConfig {
+  type: 'bar' | 'line' | 'pie' | 'table';
+  title?: string;
+  data?: {
+    labels?: string[];
+    datasets?: Array<{
+      label?: string;
+      data: number[];
+      backgroundColor?: string | string[];
+      borderColor?: string | string[];
+      borderWidth?: number;
+      fill?: boolean;
+      tension?: number;
+    }>;
+  };
+  options?: any;
+  columns?: string[];
+  rows?: Array<Record<string, any>>;
+  totalRows?: number;
+}
+
 export interface EnhancedChatMessage extends ChatMessage {
   query_type?: string;
   pipeline_steps?: QueryPipelineStep[];
   sources?: ReviewSource[];
   related_questions?: string[];
+  execution_tree?: ExecutionTreeData;
+  visualization?: ChartConfig;
+  output_format?: 'text' | 'visualization' | 'cited_summary';
 }
 
 export interface ChatSession {
@@ -66,6 +113,9 @@ export interface ChatResponse {
   pipeline_steps?: QueryPipelineStep[];
   sources?: ReviewSource[];
   related_questions?: string[];
+  execution_tree?: ExecutionTreeData;
+  visualization?: ChartConfig;
+  output_format?: 'text' | 'visualization' | 'cited_summary';
 }
 
 export interface WebSocketMessage {

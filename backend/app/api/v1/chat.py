@@ -12,10 +12,13 @@ from app.api.deps import (
     validate_session_id,
 )
 from app.core.security.clerk_auth import ClerkUser, get_current_user
+from app.dependencies import get_orchestrator_service
 from app.exceptions import NotFoundError, ValidationError
 from app.models.chat import ChatRequest, ChatResponse, ChatSession, MessageHistory
 from app.models.feedback import ChatFeedback, FeedbackResponse, FeedbackType
 from app.services.conversation_service import ConversationService
+from app.services.llm_logger import LLMLogger
+from app.database.models.llm_call import LLMCallTypeEnum
 from fastapi import APIRouter, Depends, HTTPException, status
 from app.utils.logging import get_logger
 
@@ -27,7 +30,7 @@ router = APIRouter()
 @router.post("/", response_model=ChatResponse)
 async def send_message(
     request: ChatRequest,
-    chat_service = Depends(get_chat_service_dep),
+    orchestrator = Depends(get_orchestrator_service),
     current_user: Optional[ClerkUser] = Depends(get_current_user),
     _rate_limit_check = Depends(check_rate_limit),
     db = Depends(get_db)
@@ -35,16 +38,13 @@ async def send_message(
     """
     Send a message to the chat and get an AI response.
 
-    **Enhanced RAG Mode** (when company_ids provided):
-    - Retrieves relevant reviews from vector database
-    - Provides source attribution
-    - Shows pipeline visualization (Weaviate-style)
-    - Generates related questions
-    - Classifies query intent
-    
-    **Standard Mode** (no company_ids):
-    - Uses regular Agno chat service
-    - General conversation without review context
+    Uses the orchestrator to dynamically:
+    - Analyze query intent and determine optimal response format
+    - Retrieve data from RAG (reviews) and/or web search as needed
+    - Process data with analytics and NLP
+    - Generate visualizations when appropriate
+    - Provide proper source citations
+    - Track execution steps for UI visualization
     """
     try:
         from app.database.repositories.chat_session import ChatSessionRepository
@@ -68,7 +68,7 @@ async def send_message(
                 extra_metadata={"company_id": request.company_id} if request.company_id else {}
             )
             await db.commit()
-            logger.info(f"Created database session {session_id} with company {request.company_id}")
+            logger.info(f"Created database session {session_id}")
         
         # Save user message to database
         user_message = await ChatMessageRepository.create(
@@ -80,29 +80,12 @@ async def send_message(
         await db.commit()
         logger.info(f"Saved user message {user_message.id} to database")
         
-        # Use RAG service if company_id provided
-        if request.company_id:
-            from app.services.rag_chat_service import RAGChatService
-            
-            rag_service = RAGChatService()
-            await rag_service.initialize()
-            
-            response = await rag_service.process_message(
-                request=request,
-                user_id=user_id,
-                company_ids=[request.company_id]  # Convert to list for RAG service
-            )
-            
-            await rag_service.cleanup()
-            
-        else:
-            # Standard chat (backward compatible)
-            response = await chat_service.process_message(
-                message=request.message,
-                session_id=session_id,
-                user_id=user_id,
-                context=request.context
-            )
+        # Process message using orchestrator
+        response = await orchestrator.process_message(
+            request=request,
+            user_id=user_id,
+            db=db
+        )
         
         # Save assistant response to database
         assistant_message = await ChatMessageRepository.create(
@@ -125,42 +108,84 @@ async def send_message(
                 openrouter_key = settings.openrouter_api_key
                 
                 if openrouter_key:
-                    # Generate title using GPT-5 nano
-                    async with httpx.AsyncClient() as client:
-                        title_response = await client.post(
-                            "https://openrouter.ai/api/v1/chat/completions",
-                            headers={
-                                "Authorization": f"Bearer {openrouter_key}",
-                                "Content-Type": "application/json",
+                    # Log title generation LLM call
+                    log_id = await LLMLogger.start(
+                        call_type=LLMCallTypeEnum.SYSTEM,
+                        provider="openrouter",
+                        model="openai/gpt-5-nano",
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": "Generate a short, descriptive title (max 50 characters) for this conversation. Return only the title, no quotes or extra text."
                             },
-                            json={
-                                "model": "openai/gpt-5-nano",
-                                "messages": [
-                                    {
-                                        "role": "system",
-                                        "content": "Generate a short, descriptive title (max 50 characters) for this conversation. Return only the title, no quotes or extra text."
-                                    },
-                                    {
-                                        "role": "user",
-                                        "content": request.message
-                                    }
-                                ],
-                                "max_tokens": 20,
-                                "temperature": 0.7,
-                            },
-                            timeout=10.0
-                        )
-                        
-                        if title_response.status_code == 200:
-                            title_data = title_response.json()
-                            title = title_data["choices"][0]["message"]["content"].strip()
+                            {
+                                "role": "user",
+                                "content": request.message
+                            }
+                        ],
+                        user_id=user_id,
+                        session_id=session_id,
+                        extra_metadata={"purpose": "title_generation"},
+                        db=db
+                    )
+                    
+                    try:
+                        # Generate title using GPT-5 nano
+                        async with httpx.AsyncClient() as client:
+                            title_response = await client.post(
+                                "https://openrouter.ai/api/v1/chat/completions",
+                                headers={
+                                    "Authorization": f"Bearer {openrouter_key}",
+                                    "Content-Type": "application/json",
+                                },
+                                json={
+                                    "model": "openai/gpt-5-nano",
+                                    "messages": [
+                                        {
+                                            "role": "system",
+                                            "content": "Generate a short, descriptive title (max 100 characters) for this conversation. Return only the title, no quotes or extra text."
+                                        },
+                                        {
+                                            "role": "user",
+                                            "content": request.message
+                                        }
+                                    ],
+                                    "max_tokens": 25,
+                                    "temperature": 0.5,
+                                },
+                                timeout=10.0
+                            )
                             
-                            # Update session with title
-                            await ChatSessionRepository.update(db, session_id, title=title[:500])
-                            await db.commit()
-                            logger.info(f"Generated title for session {session_id}: {title}")
+                            if title_response.status_code == 200:
+                                title_data = title_response.json()
+                                title = title_data["choices"][0]["message"]["content"].strip()
+                                usage = title_data.get("usage", {})
+                                
+                                # Log completion
+                                await LLMLogger.complete(
+                                    log_id=log_id,
+                                    response_message={"role": "assistant", "content": title},
+                                    tokens={
+                                        "prompt_tokens": usage.get("prompt_tokens"),
+                                        "completion_tokens": usage.get("completion_tokens"),
+                                        "total_tokens": usage.get("total_tokens")
+                                    },
+                                    finish_reason="stop",
+                                    db=db
+                                )
+                                
+                                # Update session with title
+                                await ChatSessionRepository.update(db, session_id, title=title[:500])
+                                await db.commit()
+                                logger.info(f"Generated title for session {session_id}: {title}")
+                            else:
+                                await LLMLogger.fail(log_id, f"HTTP {title_response.status_code}", db=db)
+                    except Exception as title_error:
+                        await LLMLogger.fail(log_id, str(title_error), db=db)
+                        logger.error(f"Failed to generate title: {title_error}")
+                        # Don't fail the request if title generation fails
             except Exception as e:
-                logger.error(f"Failed to generate title: {e}")
+                logger.error(f"Error in title generation section: {e}")
                 # Don't fail the request if title generation fails
         
         # Update response with session_id
@@ -309,7 +334,6 @@ async def get_session(
     try:
         from app.database.repositories.chat_session import ChatSessionRepository
         from datetime import datetime
-        from app.models.chat import Message
         
         user_id = current_user.id if current_user else None
         

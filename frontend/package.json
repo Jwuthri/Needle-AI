@@ -23,7 +23,8 @@
     "tailwind-merge": "^2.2.0",
     "@clerk/nextjs": "^4.29.3",
     "framer-motion": "^10.16.16",
-    "react-hot-toast": "^2.4.1"
+    "react-hot-toast": "^2.4.1",
+    "chart.js": "^4.4.0"
   },
   "devDependencies": {
     "@types/node": "20.9.2",

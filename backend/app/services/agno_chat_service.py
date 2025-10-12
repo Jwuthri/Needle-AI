@@ -17,6 +17,8 @@ from agno.models.openrouter import OpenRouter
 
 from app.exceptions import ConfigurationError, ExternalServiceError
 from app.models.chat import ChatRequest, ChatResponse, ChatMessage
+from app.services.llm_logger import LLMLogger
+from app.database.models.llm_call import LLMCallTypeEnum
 from app.utils.logging import get_logger
 
 logger = get_logger("agno_chat_service")
@@ -219,38 +221,119 @@ class AgnoChatService:
             # Use session_id as the conversation identifier
             session_id = request.session_id or "default"
 
-            # Process message with Agno using async arun()
-            # Agno automatically manages chat history per session when db is configured
-            run_response = await self.agent.arun(
-                request.message,
-                stream=False,
+            # Log LLM call
+            log_id = await LLMLogger.start(
+                call_type=LLMCallTypeEnum.CHAT,
+                provider=self.settings.llm_provider,
+                model=self.settings.default_model,
+                messages=[{"role": "user", "content": request.message}],
                 user_id=user_id,
                 session_id=session_id,
+                extra_metadata={"context": request.context} if request.context else None
             )
 
-            # Extract response content from RunResponse
-            if hasattr(run_response, 'content'):
-                response_content = run_response.content
-            elif isinstance(run_response, str):
-                response_content = run_response
-            else:
-                response_content = str(run_response)
+            try:
+                # Process message with Agno using async arun()
+                # Agno automatically manages chat history per session when db is configured
+                run_response = await self.agent.arun(
+                    request.message,
+                    stream=False,
+                    user_id=user_id,
+                    session_id=session_id,
+                )
 
-            # Create response
-            chat_response = ChatResponse(
-                message=response_content,
-                session_id=session_id,
-                message_id=str(uuid.uuid4()),
-                metadata={
-                    "model": self.settings.default_model,
-                    "provider": "agno",
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "user_id": user_id,
-                }
-            )
+                # Extract response content from RunResponse
+                if hasattr(run_response, 'content'):
+                    response_content = run_response.content
+                elif isinstance(run_response, str):
+                    response_content = run_response
+                else:
+                    response_content = str(run_response)
 
-            logger.debug(f"Processed message for session {session_id}")
-            return chat_response
+                # Extract token usage and messages from Agno's response
+                tokens_used = None
+                if hasattr(run_response, 'metrics'):
+                    tokens_used = {
+                        'prompt_tokens': run_response.metrics.input_tokens,
+                        'completion_tokens': run_response.metrics.output_tokens,
+                        'total_tokens': run_response.metrics.total_tokens
+                    }
+
+                # Log completion with full message history
+                response_messages = []
+                if hasattr(run_response, 'messages'):
+                    # Extract all messages from the run
+                    response_messages = [
+                        {
+                            'role': msg.role,
+                            'content': msg.content,
+                            'tool_calls': msg.tool_calls if hasattr(msg, 'tool_calls') else None
+                        }
+                        for msg in run_response.messages
+                        if msg.role in ['user', 'assistant', 'tool']
+                    ]
+                    
+                    # Log each internal LLM call within the run (e.g., tool calls, reasoning steps)
+                    for msg in run_response.messages:
+                        if msg.role == 'assistant' and hasattr(msg, 'metrics'):
+                            msg_metrics = msg.metrics
+                            if msg_metrics and msg_metrics.total_tokens > 0:
+                                # This is an internal LLM call - create separate log entry
+                                internal_log_id = await LLMLogger.start(
+                                    call_type=LLMCallTypeEnum.CHAT,
+                                    provider=self.settings.llm_provider,
+                                    model=self.settings.default_model,
+                                    messages=[{'role': 'assistant', 'content': msg.content or ''}],
+                                    user_id=user_id,
+                                    session_id=session_id,
+                                    parent_call_id=log_id,  # Link to parent call
+                                    extra_metadata={
+                                        'message_type': 'internal_step',
+                                        'has_tool_calls': bool(msg.tool_calls)
+                                    }
+                                )
+                                await LLMLogger.complete(
+                                    log_id=internal_log_id,  # Use internal log ID
+                                    response_message={
+                                        'role': 'assistant',
+                                        'content': msg.content,
+                                        'tool_calls': msg.tool_calls if hasattr(msg, 'tool_calls') else None
+                                    },
+                                    tokens={
+                                        'prompt_tokens': msg_metrics.input_tokens,
+                                        'completion_tokens': msg_metrics.output_tokens,
+                                        'total_tokens': msg_metrics.total_tokens
+                                    },
+                                    finish_reason="tool_calls" if msg.tool_calls else "stop"
+                                )
+
+                await LLMLogger.complete(
+                    log_id=log_id,
+                    response_message={"role": "assistant", "content": response_content, "messages": response_messages},
+                    tokens=tokens_used,
+                    finish_reason="stop"
+                )
+
+                # Create response
+                chat_response = ChatResponse(
+                    message=response_content,
+                    session_id=session_id,
+                    message_id=str(uuid.uuid4()),
+                    metadata={
+                        "model": self.settings.default_model,
+                        "provider": "agno",
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "user_id": user_id,
+                        "llm_log_id": log_id
+                    }
+                )
+
+                logger.debug(f"Processed message for session {session_id}")
+                return chat_response
+
+            except Exception as e:
+                await LLMLogger.fail(log_id, str(e))
+                raise
 
         except Exception as e:
             logger.error(f"Error processing message: {e}")

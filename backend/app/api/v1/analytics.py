@@ -12,6 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db
 from app.core.security.clerk_auth import ClerkUser, get_current_user
 from app.database.repositories import CompanyRepository, ReviewRepository
+from app.database.repositories.llm_call import LLMCallRepository
+from app.database.models.llm_call import LLMCallTypeEnum, LLMCallStatusEnum
 from app.services.analytics_service import AnalyticsService
 from app.utils.logging import get_logger
 
@@ -245,5 +247,88 @@ async def get_sentiment_trend(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get sentiment trend: {str(e)}"
+        )
+
+
+@router.get("/llm-calls/cost-stats")
+async def get_llm_cost_stats(
+    current_user: ClerkUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    days: int = 30
+):
+    """
+    Get LLM call cost statistics for the current user.
+    
+    Returns:
+    - Total calls and success/failure counts
+    - Total cost and tokens used
+    - Breakdown by call type and model
+    """
+    try:
+        stats = await LLMCallRepository.get_cost_stats(
+            db,
+            user_id=current_user.id,
+            days=days
+        )
+        return stats
+
+    except Exception as e:
+        logger.error(f"Error getting LLM cost stats: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get cost stats: {str(e)}"
+        )
+
+
+@router.get("/llm-calls/list")
+async def list_llm_calls(
+    current_user: ClerkUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    session_id: Optional[str] = None,
+    call_type: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0
+):
+    """
+    List LLM calls for the current user.
+    
+    Useful for debugging and monitoring LLM usage.
+    """
+    try:
+        # Parse enum values
+        call_type_enum = LLMCallTypeEnum(call_type) if call_type else None
+        status_enum = LLMCallStatusEnum(status) if status else None
+        
+        calls = await LLMCallRepository.list_by_filters(
+            db,
+            user_id=current_user.id,
+            session_id=session_id,
+            call_type=call_type_enum,
+            status=status_enum,
+            limit=limit,
+            offset=offset
+        )
+        
+        # Convert to dict for JSON response
+        calls_data = [call.to_dict() for call in calls]
+        
+        return {
+            "calls": calls_data,
+            "total": len(calls_data),
+            "limit": limit,
+            "offset": offset
+        }
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid enum value: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(f"Error listing LLM calls: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list LLM calls: {str(e)}"
         )
 

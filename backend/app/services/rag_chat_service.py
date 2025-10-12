@@ -15,6 +15,8 @@ from app.config import get_settings
 from app.exceptions import ConfigurationError, ExternalServiceError
 from app.models.chat import ChatRequest, ChatResponse
 from app.services.vector_service import VectorService
+from app.services.llm_logger import LLMLogger
+from app.database.models.llm_call import LLMCallTypeEnum
 from app.utils.logging import get_logger
 
 logger = get_logger("rag_chat_service")
@@ -185,24 +187,61 @@ If the context doesn't contain enough information, acknowledge this limitation.
             step_start = time.time()
             prompt = self._build_prompt(query, context, query_type)
             
-            response = await self.agent.arun(
-                prompt,
-                session_id=request.session_id or "default"
+            # Log LLM call
+            log_id = await LLMLogger.start(
+                call_type=LLMCallTypeEnum.RAG_SYNTHESIS,
+                provider="openrouter",
+                model=self.settings.default_model,
+                messages=[{"role": "user", "content": prompt}],
+                user_id=user_id,
+                session_id=request.session_id,
+                company_id=company_ids[0] if company_ids else None,
+                extra_metadata={
+                    "query_type": query_type,
+                    "reviews_used": len(unique_reviews[:10])
+                }
             )
+            
+            try:
+                response = await self.agent.arun(
+                    prompt,
+                    session_id=request.session_id or "default"
+                )
 
-            # Extract response content
-            if isinstance(response, str):
-                response_content = response
-            elif hasattr(response, 'content'):
-                response_content = response.content
-            else:
-                response_content = str(response)
+                # Extract response content
+                if isinstance(response, str):
+                    response_content = response
+                elif hasattr(response, 'content'):
+                    response_content = response.content
+                else:
+                    response_content = str(response)
+
+                # Extract token usage from Agno's response
+                tokens_used = None
+                if hasattr(response, 'metrics'):
+                    tokens_used = {
+                        'prompt_tokens': response.metrics.input_tokens,
+                        'completion_tokens': response.metrics.output_tokens,
+                        'total_tokens': response.metrics.total_tokens
+                    }
+
+                # Log completion with token data
+                await LLMLogger.complete(
+                    log_id=log_id,
+                    response_message={"role": "assistant", "content": response_content},
+                    tokens=tokens_used,
+                    finish_reason="stop"
+                )
+
+            except Exception as e:
+                await LLMLogger.fail(log_id, str(e))
+                raise
 
             pipeline_steps.append({
                 "name": "LLM Generation",
                 "duration_ms": int((time.time() - step_start) * 1000),
                 "status": "completed",
-                "metadata": {"model": self.settings.default_model}
+                "metadata": {"model": self.settings.default_model, "log_id": log_id}
             })
 
             # Step 5: Generate related questions
