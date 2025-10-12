@@ -5,7 +5,9 @@ User repository for NeedleAi.
 from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy.orm import Session
+from sqlalchemy import or_
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 
 from ...utils.logging import get_logger
 from ..models.user import User
@@ -17,7 +19,7 @@ class UserRepository:
     """Repository for User model operations."""
 
     @staticmethod
-    def create(db: Session, email: str, username: str = None, full_name: str = None, **kwargs) -> User:
+    async def create(db: AsyncSession, email: str, username: str = None, full_name: str = None, **kwargs) -> User:
         """Create a new user."""
         user = User(
             email=email,
@@ -26,35 +28,39 @@ class UserRepository:
             **kwargs
         )
         db.add(user)
-        db.commit()
-        db.refresh(user)
+        await db.flush()
+        await db.refresh(user)
         logger.info(f"Created user: {user.id}")
         return user
 
     @staticmethod
-    def get_by_id(db: Session, user_id: str) -> Optional[User]:
+    async def get_by_id(db: AsyncSession, user_id: str) -> Optional[User]:
         """Get user by ID."""
-        return db.query(User).filter(User.id == user_id).first()
+        result = await db.execute(select(User).filter(User.id == user_id))
+        return result.scalar_one_or_none()
 
     @staticmethod
-    def get_by_email(db: Session, email: str) -> Optional[User]:
+    async def get_by_email(db: AsyncSession, email: str) -> Optional[User]:
         """Get user by email."""
-        return db.query(User).filter(User.email == email).first()
+        result = await db.execute(select(User).filter(User.email == email))
+        return result.scalar_one_or_none()
 
     @staticmethod
-    def get_by_username(db: Session, username: str) -> Optional[User]:
+    async def get_by_username(db: AsyncSession, username: str) -> Optional[User]:
         """Get user by username."""
-        return db.query(User).filter(User.username == username).first()
+        result = await db.execute(select(User).filter(User.username == username))
+        return result.scalar_one_or_none()
 
     @staticmethod
-    def get_all(db: Session, skip: int = 0, limit: int = 100) -> List[User]:
+    async def get_all(db: AsyncSession, skip: int = 0, limit: int = 100) -> List[User]:
         """Get all users with pagination."""
-        return db.query(User).offset(skip).limit(limit).all()
+        result = await db.execute(select(User).offset(skip).limit(limit))
+        return list(result.scalars().all())
 
     @staticmethod
-    def update(db: Session, user_id: str, **kwargs) -> Optional[User]:
+    async def update(db: AsyncSession, user_id: str, **kwargs) -> Optional[User]:
         """Update user."""
-        user = UserRepository.get_by_id(db, user_id)
+        user = await UserRepository.get_by_id(db, user_id)
         if not user:
             return None
 
@@ -63,53 +69,55 @@ class UserRepository:
                 setattr(user, key, value)
 
         user.updated_at = datetime.utcnow()
-        db.commit()
-        db.refresh(user)
+        await db.flush()
+        await db.refresh(user)
         return user
 
     @staticmethod
-    def delete(db: Session, user_id: str) -> bool:
+    async def delete(db: AsyncSession, user_id: str) -> bool:
         """Delete user by ID."""
-        user = UserRepository.get_by_id(db, user_id)
+        user = await UserRepository.get_by_id(db, user_id)
         if user:
-            db.delete(user)
-            db.commit()
+            await db.delete(user)
+            await db.flush()
             logger.info(f"Deleted user: {user_id}")
             return True
         return False
 
     @staticmethod
-    def increment_usage(db: Session, user_id: str, requests: int = 1, tokens: int = 0):
+    async def increment_usage(db: AsyncSession, user_id: str, requests: int = 1, tokens: int = 0):
         """Increment user usage counters."""
-        user = UserRepository.get_by_id(db, user_id)
+        user = await UserRepository.get_by_id(db, user_id)
         if user:
             user.total_requests += requests
             user.total_tokens_used += tokens
             user.updated_at = datetime.utcnow()
-            db.commit()
+            await db.flush()
 
     @staticmethod
-    def update_last_login(db: Session, user_id: str) -> Optional[User]:
+    async def update_last_login(db: AsyncSession, user_id: str) -> Optional[User]:
         """Update user's last login timestamp."""
-        user = UserRepository.get_by_id(db, user_id)
+        user = await UserRepository.get_by_id(db, user_id)
         if user:
             user.last_login_at = datetime.utcnow()
             user.updated_at = datetime.utcnow()
-            db.commit()
-            db.refresh(user)
+            await db.flush()
+            await db.refresh(user)
         return user
 
     @staticmethod
-    def search_users(db: Session, search_term: str, skip: int = 0, limit: int = 50) -> List[User]:
+    async def search_users(db: AsyncSession, search_term: str, skip: int = 0, limit: int = 50) -> List[User]:
         """Search users by email, username or full name."""
-        return (
-            db.query(User)
+        result = await db.execute(
+            select(User)
             .filter(
-                User.email.ilike(f"%{search_term}%") |
-                User.username.ilike(f"%{search_term}%") |
-                User.full_name.ilike(f"%{search_term}%")
+                or_(
+                    User.email.ilike(f"%{search_term}%"),
+                    User.username.ilike(f"%{search_term}%"),
+                    User.full_name.ilike(f"%{search_term}%")
+                )
             )
             .offset(skip)
             .limit(limit)
-            .all()
         )
+        return list(result.scalars().all())

@@ -13,8 +13,12 @@ from app.api.deps import (
 from app.core.security.clerk_auth import ClerkUser, get_current_user
 from app.exceptions import NotFoundError, ValidationError
 from app.models.chat import ChatRequest, ChatResponse, ChatSession, MessageHistory
+from app.models.feedback import ChatFeedback, FeedbackResponse, FeedbackType
 from app.services.conversation_service import ConversationService
 from fastapi import APIRouter, Depends, HTTPException, status
+from app.utils.logging import get_logger
+
+logger = get_logger("chat_api")
 
 router = APIRouter()
 
@@ -29,18 +33,44 @@ async def send_message(
     """
     Send a message to the chat and get an AI response.
 
-    This endpoint processes a user message through the LLM and returns
-    an AI-generated response. It handles session management, caching,
-    and event publishing automatically.
+    **Enhanced RAG Mode** (when company_ids provided):
+    - Retrieves relevant reviews from vector database
+    - Provides source attribution
+    - Shows pipeline visualization (Weaviate-style)
+    - Generates related questions
+    - Classifies query intent
+    
+    **Standard Mode** (no company_ids):
+    - Uses regular Agno chat service
+    - General conversation without review context
     """
     try:
         user_id = current_user.id if current_user else None
-        response = await chat_service.process_message(
-            message=request.message,
-            session_id=request.session_id,
-            user_id=user_id,
-            context=request.context
-        )
+        
+        # Use RAG service if company_ids provided
+        if request.company_ids:
+            from app.services.rag_chat_service import RAGChatService
+            
+            rag_service = RAGChatService()
+            await rag_service.initialize()
+            
+            response = await rag_service.process_message(
+                request=request,
+                user_id=user_id,
+                company_ids=request.company_ids
+            )
+            
+            await rag_service.cleanup()
+            
+        else:
+            # Standard chat (backward compatible)
+            response = await chat_service.process_message(
+                message=request.message,
+                session_id=request.session_id,
+                user_id=user_id,
+                context=request.context
+            )
+        
         return response
 
     except ValidationError as e:
@@ -215,4 +245,38 @@ async def clear_session(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to clear session: {str(e)}"
+        )
+
+
+@router.post("/feedback", response_model=FeedbackResponse)
+async def submit_feedback(
+    feedback: ChatFeedback,
+    current_user: Optional[ClerkUser] = Depends(get_current_user)
+) -> FeedbackResponse:
+    """
+    Submit feedback for a chat response (like, dislike, copy).
+    
+    Tracks user interactions to improve response quality.
+    """
+    try:
+        # Log feedback for analytics
+        user_id = current_user.id if current_user else "anonymous"
+        logger.info(
+            f"Feedback received - User: {user_id}, Message: {feedback.message_id}, "
+            f"Type: {feedback.feedback_type.value}"
+        )
+        
+        # TODO: Store feedback in database for analytics
+        # Could create a feedback table or add to message metadata
+        
+        return FeedbackResponse(
+            success=True,
+            message=f"Thank you for your {feedback.feedback_type.value} feedback!"
+        )
+        
+    except Exception as e:
+        logger.error(f"Error submitting feedback: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to submit feedback: {str(e)}"
         )

@@ -29,7 +29,6 @@ __all__ = [
     "UserRepository",
     "ChatSessionRepository",
     "ChatMessageRepository",
-    "CompletionRepository",
     "ApiKeyRepository",
     "TaskResultRepository",
 

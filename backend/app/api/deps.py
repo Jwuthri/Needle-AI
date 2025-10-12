@@ -2,10 +2,11 @@
 API-specific dependencies for NeedleAi.
 """
 
-from typing import Optional
+from typing import AsyncGenerator, Optional
 
 from app.config import Settings, get_settings
 from app.core.security.rate_limit import RateLimiter
+from app.database.session import get_async_db_session
 from app.dependencies import (
     get_chat_service,
     get_conversation_service,
@@ -14,6 +15,7 @@ from app.dependencies import (
 )
 from app.services.conversation_service import ConversationService
 from fastapi import Depends, Header, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 # Use DI container services directly
@@ -112,3 +114,17 @@ def validate_session_id(session_id: str) -> str:
         )
 
     return session_id
+
+
+# Database session dependency (async)
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """
+    Get async database session for dependency injection.
+    
+    This is the recommended way to get database sessions in FastAPI endpoints.
+    
+    Yields:
+        AsyncSession: Async SQLAlchemy database session
+    """
+    async for session in get_async_db_session():
+        yield session

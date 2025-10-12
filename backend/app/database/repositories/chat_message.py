@@ -5,7 +5,8 @@ Chat message repository for NeedleAi.
 from typing import List, Optional
 
 from sqlalchemy import asc, desc
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 
 from ...utils.logging import get_logger
 from ..models.chat_message import ChatMessage, MessageRoleEnum
@@ -17,8 +18,8 @@ class ChatMessageRepository:
     """Repository for ChatMessage model operations."""
 
     @staticmethod
-    def create(
-        db: Session,
+    async def create(
+        db: AsyncSession,
         session_id: str,
         content: str,
         role: MessageRoleEnum,
@@ -32,93 +33,98 @@ class ChatMessageRepository:
             **kwargs
         )
         db.add(message)
-        db.commit()
-        db.refresh(message)
+        await db.flush()
+        await db.refresh(message)
 
         # Import here to avoid circular imports
         from .chat_session import ChatSessionRepository
-        ChatSessionRepository.increment_message_count(db, session_id, kwargs.get('token_count', 0))
+        await ChatSessionRepository.increment_message_count(db, session_id, kwargs.get('token_count', 0))
 
         logger.info(f"Created message: {message.id} in session: {session_id}")
         return message
 
     @staticmethod
-    def get_by_id(db: Session, message_id: str) -> Optional[ChatMessage]:
+    async def get_by_id(db: AsyncSession, message_id: str) -> Optional[ChatMessage]:
         """Get message by ID."""
-        return db.query(ChatMessage).filter(ChatMessage.id == message_id).first()
+        result = await db.execute(select(ChatMessage).filter(ChatMessage.id == message_id))
+        return result.scalar_one_or_none()
 
     @staticmethod
-    def get_session_messages(
-        db: Session,
+    async def get_session_messages(
+        db: AsyncSession,
         session_id: str,
         limit: int = 100,
         offset: int = 0,
         role: Optional[MessageRoleEnum] = None
     ) -> List[ChatMessage]:
         """Get messages for a session."""
-        query = db.query(ChatMessage).filter(ChatMessage.session_id == session_id)
+        query = select(ChatMessage).filter(ChatMessage.session_id == session_id)
 
         if role:
             query = query.filter(ChatMessage.role == role)
 
-        return (
-            query
-            .order_by(asc(ChatMessage.created_at))
-            .offset(offset)
-            .limit(limit)
-            .all()
-        )
+        query = query.order_by(asc(ChatMessage.created_at)).offset(offset).limit(limit)
+        result = await db.execute(query)
+        return list(result.scalars().all())
 
     @staticmethod
-    def get_recent_messages(
-        db: Session,
+    async def get_recent_messages(
+        db: AsyncSession,
         session_id: str,
         limit: int = 20
     ) -> List[ChatMessage]:
         """Get recent messages for context."""
-        return (
-            db.query(ChatMessage)
+        query = (
+            select(ChatMessage)
             .filter(ChatMessage.session_id == session_id)
             .order_by(desc(ChatMessage.created_at))
             .limit(limit)
-            .all()
         )
+        result = await db.execute(query)
+        return list(result.scalars().all())
 
     @staticmethod
-    def get_all(
-        db: Session,
+    async def get_all(
+        db: AsyncSession,
         skip: int = 0,
         limit: int = 100,
         role: Optional[MessageRoleEnum] = None
     ) -> List[ChatMessage]:
         """Get all messages with pagination."""
-        query = db.query(ChatMessage)
+        query = select(ChatMessage)
 
         if role:
             query = query.filter(ChatMessage.role == role)
 
-        return query.order_by(desc(ChatMessage.created_at)).offset(skip).limit(limit).all()
+        query = query.order_by(desc(ChatMessage.created_at)).offset(skip).limit(limit)
+        result = await db.execute(query)
+        return list(result.scalars().all())
 
     @staticmethod
-    def count_session_messages(db: Session, session_id: str) -> int:
+    async def count_session_messages(db: AsyncSession, session_id: str) -> int:
         """Count messages in a session."""
-        return db.query(ChatMessage).filter(ChatMessage.session_id == session_id).count()
+        result = await db.execute(
+            select(ChatMessage).filter(ChatMessage.session_id == session_id)
+        )
+        return len(list(result.scalars().all()))
 
     @staticmethod
-    def count_user_messages(db: Session, user_id: str) -> int:
+    async def count_user_messages(db: AsyncSession, user_id: str) -> int:
         """Count messages for a user across all sessions."""
         from ..models.chat_session import ChatSession
-        return (
-            db.query(ChatMessage)
+        
+        query = (
+            select(ChatMessage)
             .join(ChatSession, ChatMessage.session_id == ChatSession.id)
             .filter(ChatSession.user_id == user_id)
-            .count()
         )
+        result = await db.execute(query)
+        return len(list(result.scalars().all()))
 
     @staticmethod
-    def update(db: Session, message_id: str, **kwargs) -> Optional[ChatMessage]:
+    async def update(db: AsyncSession, message_id: str, **kwargs) -> Optional[ChatMessage]:
         """Update a chat message."""
-        message = ChatMessageRepository.get_by_id(db, message_id)
+        message = await ChatMessageRepository.get_by_id(db, message_id)
         if not message:
             return None
 
@@ -126,24 +132,24 @@ class ChatMessageRepository:
             if hasattr(message, key):
                 setattr(message, key, value)
 
-        db.commit()
-        db.refresh(message)
+        await db.flush()
+        await db.refresh(message)
         return message
 
     @staticmethod
-    def delete(db: Session, message_id: str) -> bool:
+    async def delete(db: AsyncSession, message_id: str) -> bool:
         """Delete a message."""
-        message = ChatMessageRepository.get_by_id(db, message_id)
+        message = await ChatMessageRepository.get_by_id(db, message_id)
         if message:
-            db.delete(message)
-            db.commit()
+            await db.delete(message)
+            await db.flush()
             logger.info(f"Deleted message: {message_id}")
             return True
         return False
 
     @staticmethod
-    def search_messages(
-        db: Session,
+    async def search_messages(
+        db: AsyncSession,
         search_term: str,
         user_id: str = None,
         session_id: str = None,
@@ -152,7 +158,7 @@ class ChatMessageRepository:
         limit: int = 50
     ) -> List[ChatMessage]:
         """Search messages by content."""
-        query = db.query(ChatMessage)
+        query = select(ChatMessage)
 
         if search_term:
             query = query.filter(ChatMessage.content.ilike(f"%{search_term}%"))
@@ -166,16 +172,18 @@ class ChatMessageRepository:
         if role:
             query = query.filter(ChatMessage.role == role)
 
-        return query.order_by(desc(ChatMessage.created_at)).offset(skip).limit(limit).all()
+        query = query.order_by(desc(ChatMessage.created_at)).offset(skip).limit(limit)
+        result = await db.execute(query)
+        return list(result.scalars().all())
 
     @staticmethod
-    def get_conversation_context(
-        db: Session,
+    async def get_conversation_context(
+        db: AsyncSession,
         session_id: str,
         limit: int = 20
     ) -> List[dict]:
         """Get conversation context for LLM processing."""
-        messages = ChatMessageRepository.get_recent_messages(db, session_id, limit)
+        messages = await ChatMessageRepository.get_recent_messages(db, session_id, limit)
 
         # Convert to format expected by LLM service
         context = []

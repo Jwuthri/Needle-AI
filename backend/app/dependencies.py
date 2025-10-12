@@ -13,7 +13,6 @@ from app.database.repositories import (
     ApiKeyRepository,
     ChatMessageRepository,
     ChatSessionRepository,
-    CompletionRepository,
     TaskResultRepository,
     UserRepository,
 )
@@ -94,9 +93,8 @@ async def get_chat_message_repository(container: DIContainer = Depends(get_scope
     return await container.get_service(ChatMessageRepository)
 
 
-async def get_completion_repository(container: DIContainer = Depends(get_scoped_container)) -> CompletionRepository:
-    """Get Completion repository."""
-    return await container.get_service(CompletionRepository)
+# Note: CompletionRepository removed - use ChatMessage for conversation history
+# If you need raw LLM completion tracking, consider re-implementing with the new async pattern
 
 
 async def get_api_key_repository(container: DIContainer = Depends(get_scoped_container)) -> ApiKeyRepository:

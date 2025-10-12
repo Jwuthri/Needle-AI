@@ -124,8 +124,33 @@ class Settings(BaseSettings):
     # Pinecone Configuration
     pinecone_api_key: Optional[SecretStr] = Field(default=None, description="Pinecone API key")
     pinecone_environment: str = Field(default="gcp-starter", description="Pinecone environment")
-    pinecone_index_name: str = Field(default="needleai-memory", description="Pinecone index name")
+    pinecone_index_name: str = Field(default="product-reviews", description="Pinecone index name for reviews")
     
+    # Apify Configuration (Web Scraping)
+    apify_api_token: Optional[SecretStr] = Field(default=None, description="Apify API token")
+    apify_reddit_actor_id: str = Field(default="", description="Apify Reddit scraper actor ID")
+    apify_twitter_actor_id: str = Field(default="", description="Apify Twitter scraper actor ID")
+    
+    # Stripe Configuration (Payments)
+    stripe_secret_key: Optional[SecretStr] = Field(default=None, description="Stripe secret key")
+    stripe_publishable_key: str = Field(default="", description="Stripe publishable key")
+    stripe_webhook_secret: Optional[SecretStr] = Field(default=None, description="Stripe webhook secret")
+    stripe_currency: str = Field(default="usd", description="Default currency for Stripe")
+    
+    # Review Scraping Costs (per review in credits)
+    reddit_review_cost: float = Field(default=0.01, ge=0.0, description="Cost per Reddit review")
+    twitter_review_cost: float = Field(default=0.01, ge=0.0, description="Cost per Twitter review")
+    csv_review_cost: float = Field(default=0.0, ge=0.0, description="Cost per CSV imported review")
+    
+    # Credit Packages (amount in USD: credits)
+    credit_packages: Dict[str, int] = Field(
+        default={
+            "starter": 10,      # $10 = 1000 credits
+            "professional": 50,  # $50 = 5000 credits
+            "enterprise": 100   # $100 = 10000 credits
+        },
+        description="Available credit packages"
+    )
 
     # WebSocket Configuration
     websocket_enabled: bool = Field(default="False", description="Enable WebSocket support")
@@ -230,6 +255,9 @@ class Settings(BaseSettings):
             'app.tasks.llm_tasks.*': {'queue': 'llm'},
             'app.tasks.chat_tasks.*': {'queue': 'chat'},
             'app.tasks.general_tasks.*': {'queue': 'general'},
+            'app.tasks.scraping_tasks.*': {'queue': 'scraping'},
+            'app.tasks.sentiment_tasks.*': {'queue': 'sentiment'},
+            'app.tasks.indexing_tasks.*': {'queue': 'indexing'},
         },
         description="Celery task routing configuration"
     )
@@ -240,7 +268,7 @@ class Settings(BaseSettings):
     # File Upload Configuration
     max_upload_size: int = Field(default=50*1024*1024, ge=1024, description="Max file upload size in bytes")
     allowed_upload_types: List[str] = Field(
-        default=[".txt", ".pdf", ".doc", ".docx", ".json", ".csv"],
+        default=[".txt", ".pdf", ".doc", ".docx", ".json", ".csv", ".xlsx"],
         description="Allowed file upload extensions"
     )
     upload_storage_path: str = Field(default="./data/uploads", description="Upload storage directory")

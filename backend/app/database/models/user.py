@@ -48,7 +48,10 @@ class User(Base):
 
     # Relationships
     chat_sessions = relationship("ChatSession", back_populates="user", cascade="all, delete-orphan")
-    completions = relationship("Completion", back_populates="user", cascade="all, delete-orphan")
+    companies = relationship("Company", back_populates="user", cascade="all, delete-orphan")
+    scraping_jobs = relationship("ScrapingJob", back_populates="user", cascade="all, delete-orphan")
+    data_imports = relationship("DataImport", back_populates="user", cascade="all, delete-orphan")
+    credit_account = relationship("UserCredit", back_populates="user", uselist=False, cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<User(id={self.id}, email={self.email}, status={self.status})>"

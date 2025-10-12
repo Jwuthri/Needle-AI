@@ -12,7 +12,8 @@ from app.tasks.general_tasks import (
     health_check_services,
     send_notification,
 )
-from app.tasks.llm_tasks import batch_process_messages, generate_completion_async
+# Note: llm_tasks (generate_completion_async) removed - use chat endpoints instead
+# from app.tasks.llm_tasks import batch_process_messages, generate_completion_async
 from app.utils.logging import get_logger
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -143,79 +144,34 @@ async def cancel_task(task_id: str) -> Dict[str, Any]:
 
 
 # LLM Task Endpoints
-@router.post("/llm/completion")
-async def trigger_llm_completion(
-    request: LLMCompletionRequest,
-    user_id: Optional[str] = Depends(get_user_id_from_header)
-) -> Dict[str, Any]:
-    """Trigger asynchronous LLM completion."""
-    try:
-        task_kwargs = {
-            "prompt": request.prompt,
-            "max_tokens": request.max_tokens,
-            "temperature": request.temperature
-        }
+# NOTE: These endpoints are commented out because the Completion model/tasks were removed
+# during migration to the product review analysis platform.
+# 
+# MIGRATION: Use the /api/v1/chat endpoints instead for LLM interactions
+# - POST /api/v1/chat/ for chat completions
+# - GET /api/v1/chat/sessions for conversation history
+#
+# If you need these specific endpoints, you can restore them by:
+# 1. Re-creating app/database/models/completion.py
+# 2. Re-creating app/database/repositories/completion.py  
+# 3. Re-creating app/tasks/llm_tasks.py
+# 4. Running a new migration to add the completion table back
 
-        if request.model:
-            task_kwargs["model"] = request.model
+# @router.post("/llm/completion")
+# async def trigger_llm_completion(
+#     request: LLMCompletionRequest,
+#     user_id: Optional[str] = Depends(get_user_id_from_header)
+# ) -> Dict[str, Any]:
+#     """Trigger asynchronous LLM completion."""
+#     raise HTTPException(status_code=501, detail="LLM completion endpoints removed. Use /api/v1/chat instead.")
 
-        # Trigger task
-        if request.delay_seconds:
-            result = generate_completion_async.apply_async(
-                kwargs=task_kwargs,
-                countdown=request.delay_seconds,
-                queue="llm"
-            )
-        else:
-            result = generate_completion_async.apply_async(
-                kwargs=task_kwargs,
-                queue="llm"
-            )
-
-        logger.info(f"LLM completion task triggered: {result.id} by user {user_id}")
-
-        return {
-            "task_id": result.id,
-            "status": "submitted",
-            "queue": "llm",
-            "estimated_duration": "30-60 seconds"
-        }
-
-    except Exception as e:
-        logger.error(f"Error triggering LLM completion: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to trigger LLM completion: {str(e)}")
-
-
-@router.post("/llm/batch")
-async def trigger_batch_processing(
-    request: BatchProcessRequest,
-    user_id: Optional[str] = Depends(get_user_id_from_header)
-) -> Dict[str, Any]:
-    """Trigger batch message processing."""
-    try:
-        task_kwargs = {
-            "messages": request.messages,
-            "model": request.model
-        }
-
-        result = batch_process_messages.apply_async(
-            kwargs=task_kwargs,
-            queue="llm"
-        )
-
-        logger.info(f"Batch processing task triggered: {result.id} by user {user_id}")
-
-        return {
-            "task_id": result.id,
-            "status": "submitted",
-            "queue": "llm",
-            "message_count": len(request.messages),
-            "estimated_duration": f"{len(request.messages) * 2}-{len(request.messages) * 5} seconds"
-        }
-
-    except Exception as e:
-        logger.error(f"Error triggering batch processing: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to trigger batch processing: {str(e)}")
+# @router.post("/llm/batch")
+# async def trigger_batch_processing(
+#     request: BatchProcessRequest,
+#     user_id: Optional[str] = Depends(get_user_id_from_header)
+# ) -> Dict[str, Any]:
+#     """Trigger batch message processing."""
+#     raise HTTPException(status_code=501, detail="Batch processing endpoints removed. Use /api/v1/chat instead.")
 
 
 # Chat Task Endpoints
@@ -396,16 +352,23 @@ async def get_task_stats() -> Dict[str, Any]:
         return {
             "total_active_tasks": total_active,
             "workers": worker_info,
-            "queues": ["general", "chat", "llm"],
+            "queues": ["general", "chat", "scraping", "sentiment", "indexing"],
             "task_types": [
-                "generate_completion_async",
-                "batch_process_messages",
+                # LLM tasks (removed - use chat endpoints):
+                # "generate_completion_async", 
+                # "batch_process_messages",
+                # Chat tasks:
                 "process_chat_message_async",
                 "clean_old_sessions",
+                # General tasks:
                 "send_notification",
                 "cleanup_expired_cache",
                 "health_check_services",
-                "generate_report"
+                "generate_report",
+                # Product review tasks:
+                "start_scraping_job",
+                "analyze_sentiment_for_reviews",
+                "index_reviews_for_company"
             ]
         }
 

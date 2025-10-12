@@ -208,7 +208,6 @@ def _configure_services(container: DIContainer):
         ApiKeyRepository,
         ChatMessageRepository,
         ChatSessionRepository,
-        CompletionRepository,
         TaskResultRepository,
         UserRepository,
     )
@@ -223,7 +222,6 @@ def _configure_services(container: DIContainer):
     container.register_scoped(UserRepository)
     container.register_scoped(ChatSessionRepository)
     container.register_scoped(ChatMessageRepository)
-    container.register_scoped(CompletionRepository)
     container.register_scoped(ApiKeyRepository)
     container.register_scoped(TaskResultRepository)
 

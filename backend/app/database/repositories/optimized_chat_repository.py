@@ -18,7 +18,9 @@ from app.database.models.chat_session import ChatSession
 from app.database.models.user import User
 from app.utils.logging import get_logger
 from sqlalchemy import and_, desc, func, text
-from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from sqlalchemy.orm import joinedload, selectinload
 
 logger = get_logger("optimized_chat_repository")
 
@@ -35,8 +37,8 @@ class OptimizedChatRepository:
     """
 
     @staticmethod
-    def get_sessions_with_messages_optimized(
-        db: Session,
+    async def get_sessions_with_messages_optimized(
+        db: AsyncSession,
         user_id: str,
         limit: int = 50,
         offset: int = 0,
@@ -55,7 +57,7 @@ class OptimizedChatRepository:
         Single query with eager loading and aggregates
         """
         query = (
-            db.query(ChatSession)
+            select(ChatSession)
             .filter(ChatSession.user_id == user_id)
             .filter(ChatSession.is_active == True)
         )
@@ -64,35 +66,8 @@ class OptimizedChatRepository:
         query = query.options(joinedload(ChatSession.user))
 
         if include_last_message or include_message_count:
-            # Create a subquery for message statistics
-            message_stats = (
-                db.query(
-                    ChatMessage.session_id,
-                    func.count(ChatMessage.id).label('message_count'),
-                    func.max(ChatMessage.created_at).label('last_message_time'),
-                    # Get last message content efficiently
-                    func.first_value(ChatMessage.content)
-                    .over(
-                        partition_by=ChatMessage.session_id,
-                        order_by=desc(ChatMessage.created_at)
-                    ).label('last_message_content')
-                )
-                .group_by(ChatMessage.session_id)
-                .subquery()
-            )
-
-            # Join with message statistics
-            query = (
-                query.outerjoin(
-                    message_stats,
-                    ChatSession.id == message_stats.c.session_id
-                )
-                .add_columns(
-                    message_stats.c.message_count,
-                    message_stats.c.last_message_time,
-                    message_stats.c.last_message_content
-                )
-            )
+            # For async, we'll do eager loading of messages and calculate in Python
+            query = query.options(selectinload(ChatSession.messages))
 
         # Order by last activity for better UX
         query = query.order_by(
@@ -101,28 +76,28 @@ class OptimizedChatRepository:
         )
 
         # Efficient pagination
-        results = query.offset(offset).limit(limit).all()
+        query = query.offset(offset).limit(limit)
+        result = await db.execute(query)
+        sessions = list(result.scalars().all())
 
         if include_message_count or include_last_message:
             # Enhance session objects with computed fields
-            sessions = []
-            for row in results:
-                if isinstance(row, tuple):
-                    session, msg_count, last_msg_time, last_msg_content = row
-                    # Add computed attributes to session object
-                    session._message_count = msg_count or 0
-                    session._last_message_time = last_msg_time
-                    session._last_message_content = last_msg_content
-                else:
-                    session = row
-                sessions.append(session)
-            return sessions
-        else:
-            return results
+            for session in sessions:
+                if hasattr(session, 'messages'):
+                    session._message_count = len(session.messages)
+                    if session.messages:
+                        last_msg = max(session.messages, key=lambda m: m.created_at)
+                        session._last_message_time = last_msg.created_at
+                        session._last_message_content = last_msg.content
+                    else:
+                        session._last_message_time = None
+                        session._last_message_content = None
+
+        return sessions
 
     @staticmethod
-    def get_conversation_with_context_optimized(
-        db: Session,
+    async def get_conversation_with_context_optimized(
+        db: AsyncSession,
         session_id: str,
         context_limit: int = 50,
         include_user: bool = True
@@ -140,15 +115,11 @@ class OptimizedChatRepository:
         """
         # Main query with eager loading
         query = (
-            db.query(ChatSession)
+            select(ChatSession)
             .filter(ChatSession.id == session_id)
             .options(
                 # Eager load messages (selectinload for collections)
                 selectinload(ChatSession.messages)
-                .options(
-                    # Load message metadata efficiently
-                    selectinload(ChatMessage.extra_metadata) if hasattr(ChatMessage, 'metadata') else None
-                )
             )
         )
 
@@ -156,7 +127,8 @@ class OptimizedChatRepository:
             # Eager load user (joinedload for single relationships)
             query = query.options(joinedload(ChatSession.user))
 
-        session = query.first()
+        result = await db.execute(query)
+        session = result.scalar_one_or_none()
 
         if not session:
             return None
@@ -175,8 +147,8 @@ class OptimizedChatRepository:
         return session, messages
 
     @staticmethod
-    def bulk_update_session_activity(
-        db: Session,
+    async def bulk_update_session_activity(
+        db: AsyncSession,
         session_ids: List[str],
         last_activity: datetime = None
     ) -> int:
@@ -198,23 +170,25 @@ class OptimizedChatRepository:
         if last_activity is None:
             last_activity = datetime.utcnow()
 
-        updated_count = (
-            db.query(ChatSession)
-            .filter(ChatSession.id.in_(session_ids))
-            .update(
-                {
-                    ChatSession.updated_at: last_activity,
-                    ChatSession.last_activity: last_activity
-                },
-                synchronize_session=False  # Faster for bulk updates
-            )
+        # Get all sessions to update
+        result = await db.execute(
+            select(ChatSession).filter(ChatSession.id.in_(session_ids))
         )
+        sessions = result.scalars().all()
 
+        updated_count = 0
+        for session in sessions:
+            session.updated_at = last_activity
+            if hasattr(session, 'last_activity'):
+                session.last_activity = last_activity
+            updated_count += 1
+
+        await db.flush()
         return updated_count
 
     @staticmethod
-    def get_user_chat_statistics_optimized(
-        db: Session,
+    async def get_user_chat_statistics_optimized(
+        db: AsyncSession,
         user_id: str,
         days: int = 30
     ) -> Dict[str, Any]:
@@ -226,61 +200,65 @@ class OptimizedChatRepository:
         """
         cutoff_date = datetime.utcnow() - timedelta(days=days)
 
-        # Single query for session statistics
-        session_stats = (
-            db.query(
-                func.count(ChatSession.id).label('total_sessions'),
-                func.count().filter(ChatSession.is_active == True).label('active_sessions'),
-                func.max(ChatSession.updated_at).label('last_activity'),
-                func.min(ChatSession.created_at).label('first_session'),
-                # Session duration statistics
-                func.avg(
-                    func.extract('epoch', ChatSession.updated_at - ChatSession.created_at)
-                ).label('avg_session_duration')
-            )
+        # Get all relevant sessions
+        session_result = await db.execute(
+            select(ChatSession)
             .filter(ChatSession.user_id == user_id)
             .filter(ChatSession.created_at >= cutoff_date)
-            .first()
         )
+        sessions = list(session_result.scalars().all())
 
-        # Single query for message statistics
-        message_stats = (
-            db.query(
-                func.count(ChatMessage.id).label('total_messages'),
-                func.count().filter(ChatMessage.role == MessageRoleEnum.USER).label('user_messages'),
-                func.count().filter(ChatMessage.role == MessageRoleEnum.ASSISTANT).label('assistant_messages'),
-                func.avg(func.length(ChatMessage.content)).label('avg_message_length'),
-                # Messages per day
-                func.count(ChatMessage.id) / func.greatest(days, 1).label('messages_per_day')
-            )
+        total_sessions = len(sessions)
+        active_sessions = len([s for s in sessions if s.is_active])
+        last_activity = max([s.updated_at for s in sessions]) if sessions else None
+        first_session = min([s.created_at for s in sessions]) if sessions else None
+
+        # Calculate average session duration
+        durations = []
+        for s in sessions:
+            if s.updated_at and s.created_at:
+                durations.append((s.updated_at - s.created_at).total_seconds())
+        avg_duration = sum(durations) / len(durations) if durations else 0
+
+        # Get message statistics
+        message_result = await db.execute(
+            select(ChatMessage)
             .join(ChatSession, ChatMessage.session_id == ChatSession.id)
             .filter(ChatSession.user_id == user_id)
             .filter(ChatMessage.created_at >= cutoff_date)
-            .first()
         )
+        messages = list(message_result.scalars().all())
+
+        total_messages = len(messages)
+        user_messages = len([m for m in messages if m.role == MessageRoleEnum.USER])
+        assistant_messages = len([m for m in messages if m.role == MessageRoleEnum.ASSISTANT])
+        
+        message_lengths = [len(m.content) for m in messages]
+        avg_length = sum(message_lengths) / len(message_lengths) if message_lengths else 0
+        messages_per_day = total_messages / max(days, 1)
 
         return {
             'user_id': user_id,
             'period_days': days,
             'sessions': {
-                'total': session_stats.total_sessions or 0,
-                'active': session_stats.active_sessions or 0,
-                'avg_duration_seconds': float(session_stats.avg_session_duration or 0),
-                'last_activity': session_stats.last_activity,
-                'first_session': session_stats.first_session
+                'total': total_sessions,
+                'active': active_sessions,
+                'avg_duration_seconds': float(avg_duration),
+                'last_activity': last_activity,
+                'first_session': first_session
             },
             'messages': {
-                'total': message_stats.total_messages or 0,
-                'user': message_stats.user_messages or 0,
-                'assistant': message_stats.assistant_messages or 0,
-                'avg_length': float(message_stats.avg_message_length or 0),
-                'per_day': float(message_stats.messages_per_day or 0)
+                'total': total_messages,
+                'user': user_messages,
+                'assistant': assistant_messages,
+                'avg_length': float(avg_length),
+                'per_day': float(messages_per_day)
             }
         }
 
     @staticmethod
-    def search_messages_with_session_context(
-        db: Session,
+    async def search_messages_with_session_context(
+        db: AsyncSession,
         search_term: str,
         user_id: Optional[str] = None,
         limit: int = 50,
@@ -293,135 +271,97 @@ class OptimizedChatRepository:
         ✅ NEW WAY: Single query with joins
         """
         query = (
-            db.query(
-                ChatMessage,
-                ChatSession.title.label('session_title'),
-                ChatSession.created_at.label('session_created'),
-                User.username.label('username'),
-                # Rank results by relevance
-                func.ts_rank_cd(
-                    func.to_tsvector('english', ChatMessage.content),
-                    func.plainto_tsquery('english', search_term)
-                ).label('relevance_rank')
-            )
+            select(ChatMessage, ChatSession, User)
             .join(ChatSession, ChatMessage.session_id == ChatSession.id)
             .join(User, ChatSession.user_id == User.id)
-            .filter(
-                ChatMessage.content.ilike(f'%{search_term}%')
-            )
+            .filter(ChatMessage.content.ilike(f'%{search_term}%'))
         )
 
         if user_id:
             query = query.filter(ChatSession.user_id == user_id)
 
-        # Order by relevance and recency
-        results = (
-            query.order_by(
-                desc(text('relevance_rank')),
-                desc(ChatMessage.created_at)
-            )
-            .offset(offset)
-            .limit(limit)
-            .all()
-        )
+        # Order by recency
+        query = query.order_by(desc(ChatMessage.created_at)).offset(offset).limit(limit)
+
+        result = await db.execute(query)
+        rows = result.all()
 
         return [
             {
                 'message': {
-                    'id': row.ChatMessage.id,
-                    'content': row.ChatMessage.content,
-                    'role': row.ChatMessage.role,
-                    'created_at': row.ChatMessage.created_at
+                    'id': message.id,
+                    'content': message.content,
+                    'role': message.role,
+                    'created_at': message.created_at
                 },
                 'session': {
-                    'id': row.ChatMessage.session_id,
-                    'title': row.session_title,
-                    'created_at': row.session_created
+                    'id': session.id,
+                    'title': session.title,
+                    'created_at': session.created_at
                 },
                 'user': {
-                    'username': row.username
-                },
-                'relevance_score': float(row.relevance_rank or 0)
+                    'username': user.username
+                }
             }
-            for row in results
+            for message, session, user in rows
         ]
 
     @staticmethod
-    def get_message_thread_optimized(
-        db: Session,
+    async def get_message_thread_optimized(
+        db: AsyncSession,
         message_id: str,
         context_before: int = 5,
         context_after: int = 5
-    ) -> Dict[str, Any]:
+    ) -> Optional[Dict[str, Any]]:
         """
         Get a message with surrounding context efficiently.
 
-        Uses window functions to get context in a single query.
+        Uses eager loading to get context in minimal queries.
         """
-        # First, get the target message to find its position
-        target_message = (
-            db.query(
-                ChatMessage.id,
-                ChatMessage.session_id,
-                ChatMessage.created_at,
-                # Calculate position in conversation
-                func.row_number()
-                .over(
-                    partition_by=ChatMessage.session_id,
-                    order_by=ChatMessage.created_at
-                ).label('position')
-            )
-            .filter(ChatMessage.id == message_id)
-            .first()
+        # First, get the target message
+        target_result = await db.execute(
+            select(ChatMessage).filter(ChatMessage.id == message_id)
         )
+        target_message = target_result.scalar_one_or_none()
 
         if not target_message:
             return None
 
-        # Get context messages using the position
-        context_query = (
-            db.query(
-                ChatMessage,
-                func.row_number()
-                .over(
-                    partition_by=ChatMessage.session_id,
-                    order_by=ChatMessage.created_at
-                ).label('position')
-            )
+        # Get all messages from the session, sorted
+        messages_result = await db.execute(
+            select(ChatMessage)
             .filter(ChatMessage.session_id == target_message.session_id)
-            .filter(
-                and_(
-                    # Position range for context
-                    text('row_number() OVER (PARTITION BY session_id ORDER BY created_at)') >=
-                    target_message.position - context_before,
-                    text('row_number() OVER (PARTITION BY session_id ORDER BY created_at)') <=
-                    target_message.position + context_after
-                )
-            )
             .order_by(ChatMessage.created_at)
-            .all()
+        )
+        all_messages = list(messages_result.scalars().all())
+
+        # Find target position
+        target_index = next(
+            (i for i, m in enumerate(all_messages) if m.id == message_id),
+            -1
         )
 
-        messages = []
-        target_index = -1
+        if target_index == -1:
+            return None
 
-        for i, (message, position) in enumerate(context_query):
-            is_target = message.id == message_id
-            if is_target:
-                target_index = i
-
-            messages.append({
-                'id': message.id,
-                'content': message.content,
-                'role': message.role,
-                'created_at': message.created_at,
-                'is_target': is_target,
-                'position_in_session': position
-            })
+        # Get context window
+        start_idx = max(0, target_index - context_before)
+        end_idx = min(len(all_messages), target_index + context_after + 1)
+        context_messages = all_messages[start_idx:end_idx]
 
         return {
-            'target_message_index': target_index,
-            'messages': messages,
+            'target_message_index': target_index - start_idx,
+            'messages': [
+                {
+                    'id': m.id,
+                    'content': m.content,
+                    'role': m.role,
+                    'created_at': m.created_at,
+                    'is_target': m.id == message_id,
+                    'position_in_session': i + start_idx
+                }
+                for i, m in enumerate(context_messages)
+            ],
             'session_id': target_message.session_id
         }
 
@@ -462,13 +402,14 @@ async def example_usage():
     """Example demonstrating optimized query usage."""
 
     # ❌ OLD WAY - N+1 Queries:
-    # sessions = db.query(ChatSession).filter_by(user_id='user123').all()
+    # sessions = await db.execute(select(ChatSession).filter_by(user_id='user123'))
+    # sessions = sessions.scalars().all()
     # for session in sessions:  # This creates N additional queries!
-    #     messages = db.query(ChatMessage).filter_by(session_id=session.id).all()
-    #     user = db.query(User).filter_by(id=session.user_id).first()
+    #     messages = await db.execute(select(ChatMessage).filter_by(session_id=session.id))
+    #     user = await db.execute(select(User).filter_by(id=session.user_id))
 
     # ✅ NEW WAY - Single Optimized Query:
-    # optimized_sessions = OptimizedChatRepository.get_sessions_with_messages_optimized(
+    # optimized_sessions = await OptimizedChatRepository.get_sessions_with_messages_optimized(
     #     db=db,
     #     user_id='user123',
     #     limit=10,
@@ -482,3 +423,4 @@ async def example_usage():
     #     print(f"Messages: {session._message_count}")
     #     print(f"Last message: {session._last_message_content}")
     #     print(f"User: {session.user.username}")  # Already loaded!
+    pass

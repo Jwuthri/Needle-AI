@@ -5,7 +5,6 @@ Pydantic models for NeedleAi.
 from .api_key import *
 from .base import *
 from .chat import *
-from .completion import *
 from .task import *
 from .user import *
 
@@ -16,10 +15,6 @@ __all__ = [
     "ChatResponse",
     "ChatSession",
     "MessageHistory",
-    # Completion models
-    "CompletionRequest",
-    "CompletionResponse",
-    "StreamingCompletionResponse",
     # User models
     "UserProfile",
     "UserPublicProfile",
