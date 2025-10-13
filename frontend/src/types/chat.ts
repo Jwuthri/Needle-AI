@@ -34,27 +34,14 @@ export interface QueryPipelineStep {
   metadata: Record<string, any>;
 }
 
-export interface ExecutionNode {
-  id: string;
-  name: string;
-  type: string;
-  status: string;
-  start_time?: string;
-  end_time?: string;
-  duration_ms?: number;
-  input_summary?: string;
-  output_summary?: string;
-  error?: string;
-  metadata?: Record<string, any>;
-  children: ExecutionNode[];
-}
-
-export interface ExecutionTreeData {
-  tree_id: string;
-  query: string;
-  session_id?: string;
-  created_at: string;
-  root: ExecutionNode;
+export interface AgentStep {
+  step_id: string;
+  agent_name: string;
+  content: any; // BaseModel dict or string
+  is_structured: boolean;
+  timestamp: string;
+  status?: 'active' | 'completed';
+  step_order?: number; // Step number in the execution sequence
 }
 
 export interface ChartConfig {
@@ -83,7 +70,7 @@ export interface EnhancedChatMessage extends ChatMessage {
   pipeline_steps?: QueryPipelineStep[];
   sources?: ReviewSource[];
   related_questions?: string[];
-  execution_tree?: ExecutionTreeData;
+  agent_steps?: AgentStep[];
   visualization?: ChartConfig;
   output_format?: 'text' | 'visualization' | 'cited_summary';
 }
@@ -113,7 +100,6 @@ export interface ChatResponse {
   pipeline_steps?: QueryPipelineStep[];
   sources?: ReviewSource[];
   related_questions?: string[];
-  execution_tree?: ExecutionTreeData;
   visualization?: ChartConfig;
   output_format?: 'text' | 'visualization' | 'cited_summary';
 }

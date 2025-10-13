@@ -43,7 +43,6 @@ async def send_message_stream(
     Returns Server-Sent Events (SSE) stream with:
     - status updates (analyzing, retrieving data, etc.)
     - content chunks (streaming response text)
-    - tree_update (execution tree updates)
     - complete (final response with metadata)
     - error (if something goes wrong)
     
@@ -108,13 +107,10 @@ async def send_message_stream(
                     return str(obj)
             
             accumulated_content = ""
-            final_tree = None
+            completed_steps = []
             update_count = 0
             
             try:
-                # Send initial connection confirmation
-                yield f"data: {json.dumps({'type': 'connected', 'data': {}})}\n\n"
-                
                 # Process stream without database (to avoid session lifecycle issues)
                 async for update in orchestrator.process_message_stream(
                     request=request,
@@ -127,8 +123,12 @@ async def send_message_stream(
                     if update["type"] == "content":
                         accumulated_content += update["data"]["content"]
                         logger.debug(f"Streaming content update #{update_count}: {len(update['data']['content'])} chars")
-                    elif update["type"] == "tree_update":
-                        final_tree = update["data"]
+                    elif update["type"] == "complete":
+                        # Extract completed steps from metadata
+                        if "metadata" in update["data"] and "completed_steps" in update["data"]["metadata"]:
+                            completed_steps = update["data"]["metadata"]["completed_steps"]
+                            # Remove from metadata before sending to frontend
+                            del update["data"]["metadata"]["completed_steps"]
                     
                     # Make entire update JSON serializable
                     serializable_update = make_json_serializable(update)
@@ -142,21 +142,35 @@ async def send_message_stream(
                     if update["type"] == "content":
                         await asyncio.sleep(0.001)  # 1ms delay for content chunks
                 
-                logger.info(f"Stream completed: {update_count} updates sent, {len(accumulated_content)} chars total")
+                logger.info(f"Stream completed: {update_count} updates sent, {len(accumulated_content)} chars total, {len(completed_steps)} agent steps")
                 
                 # Save final response to database in a separate session
                 if accumulated_content:
                     try:
+                        from app.database.repositories.chat_message_step import ChatMessageStepRepository
                         async with get_async_session() as save_db:
                             assistant_message = await ChatMessageRepository.create(
                                 db=save_db,
                                 session_id=session_id,
                                 content=accumulated_content,
-                                role=MessageRoleEnum.ASSISTANT,
-                                metadata={"execution_tree": final_tree} if final_tree else None
+                                role=MessageRoleEnum.ASSISTANT
                             )
                             await save_db.commit()
                             logger.info(f"Saved assistant message {assistant_message.id} to database")
+                            
+                            # Save agent steps if any
+                            if completed_steps:
+                                for step in completed_steps:
+                                    await ChatMessageStepRepository.create(
+                                        db=save_db,
+                                        message_id=assistant_message.id,
+                                        agent_name=step['agent_name'],
+                                        step_order=step['step_order'],
+                                        tool_call=step['content'] if step['is_structured'] else None,
+                                        prediction=step['content'] if not step['is_structured'] else None
+                                    )
+                                await save_db.commit()
+                                logger.info(f"Saved {len(completed_steps)} agent steps for message {assistant_message.id}")
                     except Exception as db_error:
                         logger.error(f"Failed to save final message to DB: {db_error}")
                 
@@ -447,16 +461,38 @@ async def list_sessions(
         for db_session in db_sessions:
             from app.models.chat import ChatMessage as ApiMessage
             from app.models.chat import MessageRole
-            messages = [
-                ApiMessage(
+            from app.database.repositories.chat_message_step import ChatMessageStepRepository
+            
+            messages = []
+            for msg in db_session.messages:
+                # Fetch agent steps for this message
+                agent_steps = await ChatMessageStepRepository.get_by_message_id(db, str(msg.id))
+                
+                # Format steps for frontend
+                formatted_steps = []
+                for step in agent_steps:
+                    formatted_steps.append({
+                        "step_id": str(step.id),
+                        "agent_name": step.agent_name,
+                        "content": step.tool_call if step.tool_call else step.prediction,
+                        "is_structured": step.tool_call is not None,
+                        "timestamp": step.created_at.isoformat() if step.created_at else None,
+                        "status": "completed",
+                        "step_order": step.step_order
+                    })
+                
+                # Add steps to metadata
+                metadata = msg.metadata if isinstance(msg.metadata, dict) else {}
+                if formatted_steps:
+                    metadata['agent_steps'] = formatted_steps
+                
+                messages.append(ApiMessage(
                     id=str(msg.id),
                     content=msg.content,
                     role=MessageRole(msg.role.value),
                     timestamp=msg.created_at if msg.created_at else datetime.utcnow(),
-                    metadata=msg.metadata if isinstance(msg.metadata, dict) else {}
-                )
-                for msg in db_session.messages
-            ]
+                    metadata=metadata
+                ))
             
             # Include title and company_id in metadata
             metadata = db_session.extra_metadata or {}
@@ -516,16 +552,38 @@ async def get_session(
         # Convert to API model
         from app.models.chat import ChatMessage as ApiMessage
         from app.models.chat import MessageRole
-        messages = [
-            ApiMessage(
+        from app.database.repositories.chat_message_step import ChatMessageStepRepository
+        
+        messages = []
+        for msg in db_session.messages:
+            # Fetch agent steps for this message
+            agent_steps = await ChatMessageStepRepository.get_by_message_id(db, str(msg.id))
+            
+            # Format steps for frontend
+            formatted_steps = []
+            for step in agent_steps:
+                formatted_steps.append({
+                    "step_id": str(step.id),
+                    "agent_name": step.agent_name,
+                    "content": step.tool_call if step.tool_call else step.prediction,
+                    "is_structured": step.tool_call is not None,
+                    "timestamp": step.created_at.isoformat() if step.created_at else None,
+                    "status": "completed",
+                    "step_order": step.step_order
+                })
+            
+            # Add steps to metadata
+            metadata = msg.metadata if isinstance(msg.metadata, dict) else {}
+            if formatted_steps:
+                metadata['agent_steps'] = formatted_steps
+            
+            messages.append(ApiMessage(
                 id=str(msg.id),
                 content=msg.content,
                 role=MessageRole(msg.role.value),
                 timestamp=msg.created_at if msg.created_at else datetime.utcnow(),
-                metadata=msg.metadata if isinstance(msg.metadata, dict) else {}
-            )
-            for msg in db_session.messages
-        ]
+                metadata=metadata
+            ))
         
         # Include title and company_id in metadata
         metadata = db_session.extra_metadata or {}

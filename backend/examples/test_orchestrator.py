@@ -100,9 +100,10 @@ async def main():
                 if response_data.get('metadata'):
                     print(f"🤖 Model: {response_data['metadata'].get('model')}")
                     print(f"🔧 Provider: {response_data['metadata'].get('provider')}")
-                    if response_data['metadata'].get('execution_tree'):
-                        tree_data = response_data['metadata']['execution_tree']
-                        print(f"🌲 Tree nodes: {len(tree_data.get('root', {}).get('children', []))}")
+                    # Execution tree has been replaced with agent_steps
+                    if response_data['metadata'].get('agent_steps_count'):
+                        steps_count = response_data['metadata']['agent_steps_count']
+                        print(f"🔧 Agent steps: {steps_count}")
             
             elif update_type == "error":
                 error = data.get("error", "Unknown error")

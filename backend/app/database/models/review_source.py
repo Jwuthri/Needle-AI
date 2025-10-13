@@ -45,8 +45,8 @@ class ReviewSource(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     # Relationships
-    scraping_jobs = relationship("ScrapingJob", back_populates="source")
-    reviews = relationship("Review", back_populates="source")
+    scraping_jobs = relationship("ScrapingJob", back_populates="source", cascade="all, delete-orphan")
+    reviews = relationship("Review", back_populates="source", cascade="all, delete-orphan")
 
     # Indexes
     __table_args__ = (

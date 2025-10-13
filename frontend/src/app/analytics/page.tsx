@@ -7,6 +7,7 @@ import { Table, BarChart3, Calendar, Download } from 'lucide-react'
 import { useAuth } from '@clerk/nextjs'
 import { createApiClient } from '@/lib/api'
 import { Company } from '@/types/company'
+import { CompanySelector } from '@/components/ui/company-selector'
 
 type ViewMode = 'table' | 'graph'
 
@@ -18,7 +19,6 @@ export default function AnalyticsPage() {
   const [selectedCompany, setSelectedCompany] = useState<string | null>(
     searchParams.get('company_id')
   )
-  const [companies, setCompanies] = useState<Company[]>([])
   const [analytics, setAnalytics] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
@@ -27,25 +27,6 @@ export default function AnalyticsPage() {
       router.push('/sign-in')
     }
   }, [isLoaded, isSignedIn, router])
-
-  useEffect(() => {
-    const fetchCompanies = async () => {
-      if (!isSignedIn) return
-      
-      try {
-        const token = await getToken()
-        const api = createApiClient(token)
-        const data = await api.listCompanies()
-        setCompanies(data.companies || [])
-      } catch (error) {
-        console.error('Failed to fetch companies:', error)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchCompanies()
-  }, [getToken, isSignedIn])
 
   useEffect(() => {
     const fetchAnalytics = async () => {
@@ -98,19 +79,14 @@ export default function AnalyticsPage() {
         </div>
 
         {/* Company Selector & View Toggle */}
-        <div className="flex items-center justify-between mb-8">
-          <select
-            value={selectedCompany || ''}
-            onChange={(e) => setSelectedCompany(e.target.value || null)}
-            className="px-4 py-2 bg-gray-800/50 border border-gray-700 rounded-xl text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
-          >
-            <option value="">Select a company...</option>
-            {companies.map((company) => (
-              <option key={company.id} value={company.id}>
-                {company.name}
-              </option>
-            ))}
-          </select>
+        <div className="flex items-center justify-between mb-8 gap-4">
+          <div className="flex-1 max-w-md">
+            <CompanySelector
+              value={selectedCompany}
+              onChange={setSelectedCompany}
+              placeholder="Select a company..."
+            />
+          </div>
 
           <div className="flex items-center space-x-2 bg-gray-800/50 rounded-xl p-1">
             <button
@@ -141,7 +117,9 @@ export default function AnalyticsPage() {
         {/* Content */}
         {!selectedCompany ? (
           <div className="flex flex-col items-center justify-center py-20">
-            <div className="text-6xl mb-4">📊</div>
+            <div className="mb-4">
+              <BarChart3 className="w-16 h-16 text-emerald-400" />
+            </div>
             <h3 className="text-xl font-semibold text-white mb-2">Select a Company</h3>
             <p className="text-white/60 text-center max-w-md">
               Choose a company from the dropdown above to view analytics and insights

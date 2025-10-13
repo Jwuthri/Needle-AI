@@ -5,6 +5,9 @@ Dependency injection for NeedleAi.
 from typing import Type, TypeVar
 
 from app.config import Settings, get_settings
+from app.utils.logging import get_logger
+
+logger = get_logger(__name__)
 from app.core.container import DIContainer, ServiceLifetime, get_container
 from app.core.llm.factory import get_llm_client
 from app.core.memory.base import MemoryInterface
@@ -55,11 +58,21 @@ _orchestrator_instance = None
 
 async def get_orchestrator_service():
     """Get orchestrator service instance (singleton)."""
+    import os
     global _orchestrator_instance
     if _orchestrator_instance is None:
-        from app.services.orchestrator_service import OrchestratorService
-        _orchestrator_instance = OrchestratorService()
-        await _orchestrator_instance.initialize()
+        # Check if we should use fake orchestrator
+        use_fake = os.getenv("USE_FAKE_ORCHESTRATOR", "true").lower() == "true"
+        
+        if use_fake:
+            from app.services.fake_orchestrator_service import FakeOrchestratorService
+            _orchestrator_instance = FakeOrchestratorService()
+            logger.info("🎭 Using FAKE orchestrator service for testing")
+        else:
+            from app.services.orchestrator_service import OrchestratorService
+            _orchestrator_instance = OrchestratorService()
+            await _orchestrator_instance.initialize()
+            logger.info("✅ Using REAL orchestrator service")
     return _orchestrator_instance
 
 

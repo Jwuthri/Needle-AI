@@ -3,10 +3,11 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Upload, Play, Clock, CheckCircle, XCircle } from 'lucide-react'
+import { Upload, Play, Clock, CheckCircle, XCircle, FolderOpen } from 'lucide-react'
 import { useAuth } from '@clerk/nextjs'
 import { createApiClient } from '@/lib/api'
 import { Company } from '@/types/company'
+import { CompanySelector } from '@/components/ui/company-selector'
 
 export default function DataSourcesPage() {
   const searchParams = useSearchParams()
@@ -15,7 +16,6 @@ export default function DataSourcesPage() {
   const [selectedCompany, setSelectedCompany] = useState<string | null>(
     searchParams.get('company_id')
   )
-  const [companies, setCompanies] = useState<Company[]>([])
   const [sources, setSources] = useState<any[]>([])
   const [jobs, setJobs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -34,13 +34,11 @@ export default function DataSourcesPage() {
         const token = await getToken()
         const api = createApiClient(token)
         
-        const [companiesData, sourcesData, jobsData] = await Promise.all([
-          api.listCompanies(),
+        const [sourcesData, jobsData] = await Promise.all([
           api.listScrapingSources(),
           api.listScrapingJobs(selectedCompany || undefined),
         ])
 
-        setCompanies(companiesData.companies || [])
         setSources(sourcesData.sources || [])
         setJobs(jobsData.jobs || [])
       } catch (error) {
@@ -85,24 +83,19 @@ export default function DataSourcesPage() {
         </div>
 
         {/* Company Selector */}
-        <div className="mb-8">
-          <select
-            value={selectedCompany || ''}
-            onChange={(e) => setSelectedCompany(e.target.value || null)}
-            className="px-4 py-2 bg-gray-800/50 border border-gray-700 rounded-xl text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
-          >
-            <option value="">Select a company...</option>
-            {companies.map((company) => (
-              <option key={company.id} value={company.id}>
-                {company.name}
-              </option>
-            ))}
-          </select>
+        <div className="mb-8 max-w-md">
+          <CompanySelector
+            value={selectedCompany}
+            onChange={setSelectedCompany}
+            placeholder="Select a company..."
+          />
         </div>
 
         {!selectedCompany ? (
           <div className="flex flex-col items-center justify-center py-20">
-            <div className="text-6xl mb-4">📁</div>
+            <div className="mb-4">
+              <FolderOpen className="w-16 h-16 text-emerald-400" />
+            </div>
             <h3 className="text-xl font-semibold text-white mb-2">Select a Company</h3>
             <p className="text-white/60 text-center max-w-md">
               Choose a company to start importing or scraping review data

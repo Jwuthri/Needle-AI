@@ -36,8 +36,8 @@ class DataImport(Base):
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
 
     # References
-    company_id = Column(String, ForeignKey("companies.id"), nullable=False)
-    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    company_id = Column(String, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
 
     # File details
     file_path = Column(String(500), nullable=False)  # Path to uploaded file

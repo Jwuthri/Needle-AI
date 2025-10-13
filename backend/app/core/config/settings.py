@@ -99,7 +99,7 @@ class Settings(BaseSettings):
     # LLM Configuration
     llm_provider: str = Field(default="openrouter", description="LLM provider")
     openrouter_api_key: Optional[str] = Field(default=None, description="OpenRouter API key")
-    default_model: str = Field(default="gpt-5", description="Default LLM model")
+    default_model: str = Field(default="gpt-5-mini", description="Default LLM model")
     max_tokens: int = Field(default=1000, ge=1, le=32000, description="Maximum tokens per request")
     temperature: float = Field(default=0.7, ge=0.0, le=2.0, description="LLM temperature")
     site_url: Optional[str] = Field(default=None, description="Site URL for OpenRouter referrer tracking")

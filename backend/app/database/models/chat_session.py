@@ -26,7 +26,7 @@ class ChatSession(Base):
     __tablename__ = "chat_sessions"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String, ForeignKey("users.id"), nullable=True)  # Allow anonymous sessions
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)  # Allow anonymous sessions
 
     # Session metadata
     title = Column(String(500), nullable=True)  # Auto-generated or user-set title

@@ -4,6 +4,7 @@ Database models package for NeedleAi.
 
 from .api_key import ApiKey
 from .chat_message import ChatMessage, MessageRoleEnum
+from .chat_message_step import ChatMessageStep
 from .chat_session import ChatSession
 from .company import Company
 from .credit_transaction import CreditTransaction, TransactionTypeEnum
@@ -21,6 +22,7 @@ __all__ = [
     "User",
     "ChatSession",
     "ChatMessage",
+    "ChatMessageStep",
     "ApiKey",
     "TaskResult",
     "LLMCall",

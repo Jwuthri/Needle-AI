@@ -80,12 +80,12 @@ class BaseTool(ABC):
         }
     
     @abstractmethod
-    async def execute(self, **kwargs) -> ToolResult:
+    async def execute(self, **kwargs: Any) -> ToolResult:
         """
         Execute the tool with given parameters.
         
         Args:
-            **kwargs: Tool-specific parameters
+            **kwargs: Tool-specific parameters (type: Any)
             
         Returns:
             ToolResult with success status, data, and summary
@@ -99,11 +99,14 @@ class BaseTool(ABC):
         if not self.description:
             raise ValueError(f"{self.__class__.__name__} must define a description")
     
-    async def run(self, **kwargs) -> ToolResult:
+    async def run(self, **kwargs: Any) -> ToolResult:
         """
         Run the tool with timing and error handling.
         
         This wraps execute() to add timing and consistent error handling.
+        
+        Args:
+            **kwargs: Tool-specific parameters (type: Any)
         """
         start_time = time.time()
         

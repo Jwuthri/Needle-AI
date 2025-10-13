@@ -6,14 +6,15 @@ Uses Agno teams and tools to dynamically handle queries.
 import asyncio
 import uuid
 from datetime import datetime
+from enum import Enum
 from typing import Any, AsyncGenerator, Dict, List, Optional
+from pydantic import BaseModel, Field
 
 from agno.agent import Agent
 from agno.db.postgres import PostgresDb
 from agno.models.openrouter import OpenRouter
 from agno.team import Team
 
-from app.agents.execution_tree import ExecutionTree, NodeType
 from app.agents.tools.query_planner_tool import QueryPlannerTool
 from app.agents.tools.rag_retrieval_tool import RAGRetrievalTool
 from app.agents.tools.web_search_tool import WebSearchTool
@@ -25,11 +26,65 @@ from app.agents.tools.tool_registry import ToolRegistry
 from app.config import get_settings
 from app.models.chat import ChatRequest, ChatResponse
 from app.database.models.llm_call import LLMCallTypeEnum, LLMCallStatusEnum
-from app.database.models.execution_tree import ExecutionNodeType, ExecutionNodeStatus
-from app.database.repositories.execution_tree import ExecutionTreeRepository
+from app.database.repositories.chat_message_step import ChatMessageStepRepository
 from app.utils.logging import get_logger
 
 logger = get_logger("orchestrator_service")
+
+
+# Agent Output Schemas
+
+class IntentType(str, Enum):
+    SUMMARIZATION = "summarization"
+    AGGREGATION = "aggregation"
+    FILTERING = "filtering"
+    RANKING = "ranking"
+    TREND_ANALYSIS = "trend_analysis"
+    GAP_ANALYSIS = "gap_analysis"
+    COMPETITIVE_ANALYSIS = "competitive_analysis"
+    GENERAL_INQUIRY = "general_inquiry"
+
+class OutputFormat(str, Enum):
+    TEXT = "text"
+    VISUALIZATION = "visualization"
+    CITED_SUMMARY = "cited_summary"
+    DETAILED_REPORT = "detailed_report"
+
+class ConfidenceLevel(str, Enum):
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+class QueryPlan(BaseModel):
+    """Query planner agent output schema."""
+    intent: IntentType = Field(..., description="The identified intent of the user's query")
+    required_data_sources: List[str] = Field(default_factory=list, description="List of required data sources")
+    requires_analysis: bool = Field(default=False, description="Whether the query requires data analysis")
+    requires_visualization: bool = Field(default=False, description="Whether visualizations would be helpful")
+    output_format: OutputFormat = Field(default=OutputFormat.TEXT, description="Expected output format")
+    key_topics: List[str] = Field(default_factory=list, description="Key topics or entities mentioned")
+
+class DataRetrievalResult(BaseModel):
+    """Data agent output schema."""
+    summary: str = Field(..., description="Brief summary of retrieved data")
+    total_sources: int = Field(default=0, description="Total number of sources retrieved")
+    rag_results: List[Dict[str, Any]] = Field(default_factory=list, description="Results from RAG/vector database")
+    web_results: List[Dict[str, Any]] = Field(default_factory=list, description="Results from web search")
+
+class AnalysisResult(BaseModel):
+    """Analysis agent output schema."""
+    summary: str = Field(..., description="Brief summary of analysis findings")
+    key_findings: List[str] = Field(default_factory=list, description="List of key findings from analysis")
+    statistical_insights: Dict[str, Any] = Field(default_factory=dict, description="Statistical analysis results")
+    nlp_insights: Dict[str, Any] = Field(default_factory=dict, description="NLP analysis results")
+    visualizations: List[Dict[str, Any]] = Field(default_factory=list, description="Generated visualizations")
+
+class SynthesisResult(BaseModel):
+    """Synthesis agent output schema."""
+    response: str = Field(..., description="Final synthesized response to user")
+    confidence_level: ConfidenceLevel = Field(default=ConfidenceLevel.MEDIUM, description="Confidence level in the response")
+    citations: List[Dict[str, Any]] = Field(default_factory=list, description="List of citations with sources")
+    recommendations: List[str] = Field(default_factory=list, description="Actionable recommendations")
 
 
 class OrchestratorService:
@@ -42,8 +97,6 @@ class OrchestratorService:
     3. Process data with analytics/NLP
     4. Generate visualizations
     5. Synthesize final response with citations
-    
-    Tracks all steps in an execution tree for UI visualization.
     """
     
     def __init__(self, settings: Any = None):
@@ -153,6 +206,7 @@ class OrchestratorService:
             model=model,
             db=db,
             tools=[planner_tool.run] if planner_tool else [],
+            output_schema=QueryPlan,
             instructions="""You are the Query Planner. Your role is to:
 1. Analyze user queries to understand intent
 2. Determine the optimal output format
@@ -179,6 +233,7 @@ Be thorough and strategic in your planning."""
             model=model,
             db=db,
             tools=tools,
+            output_schema=DataRetrievalResult,
             instructions="""You are the Data Agent. Your role is to:
 1. Search the vector database (RAG) for relevant reviews
 2. Search the web for external information
@@ -208,6 +263,7 @@ Be selective and retrieve high-quality, relevant data."""
             model=model,
             db=db,
             tools=tools,
+            output_schema=AnalysisResult,
             instructions="""You are the Analysis Agent. Your role is to:
 1. Perform statistical analysis on data
 2. Extract insights using NLP
@@ -227,6 +283,7 @@ Be insightful and find meaningful patterns in the data."""
             model=model,
             db=db,
             tools=[citation_tool.run] if citation_tool else [],
+            output_schema=SynthesisResult,
             instructions="""You are the Synthesis Agent. Your role is to:
 1. Combine insights from data and analysis
 2. Format sources with proper citations
@@ -241,10 +298,12 @@ Be clear, accurate, and well-structured in your responses."""
         return """You coordinate a team of AI agents to help users understand their product feedback and customer data.
 
 Your team:
-1. Query Planner - Analyzes what the user wants and determines the best approach
-2. Data Agent - Retrieves data from review database and web
-3. Analysis Agent - Processes data with statistics and text analysis
-4. Synthesis Agent - Creates clear, well-cited responses
+1. Query Planner - Analyzes what the user wants and determines the best approach (outputs structured QueryPlan)
+2. Data Agent - Retrieves data from review database and web (outputs structured DataRetrievalResult)
+3. Analysis Agent - Processes data with statistics and text analysis (outputs structured AnalysisResult)
+4. Synthesis Agent - Creates clear, well-cited responses (outputs structured SynthesisResult)
+
+Each agent outputs structured data that the next agent can use.
 
 Process:
 1. First, understand what the user needs
@@ -264,10 +323,9 @@ Be flexible and adapt to the user's specific question - whether it's about revie
         Process a chat message with streaming updates.
         
         Yields progress updates including:
-        - Execution tree updates
-        - Intermediate steps
-        - Tool calls
-        - Final response
+        - Agent step events (start, content, complete)
+        - Final response streaming
+        - Completion notification
         
         Args:
             request: Chat request
@@ -280,35 +338,20 @@ Be flexible and adapt to the user's specific question - whether it's about revie
         if not self._initialized:
             await self.initialize()
         
-        # Initialize execution tree
-        tree = ExecutionTree(
-            query=request.message,
-            session_id=request.session_id
-        )
-        
         session_id = request.session_id or "default"
         
-        # Create execution tree session in database
-        db_tree_session = None
-        if db:
-            try:
-                db_tree_session = await ExecutionTreeRepository.create_session(
-                    db,
-                    session_id=session_id,
-                    query=request.message,
-                    user_id=user_id,
-                    extra_metadata={"model": self.settings.default_model}
-                )
-                await db.commit()
-                logger.debug(f"Created execution tree session: {db_tree_session.id}")
-            except Exception as e:
-                logger.warning(f"Failed to create execution tree session: {e}")
+        # State tracking for agent steps
+        active_steps = {}  # step_id -> {agent_name, content_buffer, started_at, step_order}
+        completed_steps = []  # For DB storage
+        current_step_id = None
+        current_agent = None  # Track which agent is currently active
+        step_counter = 0
         
         try:
             # Send initial status
             yield {
-                "type": "status",
-                "data": {"status": "starting", "message": "Initializing..."}
+                "type": "connected",
+                "data": {}
             }
             
             # Build context message
@@ -322,11 +365,12 @@ Be flexible and adapt to the user's specific question - whether it's about revie
             
             logger.info(f"Starting team execution for session {session_id}")
             
-            # Execute team with streaming - team.arun returns iterator when stream=True
+            # Execute team with streaming
             response_content = ""
             chunk_count = 0
             
             try:
+                logger.info("Creating team stream...")
                 stream = self.team.arun(
                     context_message,
                     user_id=user_id,
@@ -335,149 +379,175 @@ Be flexible and adapt to the user's specific question - whether it's about revie
                     stream_intermediate_steps=True
                 )
                 
-                # Track active tool calls
-                active_tool_nodes = {}  # Map tool_call_id to node_id
+                logger.info("Team stream created, starting iteration...")
+                
+                # Send status that team is now executing
+                yield {
+                    "type": "status",
+                    "data": {"status": "team_executing", "message": "Team is processing..."}
+                }
                 
                 async for chunk in stream:
                     chunk_count += 1
                     event_type = getattr(chunk, 'event', 'N/A')
-                    logger.debug(f"Received chunk {chunk_count}: {type(chunk).__name__}, event: {event_type}")
                     
-                    # Handle ToolCallStarted - agent is calling a tool
-                    if event_type == "ToolCallStarted":
-                        agent_id = getattr(chunk, 'agent_id', 'unknown')
-                        tool_name = getattr(getattr(chunk, 'tool', None), 'tool_name', 'unknown')
-                        tool_args = getattr(getattr(chunk, 'tool', None), 'tool_args', {})
-                        tool_call_id = getattr(chunk, 'tool_call_id', None)
-                        
-                        logger.info(f"Tool started: {tool_name} by {agent_id}")
-                        
-                        # Add to execution tree
-                        node_id = tree.start_node(
-                            name=f"{agent_id}: {tool_name}",
-                            node_type=NodeType.TOOL,
-                            input_summary=str(tool_args)[:200] if tool_args else "No args"
-                        )
-                        
-                        # Track this tool call
-                        if tool_call_id:
-                            active_tool_nodes[tool_call_id] = node_id
-                        
-                        # Save to database
-                        if db and db_tree_session:
-                            try:
-                                await ExecutionTreeRepository.add_node(
-                                    db,
-                                    tree_session_id=db_tree_session.id,
-                                    node_id=node_id,
-                                    node_type=ExecutionNodeType.TOOL,
-                                    name=f"{agent_id}: {tool_name}",
-                                    agent_id=agent_id,
-                                    tool_name=tool_name,
-                                    tool_args=tool_args,
-                                    input_summary=str(tool_args)[:500] if tool_args else None
-                                )
-                                await db.commit()
-                            except Exception as e:
-                                logger.warning(f"Failed to save tree node: {e}")
-                        
-                        # Send tool call update to frontend
-                        yield {
-                            "type": "tool_call_started",
-                            "data": {
-                                "agent_id": agent_id,
-                                "tool_name": tool_name,
-                                "tool_args": tool_args,
-                                "node_id": node_id
-                            }
-                        }
-                        
-                        # Send tree update
-                        yield {
-                            "type": "tree_update",
-                            "data": tree.to_dict()
-                        }
+                    # Skip duplicate events
+                    if event_type in ["TeamRunCompleted", "TeamRunResponse"]:
+                        continue
                     
-                    # Handle ToolCallCompleted - tool finished executing
-                    elif event_type == "ToolCallCompleted":
-                        tool_name = getattr(getattr(chunk, 'tool', None), 'tool_name', 'unknown')
-                        tool_result = getattr(getattr(chunk, 'tool', None), 'result', None)
-                        tool_call_id = getattr(chunk, 'tool_call_id', None)
-                        
-                        logger.info(f"Tool completed: {tool_name}")
-                        
-                        # Complete the node in execution tree
-                        if tool_call_id and tool_call_id in active_tool_nodes:
-                            node_id = active_tool_nodes[tool_call_id]
-                            result_summary = str(tool_result)[:200] if tool_result else "No result"
-                            tree.complete_node(node_id, output_summary=result_summary)
-                            del active_tool_nodes[tool_call_id]
+                    logger.info(f"Chunk {chunk_count}: {type(chunk).__name__}, event: {event_type}")
+                    
+                    # Extract agent name from chunk
+                    agent_name = getattr(chunk, 'agent_id', None) or getattr(chunk, 'agent', None)
+                    
+                    # Only emit agent_step_start when agent CHANGES
+                    if agent_name and agent_name != current_agent:
+                        # Complete previous agent step if exists
+                        if current_step_id and current_step_id in active_steps:
+                            prev_step_data = active_steps.pop(current_step_id)
                             
-                            # Update database
-                            if db and db_tree_session:
-                                try:
-                                    await ExecutionTreeRepository.complete_node(
-                                        db,
-                                        tree_session_id=db_tree_session.id,
-                                        node_id=node_id,
-                                        output_summary=result_summary,
-                                        tool_result=tool_result if isinstance(tool_result, dict) else None
-                                    )
-                                    await db.commit()
-                                except Exception as e:
-                                    logger.warning(f"Failed to complete tree node: {e}")
+                            # Process buffered content from previous agent
+                            if prev_step_data['content_buffer']:
+                                # Check if buffer has structured (BaseModel) content
+                                structured_items = [item for item in prev_step_data['content_buffer'] if isinstance(item, BaseModel)]
+                                
+                                if structured_items:
+                                    # Use the last structured item
+                                    full_content = structured_items[-1]
+                                    is_structured = True
+                                    try:
+                                        content_dict = full_content.model_dump()
+                                    except Exception as e:
+                                        content_dict = str(full_content)
+                                        is_structured = False
+                                else:
+                                    # Join only string items
+                                    string_items = [str(item) for item in prev_step_data['content_buffer'] if isinstance(item, str)]
+                                    full_content = ''.join(string_items)
+                                    content_dict = full_content
+                                    is_structured = False
+                                
+                                # Store completed step
+                                completed_steps.append({
+                                    'agent_name': prev_step_data['agent_name'],
+                                    'content': content_dict,
+                                    'is_structured': is_structured,
+                                    'step_order': prev_step_data['step_order']
+                                })
+                                
+                                # Emit completion to frontend
+                                yield {
+                                    "type": "agent_step_complete",
+                                    "data": {
+                                        "step_id": current_step_id,
+                                        "agent_name": prev_step_data['agent_name'],
+                                        "content": content_dict,
+                                        "is_structured": is_structured,
+                                        "step_order": prev_step_data['step_order']
+                                    }
+                                }
                         
-                        # Send tool completion update to frontend
+                        # Start new agent step
+                        current_agent = agent_name
+                        step_id = str(uuid.uuid4())
+                        current_step_id = step_id
+                        
+                        active_steps[step_id] = {
+                            'agent_name': agent_name,
+                            'content_buffer': [],
+                            'started_at': datetime.utcnow(),
+                            'step_order': step_counter
+                        }
+                        step_counter += 1
+                        
+                        logger.info(f"🤖 Agent switched to: {agent_name} (step_id: {step_id})")
+                        
+                        # Emit to frontend with step number
                         yield {
-                            "type": "tool_call_completed",
+                            "type": "agent_step_start",
                             "data": {
-                                "tool_name": tool_name,
-                                "result": str(tool_result)[:500] if tool_result else None
+                                "agent_name": agent_name,
+                                "step_id": step_id,
+                                "step_order": step_counter - 1,  # step_counter was already incremented
+                                "timestamp": datetime.utcnow().isoformat()
                             }
                         }
-                        
-                        # Send tree update
-                        yield {
-                            "type": "tree_update",
-                            "data": tree.to_dict()
-                        }
                     
-                    # Handle TeamRunContent events - this is the main streaming content
-                    elif event_type == "TeamRunContent":
-                        content_chunk = chunk.content if hasattr(chunk, 'content') else str(chunk)
-                        response_content += content_chunk
-                        logger.debug(f"Streaming content chunk: {content_chunk[:50]}...")
-                        yield {
-                            "type": "content",
-                            "data": {"content": content_chunk}
-                        }
-                    
-                    # Handle any chunk with 'content' attribute - Agno may send various event types
-                    elif hasattr(chunk, 'content') and chunk.content and event_type not in ["TeamRunResponse"]:
-                        content_chunk = chunk.content
-                        # Only add new content (avoid duplicates)
-                        if not response_content or not content_chunk.startswith(response_content):
-                            if len(content_chunk) > len(response_content):
-                                # Extract only the new part
-                                new_content = content_chunk[len(response_content):]
-                                response_content = content_chunk
-                                logger.debug(f"Streaming new content: {new_content[:50]}...")
+                    # Handle content from actual streaming events
+                    if event_type in ["RunResponse", "RunContent", "AgentRunContent"] and current_step_id and current_step_id in active_steps:
+                        if hasattr(chunk, 'content') and chunk.content:
+                            content = chunk.content
+                            
+                            # If it's a BaseModel, store it as structured data
+                            if isinstance(content, BaseModel):
+                                active_steps[current_step_id]['content_buffer'].append(content)
+                                logger.debug(f"Accumulating structured content for step {current_step_id}")
+                            elif isinstance(content, str):
+                                active_steps[current_step_id]['content_buffer'].append(content)
+                                logger.debug(f"Accumulating text content for step {current_step_id}: {content[:50]}...")
+                                
+                                # Stream text content to frontend
                                 yield {
-                                    "type": "content",
-                                    "data": {"content": new_content}
+                                    "type": "agent_step_content",
+                                    "data": {
+                                        "step_id": current_step_id,
+                                        "content_chunk": content
+                                    }
                                 }
                     
-                    # Handle TeamRunResponse - final response with full content
+                    # Note: Agent completion is handled when switching agents above
+                    # TeamToolCallCompleted is mostly redundant but we can log it
+                    if event_type == "TeamToolCallCompleted":
+                        logger.debug("TeamToolCallCompleted event received")
+                    
+                    # Handle TeamRunContent - final response streaming (ONLY from team coordinator, not agents)
+                    elif event_type == "TeamRunContent":
+                        # Skip if this is an agent's structured output - we only want the final synthesis
+                        if hasattr(chunk, 'content') and isinstance(chunk.content, BaseModel):
+                            logger.debug(f"Skipping structured output from TeamRunContent")
+                            continue
+                        
+                        content_chunk = chunk.content if hasattr(chunk, 'content') else str(chunk)
+                        if isinstance(content_chunk, str):
+                            response_content += content_chunk
+                            logger.debug(f"Streaming final content: {content_chunk[:50]}...")
+                            yield {
+                                "type": "content",
+                                "data": {"content": content_chunk}
+                            }
+                    
+                    # Handle any chunk with 'content' for final response
+                    elif hasattr(chunk, 'content') and chunk.content and event_type not in ["TeamRunResponse", "RunContent"]:
+                        content_chunk = chunk.content
+                        
+                        # Skip structured outputs (they're handled by agent steps)
+                        if isinstance(content_chunk, BaseModel):
+                            continue
+                        
+                        # Only process string content
+                        if isinstance(content_chunk, str):
+                            # Only add new content (avoid duplicates)
+                            if not response_content or not content_chunk.startswith(response_content):
+                                if len(content_chunk) > len(response_content):
+                                    # Extract only the new part
+                                    new_content = content_chunk[len(response_content):]
+                                    response_content = content_chunk
+                                    logger.debug(f"Streaming new content: {new_content[:50]}...")
+                                    yield {
+                                        "type": "content",
+                                        "data": {"content": new_content}
+                                    }
+                    
+                    # Handle TeamRunResponse - final response
                     elif event_type == "TeamRunResponse":
                         logger.debug("Received TeamRunResponse")
                         if hasattr(chunk, 'content') and chunk.content:
                             full_content = chunk.content
                             logger.info(f"Got full response content: {len(full_content)} chars")
                             
-                            # If we haven't streamed anything yet, stream it in chunks now
+                            # If we haven't streamed anything yet, stream it now
                             if len(response_content) == 0:
                                 logger.info("No content was streamed - manually chunking response")
-                                # Stream in reasonable chunks (every ~50 characters for smooth streaming)
                                 chunk_size = 50
                                 for i in range(0, len(full_content), chunk_size):
                                     content_chunk = full_content[i:i+chunk_size]
@@ -485,9 +555,8 @@ Be flexible and adapt to the user's specific question - whether it's about revie
                                         "type": "content",
                                         "data": {"content": content_chunk}
                                     }
-                                    # Small delay to simulate streaming
                                     await asyncio.sleep(0.01)
-                            # If we've partially streamed, send the remainder
+                            # If partially streamed, send remainder
                             elif len(full_content) > len(response_content):
                                 remaining = full_content[len(response_content):]
                                 logger.info(f"Streaming remaining content: {len(remaining)} chars")
@@ -503,29 +572,60 @@ Be flexible and adapt to the user's specific question - whether it's about revie
                             for msg in chunk.messages:
                                 if msg.role == 'assistant' and hasattr(msg, 'metrics') and msg.metrics:
                                     await self._log_llm_call(msg, user_id, session_id, db)
-                                    
-                                    # Update execution tree
-                                    node_id = tree.start_node(
-                                        name=f"LLM Call: {getattr(msg, 'model', 'unknown')}",
-                                        node_type=NodeType.TOOL,
-                                        input_summary=str(msg.content)[:100] if msg.content else "Tool call",
-                                    )
-                                    tree.complete_node(
-                                        node_id,
-                                        output_summary=f"Tokens: {getattr(msg.metrics, 'total_tokens', 'unknown')}"
-                                    )
-                                    
-                                    # Send tree update
-                                    yield {
-                                        "type": "tree_update",
-                                        "data": tree.to_dict()
-                                    }
                 
-                logger.info(f"Team execution completed with {chunk_count} chunks, response length: {len(response_content)}")
+                # Complete any remaining active step
+                if current_step_id and current_step_id in active_steps:
+                    final_step_data = active_steps.pop(current_step_id)
+                    
+                    if final_step_data['content_buffer']:
+                        # Check if buffer has structured (BaseModel) content
+                        structured_items = [item for item in final_step_data['content_buffer'] if isinstance(item, BaseModel)]
+                        
+                        if structured_items:
+                            # Use the last structured item
+                            full_content = structured_items[-1]
+                            is_structured = True
+                            try:
+                                content_dict = full_content.model_dump()
+                            except Exception as e:
+                                content_dict = str(full_content)
+                                is_structured = False
+                        else:
+                            # Join only string items
+                            string_items = [str(item) for item in final_step_data['content_buffer'] if isinstance(item, str)]
+                            full_content = ''.join(string_items)
+                            content_dict = full_content
+                            is_structured = False
+                        
+                        # Store completed step
+                        completed_steps.append({
+                            'agent_name': final_step_data['agent_name'],
+                            'content': content_dict,
+                            'is_structured': is_structured,
+                            'step_order': final_step_data['step_order']
+                        })
+                        
+                        # Emit completion to frontend
+                        yield {
+                            "type": "agent_step_complete",
+                            "data": {
+                                "step_id": current_step_id,
+                                "agent_name": final_step_data['agent_name'],
+                                "content": content_dict,
+                                "is_structured": is_structured
+                            }
+                        }
+                        
+                        # If this is the Synthesis Agent, extract the response text
+                        if final_step_data['agent_name'] == 'Synthesis Agent' and is_structured and 'response' in content_dict:
+                            response_content = content_dict['response']
+                            logger.info(f"Extracted response from SynthesisResult: {len(response_content)} chars")
+                
+                logger.info(f"Team execution completed: {chunk_count} chunks, {len(completed_steps)} agent steps, {len(response_content)} chars")
                 
             except Exception as stream_error:
                 logger.error(f"Error during team streaming: {stream_error}", exc_info=True)
-                # If streaming fails, try non-streaming fallback
+                # Fallback to non-streaming
                 logger.info("Falling back to non-streaming execution")
                 
                 yield {
@@ -537,8 +637,7 @@ Be flexible and adapt to the user's specific question - whether it's about revie
                     context_message,
                     user_id=user_id,
                     session_id=session_id,
-                    stream=False,
-                    stream_intermediate_steps=True
+                    stream=False
                 )
                 
                 # Extract response content
@@ -558,20 +657,20 @@ Be flexible and adapt to the user's specific question - whether it's about revie
                         "data": {"content": response_content}
                     }
             
-            # Complete the tree
-            tree.complete_tree(response_content[:100] if response_content else "Complete")
+            # Ensure we have response content - extract ONLY from Synthesis Agent
+            if not response_content and completed_steps:
+                # Find the Synthesis Agent step (should be the last one)
+                synthesis_steps = [s for s in completed_steps if s['agent_name'] == 'Synthesis Agent']
+                if synthesis_steps:
+                    last_synthesis = synthesis_steps[-1]
+                    if last_synthesis['is_structured'] and isinstance(last_synthesis['content'], dict):
+                        if 'response' in last_synthesis['content']:
+                            response_content = last_synthesis['content']['response']
+                            logger.info(f"Extracted response from Synthesis Agent: {len(response_content)} chars")
             
-            # Complete the tree session in database
-            if db and db_tree_session:
-                try:
-                    await ExecutionTreeRepository.complete_session(
-                        db,
-                        tree_session_id=db_tree_session.id,
-                        result_summary=response_content[:500] if response_content else "Complete"
-                    )
-                    await db.commit()
-                except Exception as e:
-                    logger.warning(f"Failed to complete tree session: {e}")
+            # If still no content, use a fallback message
+            if not response_content:
+                response_content = "I've processed your query, but couldn't generate a final response. Please check the agent steps for details."
             
             # Create final response
             chat_response = ChatResponse(
@@ -583,9 +682,13 @@ Be flexible and adapt to the user's specific question - whether it's about revie
                     "model": self.settings.default_model,
                     "provider": "agno_team",
                     "user_id": user_id,
-                    "execution_tree": tree.to_dict()
+                    "agent_steps_count": len(completed_steps)
                 }
             )
+            
+            # Store completed steps - will be done by chat API after getting message_id
+            # Include steps in metadata for chat API to save
+            chat_response.metadata['completed_steps'] = completed_steps
             
             # Send final response
             yield {
@@ -595,25 +698,11 @@ Be flexible and adapt to the user's specific question - whether it's about revie
             
         except Exception as e:
             logger.error(f"Error processing message: {e}", exc_info=True)
-            tree.fail_tree(str(e))
-            
-            # Mark tree session as failed in database
-            if db and db_tree_session:
-                try:
-                    await ExecutionTreeRepository.complete_session(
-                        db,
-                        tree_session_id=db_tree_session.id,
-                        error_message=str(e)
-                    )
-                    await db.commit()
-                except Exception as db_error:
-                    logger.warning(f"Failed to mark tree session as failed: {db_error}")
             
             yield {
                 "type": "error",
                 "data": {
-                    "error": str(e),
-                    "execution_tree": tree.to_dict()
+                    "error": str(e)
                 }
             }
     
@@ -624,7 +713,7 @@ Be flexible and adapt to the user's specific question - whether it's about revie
         db: Optional[Any] = None
     ) -> ChatResponse:
         """
-        Process a chat message using the orchestrator team.
+        Process a chat message using the orchestrator team (non-streaming).
         
         Args:
             request: Chat request
@@ -632,16 +721,10 @@ Be flexible and adapt to the user's specific question - whether it's about revie
             db: Database session
             
         Returns:
-            ChatResponse with result and execution tree
+            ChatResponse with result
         """
         if not self._initialized:
             await self.initialize()
-        
-        # Initialize execution tree
-        tree = ExecutionTree(
-            query=request.message,
-            session_id=request.session_id
-        )
         
         try:
             # Run the team to process the query
@@ -661,6 +744,20 @@ Be flexible and adapt to the user's specific question - whether it's about revie
             # Extract response content
             if hasattr(team_response, 'content'):
                 response_content = team_response.content
+                
+                # If content is a SynthesisResult, extract the response field
+                if isinstance(response_content, SynthesisResult):
+                    response_content = response_content.response
+                elif isinstance(response_content, BaseModel):
+                    # Try to extract response field from any structured output
+                    try:
+                        content_dict = response_content.model_dump()
+                        if 'response' in content_dict:
+                            response_content = content_dict['response']
+                        else:
+                            response_content = str(content_dict)
+                    except Exception:
+                        response_content = str(response_content)
             elif isinstance(team_response, str):
                 response_content = team_response
             else:
@@ -672,19 +769,6 @@ Be flexible and adapt to the user's specific question - whether it's about revie
                     if msg.role == 'assistant' and hasattr(msg, 'metrics') and msg.metrics:
                         # Log this LLM call
                         await self._log_llm_call(msg, user_id, session_id, db)
-                        
-                        # Add to execution tree
-                        node_id = tree.start_node(
-                            name=f"LLM Call: {getattr(msg, 'model', 'unknown')}",
-                            node_type=NodeType.TOOL,
-                            input_summary=str(msg.content)[:100] if msg.content else "Tool call",
-                        )
-                        tree.complete_node(
-                            node_id,
-                            output_summary=f"Tokens: {getattr(msg.metrics, 'total_tokens', 'unknown')}"
-                        )
-            
-            tree.complete_tree(response_content[:100] if response_content else "Complete")
             
             # Create response
             chat_response = ChatResponse(
@@ -695,8 +779,7 @@ Be flexible and adapt to the user's specific question - whether it's about revie
                 metadata={
                     "model": self.settings.default_model,
                     "provider": "agno_team",
-                    "user_id": user_id,
-                    "execution_tree": tree.to_dict()
+                    "user_id": user_id
                 }
             )
             
@@ -705,17 +788,15 @@ Be flexible and adapt to the user's specific question - whether it's about revie
             
         except Exception as e:
             logger.error(f"Error processing message: {e}", exc_info=True)
-            tree.fail_tree(str(e))
             
-            # Return error response with tree
+            # Return error response
             return ChatResponse(
                 message=f"I encountered an error processing your request: {str(e)}",
                 session_id=request.session_id or "default",
                 message_id=str(uuid.uuid4()),
                 timestamp=datetime.utcnow(),
                 metadata={
-                    "error": str(e),
-                    "execution_tree": tree.to_dict()
+                    "error": str(e)
                 }
             )
     

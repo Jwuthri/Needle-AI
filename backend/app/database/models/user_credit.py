@@ -18,7 +18,7 @@ class UserCredit(Base):
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
 
     # User reference (one-to-one relationship)
-    user_id = Column(String, ForeignKey("users.id"), nullable=False, unique=True, index=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
 
     # Credit balances
     credits_available = Column(Float, default=0.0, nullable=False)  # Current available credits

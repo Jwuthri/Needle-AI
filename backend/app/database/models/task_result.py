@@ -15,7 +15,7 @@ class TaskResult(Base):
     __tablename__ = "task_results"
 
     id = Column(String, primary_key=True)  # Use Celery task ID
-    user_id = Column(String, ForeignKey("users.id"), nullable=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     # Task metadata
     task_name = Column(String(255), nullable=False)

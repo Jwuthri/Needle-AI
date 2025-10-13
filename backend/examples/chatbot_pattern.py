@@ -127,7 +127,6 @@ class ChatbotOrchestrator:
     Features:
     - Parallel processing when possible
     - Real-time streaming
-    - Execution tree tracking
     - Structured agent communication
     """
     

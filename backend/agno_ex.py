@@ -11,7 +11,7 @@ from agno.team import Team
 from agno.models.openai import OpenAIChat
 
 # Set your API key
-os.environ["OPENAI_API_KEY"] = "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"
+
 
 def capture_agent_output(run_output) -> None:
     print(f"Agent output: {run_output.content}")

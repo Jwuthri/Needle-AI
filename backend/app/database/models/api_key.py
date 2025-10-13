@@ -25,7 +25,7 @@ class ApiKey(Base):
     __tablename__ = "api_keys"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
 
     # Key details
     name = Column(String(255), nullable=False)  # Human-readable name
@@ -51,7 +51,7 @@ class ApiKey(Base):
     extra_metadata = Column(JSON, default={})
 
     # Relationships
-    user = relationship("User")
+    user = relationship("User", back_populates="api_keys")
 
     # Indexes
     __table_args__ = (

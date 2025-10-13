@@ -99,8 +99,7 @@ Provide clear reasoning for your analysis."""
         needs_web_search: bool,
         needs_analytics: bool,
         needs_nlp: bool,
-        reasoning: str,
-        **kwargs
+        reasoning: str
     ) -> ToolResult:
         """
         Process the query analysis parameters provided by the LLM.

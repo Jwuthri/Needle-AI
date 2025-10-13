@@ -83,12 +83,40 @@ const formatAssistantContent = (content: string) => {
   let sectionIndex = 0
 
   lines.forEach((line, idx) => {
-    // Detect headers (lines ending with :)
-    if (line.trim().endsWith(':') && line.trim().length > 3) {
+    const trimmedLine = line.trim()
+    
+    // Detect markdown headers (##, ###, etc.)
+    if (trimmedLine.startsWith('#')) {
       if (currentSection.length > 0) {
         sections.push(
           <div key={`section-${sectionIndex++}`} className="mb-4">
-            <p className="text-white/80">{currentSection.join(' ')}</p>
+            <p className="text-white/80">{highlightKeywords(currentSection.join(' '))}</p>
+          </div>
+        )
+        currentSection = []
+      }
+      
+      // Count # symbols to determine header level
+      const headerMatch = trimmedLine.match(/^(#{1,6})\s+(.+)/)
+      if (headerMatch) {
+        const level = headerMatch[1].length
+        const headerText = headerMatch[2]
+        const headerClass = level === 1 ? 'text-2xl' : level === 2 ? 'text-xl' : 'text-lg'
+        
+        sections.push(
+          <h3 key={`header-${idx}`} className={`${headerClass} font-semibold text-white mb-3 mt-2 flex items-center`}>
+            <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full mr-2"></span>
+            {headerText}
+          </h3>
+        )
+      }
+    }
+    // Detect headers (lines ending with :)
+    else if (trimmedLine.endsWith(':') && trimmedLine.length > 3 && !trimmedLine.includes('http')) {
+      if (currentSection.length > 0) {
+        sections.push(
+          <div key={`section-${sectionIndex++}`} className="mb-4">
+            <p className="text-white/80">{highlightKeywords(currentSection.join(' '))}</p>
           </div>
         )
         currentSection = []
@@ -96,16 +124,16 @@ const formatAssistantContent = (content: string) => {
       sections.push(
         <h3 key={`header-${idx}`} className="text-lg font-semibold text-white mb-2 flex items-center">
           <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full mr-2"></span>
-          {highlightKeywords(line.replace(':', ''))}
+          {trimmedLine.replace(':', '')}
         </h3>
       )
     }
-    // Detect bullet points
-    else if (line.trim().startsWith('-') || line.trim().startsWith('•')) {
+    // Detect bullet points (markdown or unicode)
+    else if (trimmedLine.startsWith('-') || trimmedLine.startsWith('•') || trimmedLine.startsWith('*')) {
       if (currentSection.length > 0) {
         sections.push(
           <div key={`section-${sectionIndex++}`} className="mb-4">
-            <p className="text-white/80">{currentSection.join(' ')}</p>
+            <p className="text-white/80">{highlightKeywords(currentSection.join(' '))}</p>
           </div>
         )
         currentSection = []
@@ -113,19 +141,35 @@ const formatAssistantContent = (content: string) => {
       sections.push(
         <div key={`bullet-${idx}`} className="flex items-start mb-2">
           <span className="text-emerald-400 mr-2">•</span>
-          <span className="text-white/80">{highlightKeywords(line.trim().replace(/^[-•]\s*/, ''))}</span>
+          <span className="text-white/80">{highlightKeywords(trimmedLine.replace(/^[-•*]\s*/, ''))}</span>
+        </div>
+      )
+    }
+    // Code blocks
+    else if (trimmedLine.startsWith('```')) {
+      if (currentSection.length > 0) {
+        sections.push(
+          <div key={`section-${sectionIndex++}`} className="mb-4">
+            <p className="text-white/80">{highlightKeywords(currentSection.join(' '))}</p>
+          </div>
+        )
+        currentSection = []
+      }
+      sections.push(
+        <div key={`code-${idx}`} className="bg-gray-900/50 border border-gray-700/30 rounded-lg p-3 mb-2 font-mono text-sm text-emerald-300">
+          {trimmedLine.replace(/```/g, '')}
         </div>
       )
     }
     // Regular text
-    else if (line.trim()) {
-      currentSection.push(line.trim())
+    else if (trimmedLine) {
+      currentSection.push(trimmedLine)
     }
     // Empty line - flush current section
     else if (currentSection.length > 0) {
       sections.push(
         <div key={`section-${sectionIndex++}`} className="mb-4">
-          <p className="text-white/80">{currentSection.join(' ')}</p>
+          <p className="text-white/80">{highlightKeywords(currentSection.join(' '))}</p>
         </div>
       )
       currentSection = []
@@ -136,12 +180,12 @@ const formatAssistantContent = (content: string) => {
   if (currentSection.length > 0) {
     sections.push(
       <div key={`section-${sectionIndex}`} className="mb-4">
-        <p className="text-white/80">{currentSection.join(' ')}</p>
+        <p className="text-white/80">{highlightKeywords(currentSection.join(' '))}</p>
       </div>
     )
   }
 
-  return sections
+  return sections.length > 0 ? sections : [<p key="default" className="text-white/80">{content}</p>]
 }
 
 export function EnhancedMessage({ message, onQuestionClick }: EnhancedMessageProps) {
@@ -216,11 +260,14 @@ export function EnhancedMessage({ message, onQuestionClick }: EnhancedMessagePro
               ? 'bg-red-500/10 border border-red-500/30'
               : 'bg-gray-800/50 border border-gray-700/50'
           }`}>
-            {/* Summary if first line is short */}
-            {!message.error && message.content.split('\n')[0].length < 100 && (
+            {/* Summary if first line is short and not a markdown header */}
+            {!message.error && 
+             !message.content.split('\n')[0].trim().startsWith('#') && 
+             message.content.split('\n')[0].length < 100 && 
+             message.content.split('\n')[0].length > 0 && (
               <div className="mb-4 pb-4 border-b border-gray-700/30">
                 <p className="text-white/60 text-sm">
-                  {highlightKeywords(message.content.split('\n')[0])}
+                  {message.content.split('\n')[0]}
                 </p>
               </div>
             )}
@@ -237,6 +284,8 @@ export function EnhancedMessage({ message, onQuestionClick }: EnhancedMessagePro
               </div>
             )}
           </div>
+
+          {/* Agent Steps are now shown above the message, not inside it */}
 
           {/* Sources Section */}
           {message.sources && message.sources.length > 0 && (

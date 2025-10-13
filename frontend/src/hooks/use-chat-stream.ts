@@ -1,29 +1,37 @@
 import { useState, useCallback, useRef } from 'react';
-import { ChatRequest, ChatResponse, ExecutionTreeData } from '@/types/chat';
+import { ChatRequest, ChatResponse, AgentStep } from '@/types/chat';
 
 interface StreamUpdate {
-  type: 'connected' | 'status' | 'content' | 'tree_update' | 'complete' | 'error' | 'tool_call_started' | 'tool_call_completed';
+  type: 'connected' | 'status' | 'content' | 'agent_step_start' | 'agent_step_content' | 'agent_step_complete' | 'complete' | 'error';
   data: any;
 }
 
-interface ToolCallStarted {
-  agent_id: string;
-  tool_name: string;
-  tool_args: Record<string, any>;
-  node_id: string;
+interface AgentStepStart {
+  agent_name: string;
+  step_id: string;
+  timestamp: string;
+  step_order?: number;
 }
 
-interface ToolCallCompleted {
-  tool_name: string;
-  result: string | null;
+interface AgentStepContent {
+  step_id: string;
+  content_chunk: string;
+}
+
+interface AgentStepComplete {
+  step_id: string;
+  agent_name: string;
+  content: any;
+  is_structured: boolean;
+  step_order?: number;
 }
 
 interface UseChatStreamOptions {
   onStatusUpdate?: (status: string, message: string) => void;
   onContentChunk?: (chunk: string) => void;
-  onTreeUpdate?: (tree: ExecutionTreeData) => void;
-  onToolCallStarted?: (data: ToolCallStarted) => void;
-  onToolCallCompleted?: (data: ToolCallCompleted) => void;
+  onAgentStepStart?: (data: AgentStepStart) => void;
+  onAgentStepContent?: (data: AgentStepContent) => void;
+  onAgentStepComplete?: (data: AgentStepComplete) => void;
   onComplete?: (response: ChatResponse) => void;
   onError?: (error: string) => void;
 }
@@ -31,7 +39,8 @@ interface UseChatStreamOptions {
 export function useChatStream(options: UseChatStreamOptions = {}) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [currentContent, setCurrentContent] = useState('');
-  const [currentTree, setCurrentTree] = useState<ExecutionTreeData | null>(null);
+  const [agentSteps, setAgentSteps] = useState<AgentStep[]>([]);
+  const [currentAgent, setCurrentAgent] = useState<string | null>(null);
   const [status, setStatus] = useState<{ status: string; message: string } | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -39,7 +48,8 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     async (request: ChatRequest, authToken?: string | null) => {
       setIsStreaming(true);
       setCurrentContent('');
-      setCurrentTree(null);
+      setAgentSteps([]);
+      setCurrentAgent(null);
       setStatus(null);
 
       // Create abort controller for cancellation
@@ -127,32 +137,70 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
                     options.onStatusUpdate?.(statusData.status, statusData.message);
                     break;
 
-                  case 'content':
-                    const chunk = update.data.content;
-                    console.log('[Stream] Content chunk:', chunk.length, 'chars');
-                    setCurrentContent((prev) => prev + chunk);
-                    options.onContentChunk?.(chunk);
-                    break;
-
-                  case 'tree_update':
-                    const tree = update.data as ExecutionTreeData;
-                    setCurrentTree(tree);
-                    options.onTreeUpdate?.(tree);
-                    break;
-
-                  case 'tool_call_started':
-                    const toolStarted = update.data as ToolCallStarted;
-                    options.onToolCallStarted?.(toolStarted);
-                    // Update status to show tool being called
+                  case 'agent_step_start':
+                    const stepStart = update.data as AgentStepStart;
+                    console.log('[Stream] Agent step started:', stepStart.agent_name, 'Step:', (stepStart.step_order ?? 0) + 1);
+                    setCurrentAgent(stepStart.agent_name);
+                    // Add new step to tracking with step order
+                    setAgentSteps((prev) => [
+                      ...prev,
+                      {
+                        step_id: stepStart.step_id,
+                        agent_name: stepStart.agent_name,
+                        content: '',
+                        is_structured: false,
+                        timestamp: stepStart.timestamp,
+                        status: 'active',
+                        step_order: stepStart.step_order,
+                      },
+                    ]);
+                    options.onAgentStepStart?.(stepStart);
+                    // Update status to show agent working
                     setStatus({
-                      status: 'tool_call',
-                      message: `🔧 ${toolStarted.agent_id} calling ${toolStarted.tool_name}...`
+                      status: 'agent_working',
+                      message: `🤖 Step ${(stepStart.step_order ?? 0) + 1}: ${stepStart.agent_name} is thinking...`,
                     });
                     break;
 
-                  case 'tool_call_completed':
-                    const toolCompleted = update.data as ToolCallCompleted;
-                    options.onToolCallCompleted?.(toolCompleted);
+                  case 'agent_step_content':
+                    const stepContent = update.data as AgentStepContent;
+                    console.log('[Stream] Agent step content:', stepContent.step_id);
+                    // Update the step's content buffer
+                    setAgentSteps((prev) =>
+                      prev.map((step) =>
+                        step.step_id === stepContent.step_id
+                          ? { ...step, content: (step.content || '') + stepContent.content_chunk }
+                          : step
+                      )
+                    );
+                    options.onAgentStepContent?.(stepContent);
+                    break;
+
+                  case 'agent_step_complete':
+                    const stepComplete = update.data as AgentStepComplete;
+                    console.log('[Stream] Agent step completed:', stepComplete.agent_name);
+                    // Mark step as completed with final content
+                    setAgentSteps((prev) =>
+                      prev.map((step) =>
+                        step.step_id === stepComplete.step_id
+                          ? {
+                              ...step,
+                              content: stepComplete.content,
+                              is_structured: stepComplete.is_structured,
+                              status: 'completed',
+                            }
+                          : step
+                      )
+                    );
+                    setCurrentAgent(null);
+                    options.onAgentStepComplete?.(stepComplete);
+                    break;
+
+                  case 'content':
+                    const chunk = update.data.content;
+                    console.log('[Stream] Final content chunk:', chunk.length, 'chars');
+                    setCurrentContent((prev) => prev + chunk);
+                    options.onContentChunk?.(chunk);
                     break;
 
                   case 'complete':
@@ -200,7 +248,8 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     stopStreaming,
     isStreaming,
     currentContent,
-    currentTree,
+    agentSteps,
+    currentAgent,
     status,
   };
 }

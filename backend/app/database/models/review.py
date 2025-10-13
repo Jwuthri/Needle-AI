@@ -18,9 +18,9 @@ class Review(Base):
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
 
     # References
-    company_id = Column(String, ForeignKey("companies.id"), nullable=False)
-    source_id = Column(String, ForeignKey("review_sources.id"), nullable=False)
-    scraping_job_id = Column(String, ForeignKey("scraping_jobs.id"), nullable=True)  # Null for manual imports
+    company_id = Column(String, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
+    source_id = Column(String, ForeignKey("review_sources.id", ondelete="CASCADE"), nullable=False)
+    scraping_job_id = Column(String, ForeignKey("scraping_jobs.id", ondelete="CASCADE"), nullable=True)  # Null for manual imports
 
     # Content
     content = Column(Text, nullable=False)

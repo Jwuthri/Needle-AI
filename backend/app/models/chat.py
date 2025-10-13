@@ -43,20 +43,6 @@ class ChatRequest(BaseModel):
         }
 
 
-class ExecutionStep(BaseModel):
-    """A step in the execution tree."""
-    id: str = Field(..., description="Step identifier")
-    name: str = Field(..., description="Step name")
-    type: str = Field(..., description="Step type (agent, tool, decision)")
-    status: str = Field(..., description="Step status (pending, running, completed, failed)")
-    duration_ms: Optional[int] = Field(default=None, description="Duration in milliseconds")
-    input_summary: Optional[str] = Field(default=None, description="Input summary")
-    output_summary: Optional[str] = Field(default=None, description="Output summary")
-    error: Optional[str] = Field(default=None, description="Error message if failed")
-    metadata: Optional[dict] = Field(default=None, description="Additional metadata")
-    children: List["ExecutionStep"] = Field(default_factory=list, description="Child steps")
-
-
 class ChatResponse(BaseModel):
     """Response model for chat endpoint."""
     message: str = Field(..., description="The AI assistant's response")
@@ -66,7 +52,6 @@ class ChatResponse(BaseModel):
     output_format: Optional[str] = Field(default="text", description="Output format (text, visualization, cited_summary)")
     visualization: Optional[dict] = Field(default=None, description="Visualization configuration if applicable")
     sources: Optional[List[dict]] = Field(default=None, description="Source citations")
-    execution_tree: Optional[dict] = Field(default=None, description="Execution tree for UI visualization")
     metadata: Optional[dict] = Field(default=None, description="Additional response metadata")
 
     class Config:
