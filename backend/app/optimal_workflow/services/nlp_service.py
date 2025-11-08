@@ -3,8 +3,8 @@ NLP Service for executing NLP analysis tool calls.
 """
 
 from typing import Dict, Any, List
-from app import get_logger
-from app.workflow.tools.nlp_tools import (
+from app.utils.logging import get_logger
+from app.optimal_workflow.tools.nlp_tools import (
     execute_tfidf,
     execute_clustering,
     execute_sentiment_analysis,

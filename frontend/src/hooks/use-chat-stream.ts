@@ -2,7 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import { ChatRequest, ChatResponse, AgentStep } from '@/types/chat';
 
 interface StreamUpdate {
-  type: 'connected' | 'status' | 'content' | 'agent_step_start' | 'agent_step_content' | 'agent_step_complete' | 'complete' | 'error';
+  type: 'connected' | 'status' | 'content' | 'agent_step_start' | 'agent_step_content' | 'agent_step_complete' | 'agent_stream' | 'agent_stream_structured' | 'complete' | 'error';
   data: any;
 }
 
@@ -174,6 +174,50 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
                       )
                     );
                     options.onAgentStepContent?.(stepContent);
+                    break;
+
+                  case 'agent_stream':
+                    // Handle token-by-token streaming from agent (raw text)
+                    const streamData = update.data;
+                    const delta = streamData.delta || '';
+                    console.log('[Stream] Agent stream delta:', delta);
+                    // Update the currently active step with streaming text
+                    setAgentSteps((prev) => {
+                      const activeStepIndex = prev.findIndex(s => s.status === 'active');
+                      if (activeStepIndex >= 0) {
+                        const updatedSteps = [...prev];
+                        const currentContent = typeof updatedSteps[activeStepIndex].content === 'string' 
+                          ? updatedSteps[activeStepIndex].content 
+                          : '';
+                        updatedSteps[activeStepIndex] = {
+                          ...updatedSteps[activeStepIndex],
+                          content: currentContent + delta,
+                          is_structured: false
+                        };
+                        return updatedSteps;
+                      }
+                      return prev;
+                    });
+                    break;
+
+                  case 'agent_stream_structured':
+                    // Handle streaming structured output (partial JSON from agent)
+                    const structuredData = update.data;
+                    console.log('[Stream] Streaming structured output:', structuredData.partial_content?.length || 0, 'chars');
+                    // Update the currently active step with partial structured content
+                    setAgentSteps((prev) => {
+                      const activeStepIndex = prev.findIndex(s => s.status === 'active');
+                      if (activeStepIndex >= 0) {
+                        const updatedSteps = [...prev];
+                        updatedSteps[activeStepIndex] = {
+                          ...updatedSteps[activeStepIndex],
+                          content: structuredData.partial_content,
+                          is_structured: true
+                        };
+                        return updatedSteps;
+                      }
+                      return prev;
+                    });
                     break;
 
                   case 'agent_step_complete':

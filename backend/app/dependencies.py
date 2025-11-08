@@ -5,17 +5,15 @@ FastAPI dependencies for dependency injection.
 from functools import lru_cache
 from typing import Optional, Any
 
-from app.services.orchestrator_service import OrchestratorService
-from app.services.tree_orchestrator_service import TreeOrchestratorService
+from app.services.workflow_orchestrator_service import WorkflowOrchestratorService
 from app.services.conversation_service import ConversationService
 from app.services.redis_client import RedisClient
 from app.core.container import get_container
 from app.core.config.settings import get_settings
 
 
-# Cache orchestrator instances
-_orchestrator_instance: Optional[OrchestratorService] = None
-_tree_orchestrator_instance: Optional[TreeOrchestratorService] = None
+# Cache orchestrator instance
+_workflow_orchestrator_instance: Optional[WorkflowOrchestratorService] = None
 
 
 @lru_cache()
@@ -24,51 +22,30 @@ def get_settings_cached():
     return get_settings()
 
 
-async def get_orchestrator_service() -> OrchestratorService:
+async def get_orchestrator_service() -> WorkflowOrchestratorService:
     """
-    Get or create the orchestrator service instance.
+    Get or create the workflow orchestrator service instance.
     
     Returns:
-        OrchestratorService instance
+        WorkflowOrchestratorService instance
     """
-    global _orchestrator_instance
+    global _workflow_orchestrator_instance
     
-    if _orchestrator_instance is None:
+    if _workflow_orchestrator_instance is None:
         settings = get_settings_cached()
-        _orchestrator_instance = OrchestratorService(settings)
-        await _orchestrator_instance.initialize()
+        _workflow_orchestrator_instance = WorkflowOrchestratorService(settings)
+        await _workflow_orchestrator_instance.initialize()
     
-    return _orchestrator_instance
-
-
-async def get_tree_orchestrator_service() -> TreeOrchestratorService:
-    """
-    Get or create the tree orchestrator service instance.
-    
-    Returns:
-        TreeOrchestratorService instance
-    """
-    global _tree_orchestrator_instance
-    
-    if _tree_orchestrator_instance is None:
-        settings = get_settings_cached()
-        _tree_orchestrator_instance = TreeOrchestratorService(settings)
-        await _tree_orchestrator_instance.initialize()
-    
-    return _tree_orchestrator_instance
+    return _workflow_orchestrator_instance
 
 
 async def cleanup_orchestrator_services():
-    """Cleanup orchestrator service instances."""
-    global _orchestrator_instance, _tree_orchestrator_instance
+    """Cleanup orchestrator service instance."""
+    global _workflow_orchestrator_instance
     
-    if _orchestrator_instance:
-        await _orchestrator_instance.cleanup()
-        _orchestrator_instance = None
-    
-    if _tree_orchestrator_instance:
-        await _tree_orchestrator_instance.cleanup()
-        _tree_orchestrator_instance = None
+    if _workflow_orchestrator_instance:
+        await _workflow_orchestrator_instance.cleanup()
+        _workflow_orchestrator_instance = None
 
 
 async def get_conversation_service() -> ConversationService:

@@ -7,7 +7,7 @@ These models extend the base workflow models with validation-specific metadata.
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, Field
 
-from app.workflow.agents.base import RetrievalPlan, SQLQuery
+from app.optimal_workflow.agents.base import RetrievalPlan, SQLQuery
 
 
 class EnhancedSQLQuery(SQLQuery):

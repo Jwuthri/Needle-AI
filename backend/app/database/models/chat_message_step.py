@@ -32,7 +32,8 @@ class ChatMessageStep(Base):
     step_order = Column(Integer, nullable=False)
     
     # Content storage - one of these will be populated
-    tool_call = Column(JSON, nullable=True)  # For structured outputs (BaseModel)
+    tool_call = Column(JSON, nullable=True)  # For tool calls
+    structured_output = Column(JSON, nullable=True)  # For structured outputs (BaseModel)
     prediction = Column(Text, nullable=True)  # For text outputs
     
     # Timestamps

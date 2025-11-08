@@ -5,52 +5,31 @@ Entry point for running the LlamaIndex workflow.
 import asyncio
 from llama_index.core.workflow import StartEvent
 
-from app import get_logger
-from app.workflow.workflow import ProductGapWorkflow
+from app.utils.logging import get_logger
+from app.optimal_workflow.workflow import ProductGapWorkflow
 
 logger = get_logger("llamaindex_workflow.main")
 
 
-async def run_workflow(query: str, user_id: int = 1, conversation_id: int = None, stream_callback=None):
+async def run_workflow(query: str, user_id: str = None, session_id: str = None, stream_callback=None):
     """
     Execute the LlamaIndex workflow for a given query.
     
     Args:
         query: User's question
-        user_id: User ID for data access
-        conversation_id: Conversation ID (creates new if not provided)
+        user_id: User ID (string from Clerk or other auth provider)
+        session_id: Session ID (passed from chat API)
         stream_callback: Optional callback function for streaming events
     """
-    from app.database.base import SessionLocal
-    from app.database.repositories import ConversationRepository
-    
     logger.info("=" * 80)
     logger.info(f"🚀 Starting LlamaIndex Workflow")
     logger.info(f"   └─ Query: {query[:100]}{'...' if len(query) > 100 else ''}")
     logger.info("=" * 80)
     
-    # Create or use existing conversation
-    db_session = SessionLocal()
-    try:
-        conv_repo = ConversationRepository()
-        
-        # Create conversation if not provided
-        if conversation_id is None:
-            conversation = conv_repo.create(
-                db=db_session,
-                user_id=user_id,
-                title=query if len(query) <= 100 else query[:97] + "..."
-            )
-            conversation_id = conversation.id
-            logger.info(f"Created new conversation: {conversation_id}")
-        
-    finally:
-        db_session.close()
-    
-    # Create workflow instance with conversation_id and stream callback
+    # Create workflow instance with session_id and stream callback
     workflow = ProductGapWorkflow(
         user_id=user_id,
-        conversation_id=conversation_id,
+        session_id=session_id,
         stream_callback=stream_callback,
         timeout=900,
         verbose=True
@@ -66,35 +45,15 @@ async def run_workflow(query: str, user_id: int = 1, conversation_id: int = None
     return result
 
 
-async def run_workflow_streaming(query: str, user_id: int = 1, conversation_id: int = None):
+async def run_workflow_streaming(query: str, user_id: str = None, session_id: str = None):
     """
     Execute the workflow with streaming support using async generator.
     
     Yields step progress events and final answer chunks.
     """
     import asyncio
-    from app.database.base import SessionLocal
-    from app.database.repositories import ConversationRepository
     
     logger.info("🚀 Starting LlamaIndex Workflow (Streaming Mode)")
-    
-    # Create or use existing conversation
-    db_session = SessionLocal()
-    try:
-        conv_repo = ConversationRepository()
-        
-        # Create conversation if not provided
-        if conversation_id is None:
-            conversation = conv_repo.create(
-                db=db_session,
-                user_id=user_id,
-                title=query if len(query) <= 100 else query[:97] + "..."
-            )
-            conversation_id = conversation.id
-            logger.info(f"Created new conversation: {conversation_id}")
-        
-    finally:
-        db_session.close()
     
     # Event queue for streaming with immediate notification
     events = asyncio.Queue()
@@ -117,7 +76,7 @@ async def run_workflow_streaming(query: str, user_id: int = 1, conversation_id: 
         try:
             workflow = ProductGapWorkflow(
                 user_id=user_id,
-                conversation_id=conversation_id,
+                session_id=session_id,
                 stream_callback=stream_callback,
                 timeout=900,
                 verbose=True
@@ -158,7 +117,7 @@ async def run_workflow_streaming(query: str, user_id: int = 1, conversation_id: 
         # Yield final completion if not already sent
         yield {
             "type": "workflow_complete",
-            "conversation_id": conversation_id,
+            "session_id": session_id,
             "result": workflow_result
         }
         

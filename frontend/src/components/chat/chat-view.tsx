@@ -11,6 +11,178 @@ import { NeedleWelcome } from './needle-welcome'
 import { EnhancedChatMessage, AgentStep } from '@/types/chat'
 import { useChatStream } from '@/hooks/use-chat-stream'
 
+// Simple markdown renderer for streaming content
+function StreamingMarkdown({ content }: { content: string }) {
+  const lines = content.split('\n')
+  const elements: JSX.Element[] = []
+  let currentTable: string[] = []
+  let lineIndex = 0
+
+  const renderTable = (tableLines: string[]) => {
+    const filtered = tableLines.filter(l => !l.match(/^\s*\|[\s-:|]+\|\s*$/))
+    if (filtered.length === 0) return null
+
+    const headers = filtered[0].split('|').map(h => h.trim()).filter(h => h)
+    const rows = filtered.slice(1).map(row => 
+      row.split('|').map(c => c.trim()).filter(c => c)
+    ).filter(row => row.length > 0)
+
+    return (
+      <div className="mb-4 overflow-x-auto">
+        <table className="min-w-full border border-gray-700/30 rounded-lg overflow-hidden">
+          <thead className="bg-gray-800/50">
+            <tr>
+              {headers.map((header, i) => (
+                <th key={i} className="px-4 py-2 text-left text-xs font-semibold text-emerald-400 border-b border-gray-700/30">
+                  {header}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="bg-gray-900/30">
+            {rows.map((row, i) => (
+              <tr key={i} className="border-b border-gray-700/20 hover:bg-gray-800/20">
+                {row.map((cell, j) => (
+                  <td key={j} className="px-4 py-2 text-sm text-white/80">
+                    {cell}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const trimmed = line.trim()
+
+    // Table detection
+    if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+      currentTable.push(trimmed)
+      continue
+    }
+
+    // Flush table if we have one
+    if (currentTable.length > 0) {
+      const table = renderTable(currentTable)
+      if (table) elements.push(<div key={`table-${lineIndex++}`}>{table}</div>)
+      currentTable = []
+    }
+
+    // Headers
+    if (trimmed.startsWith('#')) {
+      const match = trimmed.match(/^(#{1,6})\s+(.+)/)
+      if (match) {
+        const level = match[1].length
+        const text = match[2]
+        const className = level === 1 ? 'text-2xl' : level === 2 ? 'text-xl' : 'text-lg'
+        elements.push(
+          <h3 key={lineIndex++} className={`${className} font-semibold text-white mb-2 mt-2 flex items-center`}>
+            <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full mr-2"></span>
+            {text}
+          </h3>
+        )
+        continue
+      }
+    }
+
+    // Bullet points
+    if (trimmed.startsWith('-') || trimmed.startsWith('•') || trimmed.startsWith('*')) {
+      elements.push(
+        <div key={lineIndex++} className="flex items-start mb-2">
+          <span className="text-emerald-400 mr-2">•</span>
+          <span className="text-white/80">{trimmed.replace(/^[-•*]\s*/, '')}</span>
+        </div>
+      )
+      continue
+    }
+
+    // Regular text
+    if (trimmed) {
+      elements.push(
+        <p key={lineIndex++} className="text-white/80 mb-2">
+          {line}
+        </p>
+      )
+    } else {
+      elements.push(<br key={lineIndex++} />)
+    }
+  }
+
+  // Flush any remaining table
+  if (currentTable.length > 0) {
+    const table = renderTable(currentTable)
+    if (table) elements.push(<div key={`table-${lineIndex++}`}>{table}</div>)
+  }
+
+  return <div className="space-y-1">{elements}</div>
+}
+
+// Helper function to format structured agent output - generic display of all fields
+function formatAgentContent(content: any): JSX.Element | string {
+  if (typeof content === 'string') {
+    return content.slice(0, 200) + (content.length > 200 ? '...' : '')
+  }
+
+  // Generic rendering of all fields in the structured output
+  if (typeof content === 'object' && content !== null) {
+    const entries = Object.entries(content)
+    
+    // Handle empty objects
+    if (entries.length === 0) {
+      return <span className="italic opacity-50">No data</span>
+    }
+
+    return (
+      <div className="flex flex-col gap-1.5 font-mono">
+        {entries.map(([key, value]) => {
+          // Skip internal fields
+          if (key.startsWith('_')) return null
+          
+          // Format the value
+          let displayValue: string
+          if (value === null || value === undefined) {
+            displayValue = 'null'
+          } else if (typeof value === 'boolean') {
+            displayValue = value ? 'true' : 'false'
+          } else if (typeof value === 'object') {
+            // Handle arrays and nested objects
+            displayValue = Array.isArray(value) 
+              ? `[${value.length} items]`
+              : JSON.stringify(value, null, 2).slice(0, 100) + '...'
+          } else {
+            displayValue = String(value)
+          }
+
+          // Truncate long values
+          if (displayValue.length > 150) {
+            displayValue = displayValue.slice(0, 150) + '...'
+          }
+
+          return (
+            <div key={key} className="flex flex-col">
+              <span className="text-emerald-400/80 text-xs">
+                {key.replace(/_/g, ' ')}:
+              </span>
+              <span className="text-white/70 text-xs pl-2 whitespace-pre-wrap break-words">
+                {displayValue}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
+  return <span className="flex items-center gap-1">
+    <BarChart3 className="w-3 h-3" />
+    Structured output
+  </span>
+}
+
 interface ChatViewProps {
   companyId: string | null
   sessionId?: string
@@ -430,17 +602,9 @@ export function ChatView({ companyId, sessionId, onSessionIdChange, onCompanyCha
                             {/* Show content preview if available */}
                             {step.content && (
                               <div className={`mt-2 text-xs ${
-                                step.status === 'active' ? 'text-emerald-300/60' : 'text-gray-500'
+                                step.status === 'active' ? 'text-emerald-300/60' : 'text-gray-400/80'
                               }`}>
-                                {typeof step.content === 'string' 
-                                  ? step.content.slice(0, 100) + (step.content.length > 100 ? '...' : '')
-                                  : (
-                                    <span className="flex items-center gap-1">
-                                      <BarChart3 className="w-3 h-3" />
-                                      Structured output generated
-                                    </span>
-                                  )
-                                }
+                                {formatAgentContent(step.content)}
                               </div>
                             )}
                           </div>
@@ -467,8 +631,8 @@ export function ChatView({ companyId, sessionId, onSessionIdChange, onCompanyCha
                   
                   {/* Streaming content */}
                   {currentContent ? (
-                    <div className="text-white/90 whitespace-pre-wrap">
-                      {currentContent}
+                    <div className="text-white/90">
+                      <StreamingMarkdown content={currentContent} />
                       <span className="inline-block w-2 h-4 bg-emerald-400 ml-1 animate-pulse"></span>
                     </div>
                   ) : !agentSteps.length && (

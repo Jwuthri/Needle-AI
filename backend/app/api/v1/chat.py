@@ -12,7 +12,7 @@ from app.api.deps import (
     validate_session_id,
 )
 from app.core.security.clerk_auth import ClerkUser, get_current_user
-from app.dependencies import get_orchestrator_service, get_tree_orchestrator_service
+from app.dependencies import get_orchestrator_service
 from app.exceptions import NotFoundError, ValidationError
 from app.models.chat import ChatRequest, ChatResponse, ChatSession, MessageHistory
 from app.models.feedback import ChatFeedback, FeedbackResponse, FeedbackType
@@ -161,14 +161,25 @@ async def send_message_stream(
                             # Save agent steps if any
                             if completed_steps:
                                 for step in completed_steps:
-                                    await ChatMessageStepRepository.create(
-                                        db=save_db,
-                                        message_id=assistant_message.id,
-                                        agent_name=step['agent_name'],
-                                        step_order=step['step_order'],
-                                        tool_call=step['content'] if step['is_structured'] else None,
-                                        prediction=step['content'] if not step['is_structured'] else None
-                                    )
+                                    # Determine which field to populate based on is_structured
+                                    if step['is_structured']:
+                                        # Structured output goes to structured_output column
+                                        await ChatMessageStepRepository.create(
+                                            db=save_db,
+                                            message_id=assistant_message.id,
+                                            agent_name=step['agent_name'],
+                                            step_order=step['step_order'],
+                                            structured_output=step['content']
+                                        )
+                                    else:
+                                        # Text output goes to prediction column
+                                        await ChatMessageStepRepository.create(
+                                            db=save_db,
+                                            message_id=assistant_message.id,
+                                            agent_name=step['agent_name'],
+                                            step_order=step['step_order'],
+                                            prediction=step['content'] if isinstance(step['content'], str) else str(step['content'])
+                                        )
                                 await save_db.commit()
                                 logger.info(f"Saved {len(completed_steps)} agent steps for message {assistant_message.id}")
                     except Exception as db_error:
@@ -471,11 +482,20 @@ async def list_sessions(
                 # Format steps for frontend
                 formatted_steps = []
                 for step in agent_steps:
+                    # Determine content based on available fields
+                    content = None
+                    if step.structured_output:
+                        content = step.structured_output
+                    elif step.tool_call:
+                        content = step.tool_call
+                    elif step.prediction:
+                        content = step.prediction
+                    
                     formatted_steps.append({
                         "step_id": str(step.id),
                         "agent_name": step.agent_name,
-                        "content": step.tool_call if step.tool_call else step.prediction,
-                        "is_structured": step.tool_call is not None,
+                        "content": content,
+                        "is_structured": step.structured_output is not None or step.tool_call is not None,
                         "timestamp": step.created_at.isoformat() if step.created_at else None,
                         "status": "completed",
                         "step_order": step.step_order
@@ -562,11 +582,20 @@ async def get_session(
             # Format steps for frontend
             formatted_steps = []
             for step in agent_steps:
+                # Determine content based on available fields
+                content = None
+                if step.structured_output:
+                    content = step.structured_output
+                elif step.tool_call:
+                    content = step.tool_call
+                elif step.prediction:
+                    content = step.prediction
+                
                 formatted_steps.append({
                     "step_id": str(step.id),
                     "agent_name": step.agent_name,
-                    "content": step.tool_call if step.tool_call else step.prediction,
-                    "is_structured": step.tool_call is not None,
+                    "content": content,
+                    "is_structured": step.structured_output is not None or step.tool_call is not None,
                     "timestamp": step.created_at.isoformat() if step.created_at else None,
                     "status": "completed",
                     "step_order": step.step_order
@@ -765,154 +794,4 @@ async def submit_feedback(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to submit feedback: {str(e)}"
-        )
-
-
-@router.post("/tree/stream")
-async def send_message_tree_stream(
-    request: ChatRequest,
-    tree_orchestrator = Depends(get_tree_orchestrator_service),
-    current_user: Optional[ClerkUser] = Depends(get_current_user),
-    _rate_limit_check = Depends(check_rate_limit),
-    db = Depends(get_db)
-):
-    """
-    Send a message to the chat using tree-based orchestration with streaming.
-    
-    This endpoint uses the Elysia-inspired tree architecture for:
-    - Explicit decision-tree navigation
-    - Step-by-step agent execution tracking
-    - Real-time streaming updates
-    - Database persistence of agent steps
-    
-    Returns Server-Sent Events (SSE) stream with:
-    - agent_step_start: When an agent begins execution
-    - agent_step_content: Streaming content from agent (for text output)
-    - agent_step_complete: When agent finishes (with full structured or text output)
-    - content: Final response streaming
-    - complete: Final response with metadata
-    - error: If something goes wrong
-    """
-    try:
-        from app.database.repositories.chat_session import ChatSessionRepository
-        from app.database.repositories.chat_message import ChatMessageRepository
-        from app.database.models.chat_message import MessageRoleEnum
-        import uuid
-        
-        user_id = current_user.id if current_user else None
-        
-        # Ensure session exists in database
-        session_id = request.session_id or str(uuid.uuid4())
-        db_session = await ChatSessionRepository.get_by_id(db, session_id)
-        if not db_session:
-            db_session = await ChatSessionRepository.create(
-                db, 
-                user_id=user_id, 
-                id=session_id,
-                extra_metadata={"company_id": request.company_id} if request.company_id else {}
-            )
-            await db.commit()
-            logger.info(f"Created database session {session_id} for tree orchestration")
-        
-        # Save user message to database
-        user_message = await ChatMessageRepository.create(
-            db=db,
-            session_id=session_id,
-            content=request.message,
-            role=MessageRoleEnum.USER
-        )
-        await db.commit()
-        logger.info(f"Saved user message {user_message.id} for tree orchestration")
-        
-        # Stream processing function
-        async def event_stream():
-            from app.database.session import get_async_session
-            from datetime import datetime, date
-            import asyncio
-            
-            def make_json_serializable(obj):
-                """Recursively convert any object to be JSON serializable."""
-                if obj is None:
-                    return None
-                elif isinstance(obj, (datetime, date)):
-                    return obj.isoformat()
-                elif hasattr(obj, "model_dump"):
-                    return obj.model_dump(mode='json')
-                elif isinstance(obj, dict):
-                    return {k: make_json_serializable(v) for k, v in obj.items()}
-                elif isinstance(obj, (list, tuple)):
-                    return [make_json_serializable(item) for item in obj]
-                elif isinstance(obj, (str, int, float, bool)):
-                    return obj
-                else:
-                    return str(obj)
-            
-            accumulated_content = ""
-            update_count = 0
-            
-            try:
-                # Process stream with tree orchestrator
-                async for update in tree_orchestrator.process_message_stream(
-                    request=request,
-                    user_id=user_id,
-                    db=None  # No DB during streaming to avoid lifecycle issues
-                ):
-                    update_count += 1
-                    
-                    # Accumulate content for database storage
-                    if update["type"] == "content":
-                        accumulated_content += update["data"]["content"]
-                        logger.debug(f"Tree streaming content update #{update_count}: {len(update['data']['content'])} chars")
-                    
-                    # Make entire update JSON serializable
-                    serializable_update = make_json_serializable(update)
-                    
-                    # Yield the SSE data
-                    sse_data = f"data: {json.dumps(serializable_update)}\n\n"
-                    yield sse_data
-                    
-                    # Force a small delay to ensure data is flushed
-                    if update["type"] in ["content", "agent_step_content"]:
-                        await asyncio.sleep(0.001)
-                
-                logger.info(f"Tree stream completed: {update_count} updates sent, {len(accumulated_content)} chars total")
-                
-                # Save final response to database in a separate session
-                if accumulated_content:
-                    try:
-                        async with get_async_session() as save_db:
-                            assistant_message = await ChatMessageRepository.create(
-                                db=save_db,
-                                session_id=session_id,
-                                content=accumulated_content,
-                                role=MessageRoleEnum.ASSISTANT
-                            )
-                            await save_db.commit()
-                            logger.info(f"Saved assistant message {assistant_message.id} from tree orchestration")
-                    except Exception as db_error:
-                        logger.error(f"Failed to save tree final message to DB: {db_error}")
-                
-            except Exception as e:
-                logger.error(f"Tree stream error: {e}", exc_info=True)
-                error_event = {
-                    "type": "error",
-                    "data": {"error": str(e)}
-                }
-                yield f"data: {json.dumps(error_event)}\n\n"
-        
-        return StreamingResponse(
-            event_stream(),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no"
-            }
-        )
-        
-    except Exception as e:
-        logger.error(f"Tree chat stream error: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Tree stream failed: {str(e)}"
         )

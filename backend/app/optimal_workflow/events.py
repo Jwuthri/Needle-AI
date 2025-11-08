@@ -7,7 +7,7 @@ Events are used to pass data between workflow steps.
 from typing import Any, Dict, List, Optional
 from llama_index.core.workflow import Event
 
-from app.workflow.agents.base import RetrievalPlan
+from app.optimal_workflow.agents.base import RetrievalPlan
 
 
 class QueryAnalysisEvent(Event):

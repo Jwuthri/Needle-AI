@@ -13,6 +13,8 @@ import {
   ChevronRight,
   Plus,
   History,
+  MoreVertical,
+  Trash2,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -45,6 +47,8 @@ export function Sidebar({ conversations = [], onNewChat, onSelectSession, curren
   const { getToken } = useAuth()
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [sessions, setSessions] = useState<ChatSession[]>([])
+  const [activeMenu, setActiveMenu] = useState<string | null>(null)
+  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null)
   const isChatRoute = pathname?.startsWith('/chat')
 
   // Load chat sessions when on chat route
@@ -64,9 +68,42 @@ export function Sidebar({ conversations = [], onNewChat, onSelectSession, curren
 
     fetchSessions()
     
-    // Refresh sessions every 10 seconds when on chat route
-    const interval = setInterval(fetchSessions, 10000)
-    return () => clearInterval(interval)
+    // Smart polling: only poll when tab is active (every 30 seconds)
+    let interval: NodeJS.Timeout | null = null
+    
+    const startPolling = () => {
+      if (!interval) {
+        interval = setInterval(fetchSessions, 30000)
+      }
+    }
+    
+    const stopPolling = () => {
+      if (interval) {
+        clearInterval(interval)
+        interval = null
+      }
+    }
+    
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchSessions() // Refresh immediately when tab becomes visible
+        startPolling()
+      } else {
+        stopPolling()
+      }
+    }
+    
+    // Start polling if tab is already visible
+    if (document.visibilityState === 'visible') {
+      startPolling()
+    }
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    
+    return () => {
+      stopPolling()
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [isChatRoute, getToken])
 
   const handleNewChat = () => {
@@ -82,6 +119,46 @@ export function Sidebar({ conversations = [], onNewChat, onSelectSession, curren
       onSelectSession(sessionId)
     }
   }
+
+  const handleDeleteSession = async (sessionId: string, event: React.MouseEvent) => {
+    event.stopPropagation() // Prevent session selection
+    
+    setDeletingSessionId(sessionId)
+    setActiveMenu(null)
+
+    try {
+      const token = await getToken()
+      const api = createApiClient(token)
+      await api.deleteSession(sessionId)
+      
+      // Remove from local state
+      setSessions(sessions.filter(s => s.session_id !== sessionId))
+      
+      // If deleting current session, navigate to new chat
+      if (currentSessionId === sessionId) {
+        router.push('/chat')
+      }
+    } catch (error) {
+      console.error('Failed to delete session:', error)
+      alert('Failed to delete conversation. Please try again.')
+    } finally {
+      setDeletingSessionId(null)
+    }
+  }
+
+  const toggleMenu = (sessionId: string, event: React.MouseEvent) => {
+    event.stopPropagation()
+    setActiveMenu(activeMenu === sessionId ? null : sessionId)
+  }
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => setActiveMenu(null)
+    if (activeMenu) {
+      document.addEventListener('click', handleClickOutside)
+      return () => document.removeEventListener('click', handleClickOutside)
+    }
+  }, [activeMenu])
 
   return (
     <motion.aside
@@ -166,32 +243,69 @@ export function Sidebar({ conversations = [], onNewChat, onSelectSession, curren
                   {sessions.slice(0, 10).map((session) => {
                     const title = session.metadata?.title || session.messages[0]?.content.substring(0, 40) || 'New Chat'
                     const isActive = currentSessionId === session.session_id
+                    const isDeleting = deletingSessionId === session.session_id
+                    const menuOpen = activeMenu === session.session_id
                     
                     return (
-                      <button
-                        key={session.session_id}
-                        onClick={() => handleSessionClick(session.session_id)}
-                        className={`
-                          w-full text-left px-3 py-2 rounded-lg transition-all
-                          ${
-                            isActive
-                              ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-400'
-                              : 'bg-gray-800/30 hover:bg-gray-800/50 text-gray-300 border border-transparent'
-                          }
-                        `}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">
-                              {title.length > 30 ? title.substring(0, 30) + '...' : title}
-                            </p>
-                            <p className="text-xs text-gray-500 mt-1">
-                              {new Date(session.updated_at).toLocaleDateString()}
-                            </p>
+                      <div key={session.session_id} className="relative">
+                        <button
+                          onClick={() => handleSessionClick(session.session_id)}
+                          disabled={isDeleting}
+                          className={`
+                            w-full text-left px-3 py-2 rounded-lg transition-all group
+                            ${
+                              isActive
+                                ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-400'
+                                : 'bg-gray-800/30 hover:bg-gray-800/50 text-gray-300 border border-transparent'
+                            }
+                            ${isDeleting ? 'opacity-50 cursor-not-allowed' : ''}
+                          `}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">
+                                {isDeleting ? 'Deleting...' : (title.length > 25 ? title.substring(0, 25) + '...' : title)}
+                              </p>
+                              <p className="text-xs text-gray-500 mt-1">
+                                {new Date(session.updated_at).toLocaleDateString()}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              <MessageSquare className="w-4 h-4 text-gray-500" />
+                              {!isDeleting && (
+                                <button
+                                  onClick={(e) => toggleMenu(session.session_id, e)}
+                                  className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-700/50 rounded transition-opacity"
+                                  aria-label="More options"
+                                >
+                                  <MoreVertical className="w-4 h-4 text-gray-400" />
+                                </button>
+                              )}
+                            </div>
                           </div>
-                          <MessageSquare className="w-4 h-4 text-gray-500 flex-shrink-0 ml-2" />
-                        </div>
-                      </button>
+                        </button>
+                        
+                        {/* Dropdown Menu */}
+                        <AnimatePresence>
+                          {menuOpen && (
+                            <motion.div
+                              initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                              animate={{ opacity: 1, scale: 1, y: 0 }}
+                              exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                              transition={{ duration: 0.1 }}
+                              className="absolute right-0 mt-1 w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-lg z-50"
+                            >
+                              <button
+                                onClick={(e) => handleDeleteSession(session.session_id, e)}
+                                className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-red-500/10 transition-colors rounded-lg"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                                <span>Delete conversation</span>
+                              </button>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
                     )
                   })}
                 </div>

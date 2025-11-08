@@ -8,7 +8,7 @@ from typing import Any, Dict, List
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app import get_logger
+from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
 

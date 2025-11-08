@@ -6,7 +6,7 @@ from typing import Dict, Any
 from llama_index.llms.openai import OpenAI
 from pydantic import BaseModel, Field
 
-from app.config import SETTINGS
+from app.core.config.settings import get_settings
 
 
 class QueryAnalysis(BaseModel):
@@ -39,10 +39,32 @@ class RetrievalPlan(BaseModel):
     expected_data_types: list[str] = Field(..., description="List of expected data types")
 
 
-def get_llm(model: str = "gpt-5-mini") -> OpenAI:
-    """Get configured LLM instance."""
+def get_llm(model: str = None) -> OpenAI:
+    """
+    Get configured LLM instance using OpenAI.
+    
+    Args:
+        model: Optional model name override. If None, uses default from settings.
+    
+    Returns:
+        Configured OpenAI LLM instance
+    """
+    settings = get_settings()
+    
+    # Get API key from settings
+    api_key = settings.get_secret("openai_api_key")
+    if not api_key:
+        raise ValueError("OpenAI API key not configured")
+    
+    # Convert SecretStr to str if needed
+    api_key_str = str(api_key) if hasattr(api_key, '__str__') else api_key
+    
+    # Use provided model or default from settings
+    model_name = model or settings.default_model
+    
     return OpenAI(
-        model=model,
-        api_key=SETTINGS.OPENAI_API_KEY,
+        model=model_name,
+        api_key=api_key_str,
+        max_tokens=4096,
         temperature=0.1
     )

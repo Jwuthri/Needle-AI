@@ -22,6 +22,44 @@ from app.database.models import *  # Import all models
 # access to the values within the .ini file in use.
 config = context.config
 
+
+def get_next_revision_number():
+    """Generate sequential revision numbers (001, 002, 003, etc.)"""
+    import glob
+    versions_dir = os.path.join(os.path.dirname(__file__), 'versions')
+    existing_files = glob.glob(os.path.join(versions_dir, '*.py'))
+    
+    # Extract numbers from existing migration files
+    numbers = []
+    for filepath in existing_files:
+        filename = os.path.basename(filepath)
+        if filename == '__init__.py':
+            continue
+        # Try to extract leading digits
+        parts = filename.split('_')
+        if parts[0].isdigit():
+            numbers.append(int(parts[0]))
+    
+    # Get next number
+    if numbers:
+        next_num = max(numbers) + 1
+    else:
+        next_num = 1
+    
+    return f"{next_num:03d}"
+
+
+# Override revision ID generation to use sequential numbers
+def process_revision_directives(context, revision, directives):
+    """Hook to customize revision generation"""
+    if directives:
+        script = directives[0]
+        if script.upgrade_ops.is_empty():
+            directives[:] = []
+        else:
+            # Set custom revision ID
+            script.rev_id = get_next_revision_number()
+
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
 if config.config_file_name is not None:
@@ -64,6 +102,7 @@ def run_migrations_offline() -> None:
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
         compare_server_default=True,
+        process_revision_directives=process_revision_directives,
     )
 
     with context.begin_transaction():
@@ -93,6 +132,7 @@ def run_migrations_online() -> None:
             target_metadata=target_metadata,
             compare_type=True,
             compare_server_default=True,
+            process_revision_directives=process_revision_directives,
         )
 
         with context.begin_transaction():

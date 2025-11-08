@@ -1,6 +1,6 @@
 """add_cascade_deletes
 
-Revision ID: 8c18c2291307
+Revision ID: 006
 Revises: 005
 Create Date: 2025-10-12 16:34:43.083555
 
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '8c18c2291307'
+revision = '006'
 down_revision = '005'
 branch_labels = None
 depends_on = None

@@ -13,14 +13,12 @@ from llama_index.core.workflow import (
     StopEvent,
     Event,
     step,
-    Context
+    Context,
 )
-from llama_index.utils.workflow import draw_all_possible_flows
 
-from app import get_logger
+from app.utils.logging import get_logger
 from app.database.base import SessionLocal
-from app.services.schema_service import SchemaService
-from app.workflow.agents import (
+from app.optimal_workflow.agents import (
     analyze_query,
     detect_format,
     plan_retrieval,
@@ -28,8 +26,8 @@ from app.workflow.agents import (
     RetrievalPlan,
     QueryAnalysis
 )
-from app.workflow.services import DataRetrievalService
-from app.workflow.services.nlp_service import NLPService
+from app.optimal_workflow.services.data_retrieval_service import DataRetrievalService
+from app.optimal_workflow.services.nlp_service import NLPService
 
 logger = get_logger(__name__)
 
@@ -139,21 +137,21 @@ class ProductGapWorkflow(Workflow):
     6. NLP Analysis OR Skip Retrieval -> Generate Answer
     """
 
-    def __init__(self, user_id: int = 1, conversation_id: int = None, stream_callback=None, **kwargs):
+    def __init__(self, user_id: str = None, session_id: str = None, stream_callback=None, **kwargs):
         super().__init__(**kwargs)
         self.user_id = user_id
-        self.conversation_id = conversation_id
+        self.session_id = session_id
         self.message_id = None  # Will be set in start_workflow step
         self.stream_callback = stream_callback  # Callback for streaming events
-        
-        # Load table schemas
-        db_session = SessionLocal()
-        try:
-            schema_service = SchemaService(db_session)
-            self.table_schemas = schema_service.get_all_available_schemas(user_id)
-            logger.info(f"Loaded table schemas")
-        finally:
-            db_session.close()
+        self.table_schemas = {}
+        # # Load table schemas
+        # db_session = SessionLocal()
+        # try:
+        #     schema_service = SchemaService(db_session)
+        #     self.table_schemas = schema_service.get_all_available_schemas(user_id)
+        #     logger.info(f"Loaded table schemas")
+        # finally:
+        #     db_session.close()
     
     def _emit_event(self, event_type: str, data: dict):
         """Emit a streaming event if callback is provided."""
@@ -161,69 +159,29 @@ class ProductGapWorkflow(Workflow):
             try:
                 event = {
                     "type": event_type,
-                    **data
+                    "data": data
                 }
                 logger.info(f"Emitting event: {event_type} - {str(event)[:100]}")  # Debug log
                 self.stream_callback(event)
             except Exception as e:
                 logger.warning(f"Failed to emit event: {e}")
-
-    def draw_steps(self, filename: str = "workflow.html"):
-        """Draw the workflow steps."""
-        draw_all_possible_flows(self, filename=filename)
+    
+    def _emit_event_from_agent(self, event: dict):
+        """Wrapper for agent callbacks that pass a single dict with type and data."""
+        if isinstance(event, dict) and 'type' in event and 'data' in event:
+            self._emit_event(event['type'], event['data'])
+        else:
+            logger.warning(f"Invalid event format from agent: {event}")
 
     def _track_step(self, step_name: str, step_type: str, input_data: dict = None, output_data: dict = None, status: str = "completed", error_message: str = None):
-        """Track workflow step in database."""
-        if not self.message_id:
-            return None
-        
-        from app.database.repositories import WorkflowStepRepository
-        from datetime import datetime
-        
-        db_session = SessionLocal()
-        try:
-            repo = WorkflowStepRepository()
-            step = repo.create(
-                db=db_session,
-                message_id=self.message_id,
-                step_name=step_name,
-                step_type=step_type,
-                input_data=input_data,
-                output_data=output_data,
-                status=status,
-                error_message=error_message,
-                started_at=datetime.utcnow(),
-                completed_at=datetime.utcnow()
-            )
-            return step
-        finally:
-            db_session.close()
+        """Track workflow step in database - currently disabled, handled by chat API."""
+        # Steps are now tracked via ChatMessageStep in chat API endpoint
+        return None
     
     def _track_tool_calls(self, workflow_step_id: int, tool_calls: list):
-        """Track tool calls in database."""
-        if not workflow_step_id:
-            return
-        
-        from app.database.repositories import ToolCallRepository
-        from datetime import datetime
-        
-        db_session = SessionLocal()
-        try:
-            repo = ToolCallRepository()
-            for tool_call in tool_calls:
-                repo.create(
-                    db=db_session,
-                    workflow_step_id=workflow_step_id,
-                    tool_name=tool_call.get('tool_name', 'unknown'),
-                    tool_input=tool_call.get('parameters', {}),
-                    tool_output=tool_call.get('result', {}),
-                    status=tool_call.get('status', 'completed'),
-                    error_message=tool_call.get('error', None),
-                    started_at=datetime.utcnow(),
-                    completed_at=datetime.utcnow()
-                )
-        finally:
-            db_session.close()
+        """Track tool calls in database - currently disabled, handled by chat API."""
+        # Tool calls are now tracked via ChatMessageStep in chat API endpoint
+        return None
 
     @step
     async def start_workflow(self, ctx: Context, ev: StartEvent) -> QueryAnalyzedEvent:
@@ -231,32 +189,22 @@ class ProductGapWorkflow(Workflow):
         query = ev.query
         logger.info(f"🚀 Workflow started with query: {query}")
         
-        self._emit_event("step_start", {
-            "step": 1,
-            "step_name": "Query Analysis",
-            "description": "Analyzing your question to understand what data is needed..."
+        # Generate step_id for this workflow step
+        import uuid
+        step_id = str(uuid.uuid4())
+        
+        self._emit_event("agent_step_start", {
+            "agent_name": "Query Analyzer",
+            "step_id": step_id,
+            "timestamp": datetime.utcnow().isoformat(),
+            "step_order": 0
         })
         
-        # Create user message in the database
-        if self.conversation_id:
-            from app.database.repositories import MessageRepository
-            
-            db_session = SessionLocal()
-            try:
-                msg_repo = MessageRepository()
-                user_message = msg_repo.create(
-                    db=db_session,
-                    conversation_id=self.conversation_id,
-                    role="user",
-                    content=query
-                )
-                self.message_id = user_message.id
-                logger.info(f"Created user message: {self.message_id}")
-            finally:
-                db_session.close()
+        # Note: User message creation is handled by chat API endpoint
+        # We just track the message_id when it's provided
         
         logger.info("▶️  Step 1: Query Analysis")
-        analysis = await analyze_query(query)
+        analysis = await analyze_query(query, stream_callback=self._emit_event_from_agent)
         logger.info(f"✓ Query Analysis complete: needs_data={analysis.needs_data_retrieval}")
         
         # Track step in database
@@ -264,13 +212,15 @@ class ProductGapWorkflow(Workflow):
             step_name="start_workflow",
             step_type="query_analysis",
             input_data={"query": query},
-            output_data=analysis
+            output_data=analysis.dict()
         )
         
-        self._emit_event("step_complete", {
-            "step": 1,
-            "step_name": "Query Analysis",
-            "result": analysis
+        self._emit_event("agent_step_complete", {
+            "step_id": step_id,
+            "agent_name": "Query Analyzer",
+            "content": analysis.dict(),
+            "is_structured": True,
+            "step_order": 0
         })
         
         return QueryAnalyzedEvent(query=query, analysis=analysis)
@@ -278,14 +228,18 @@ class ProductGapWorkflow(Workflow):
     @step
     async def detect_output_format(self, ctx: Context, ev: QueryAnalyzedEvent) -> FormatDetectedEvent:
         """Step 2: Detect the desired output format."""
-        self._emit_event("step_start", {
-            "step": 2,
-            "step_name": "Format Detection",
-            "description": "Detecting the desired output format..."
+        import uuid
+        step_id = str(uuid.uuid4())
+        
+        self._emit_event("agent_step_start", {
+            "agent_name": "Format Detector",
+            "step_id": step_id,
+            "timestamp": datetime.utcnow().isoformat(),
+            "step_order": 1
         })
         
         logger.info("▶️  Step 2: Format Detection")
-        format_info = await detect_format(ev.query)
+        format_info = await detect_format(ev.query, stream_callback=self._emit_event_from_agent)
         logger.info(f"✓ Format Detection complete: {format_info.format_type}")
         
         # Track step in database
@@ -293,19 +247,15 @@ class ProductGapWorkflow(Workflow):
             step_name="detect_output_format",
             step_type="format_detection",
             input_data={"query": ev.query},
-            output_data={
-                "format_type": format_info.format_type,
-                "format_details": format_info.format_details
-            }
+            output_data=format_info.dict()
         )
         
-        self._emit_event("step_complete", {
-            "step": 2,
-            "step_name": "Format Detection",
-            "result": {
-                "format_type": format_info.format_type,
-                "format_details": format_info.format_details
-            }
+        self._emit_event("agent_step_complete", {
+            "step_id": step_id,
+            "agent_name": "Format Detector",
+            "content": format_info.dict(),
+            "is_structured": True,
+            "step_order": 1
         })
         
         return FormatDetectedEvent(
@@ -317,11 +267,15 @@ class ProductGapWorkflow(Workflow):
     @step
     async def plan_data_retrieval(self, ctx: Context, ev: FormatDetectedEvent) -> RetrievalPlanEvent | SkipRetrievalEvent:
         """Step 3: Plan data retrieval if needed, otherwise skip."""
+        import uuid
+        step_id = str(uuid.uuid4())
+        
         if not ev.analysis.needs_data_retrieval:
-            self._emit_event("step_start", {
-                "step": 3,
-                "step_name": "Data Retrieval Planning",
-                "description": "Skipping data retrieval (not needed)..."
+            self._emit_event("agent_step_start", {
+                "agent_name": "Retrieval Planner",
+                "step_id": step_id,
+                "timestamp": datetime.utcnow().isoformat(),
+                "step_order": 2
             })
             
             logger.info("▶️  Step 3: Skipping data retrieval (not needed)")
@@ -334,10 +288,12 @@ class ProductGapWorkflow(Workflow):
                 output_data={"skipped": True}
             )
             
-            self._emit_event("step_complete", {
-                "step": 3,
-                "step_name": "Data Retrieval Planning",
-                "result": {"skipped": True}
+            self._emit_event("agent_step_complete", {
+                "step_id": step_id,
+                "agent_name": "Retrieval Planner",
+                "content": {"skipped": True},
+                "is_structured": True,
+                "step_order": 2
             })
             
             return SkipRetrievalEvent(
@@ -346,14 +302,18 @@ class ProductGapWorkflow(Workflow):
                 format_info=ev.format_info
             )
         
-        self._emit_event("step_start", {
-            "step": 3,
-            "step_name": "Data Retrieval Planning",
-            "description": "Planning which data to retrieve from your datasets..."
+        self._emit_event("agent_step_start", {
+            "agent_name": "Retrieval Planner",
+            "step_id": step_id,
+            "timestamp": datetime.utcnow().isoformat(),
+            "step_order": 2
         })
         
         logger.info("▶️  Step 3: Retrieval Planning")
-        plan = await plan_retrieval(ev.query, self.table_schemas, ev.analysis)
+        # Initialize table_schemas if None
+        if self.table_schemas is None:
+            self.table_schemas = {}
+        plan = await plan_retrieval(ev.query, self.table_schemas, ev.analysis, stream_callback=self._emit_event_from_agent)
         logger.info(f"✓ Retrieval Planning complete: {len(plan.sql_queries)} queries")
         
         # Track step in database
@@ -367,13 +327,15 @@ class ProductGapWorkflow(Workflow):
             }
         )
         
-        self._emit_event("step_complete", {
-            "step": 3,
-            "step_name": "Data Retrieval Planning",
-            "result": {
+        self._emit_event("agent_step_complete", {
+            "step_id": step_id,
+            "agent_name": "Retrieval Planner",
+            "content": {
                 "num_queries": len(plan.sql_queries),
                 "reasoning": plan.reasoning
-            }
+            },
+            "is_structured": True,
+            "step_order": 2
         })
         
         return RetrievalPlanEvent(
@@ -386,10 +348,14 @@ class ProductGapWorkflow(Workflow):
     @step
     async def retrieve_data(self, ctx: Context, ev: RetrievalPlanEvent) -> DataRetrievedEvent:
         """Step 4: Execute data retrieval based on the plan."""
-        self._emit_event("step_start", {
-            "step": 4,
-            "step_name": "Data Retrieval",
-            "description": f"Executing {len(ev.plan.sql_queries)} data queries..."
+        import uuid
+        step_id = str(uuid.uuid4())
+        
+        self._emit_event("agent_step_start", {
+            "agent_name": "Data Retriever",
+            "step_id": step_id,
+            "timestamp": datetime.utcnow().isoformat(),
+            "step_order": 3
         })
         
         logger.info("▶️  Step 4: Data Retrieval")
@@ -398,52 +364,117 @@ class ProductGapWorkflow(Workflow):
         data_format = "json" if ev.analysis.needs_nlp_analysis else "csv"
         logger.info(f"Using {data_format} format for data retrieval (NLP analysis: {ev.analysis.needs_nlp_analysis})")
         
-        db_session = SessionLocal()
-        try:
-            service = DataRetrievalService(db_session)
-            retrieved_data = service.execute_retrieval_plan(ev.plan, format=data_format)
-            logger.info(f"✓ Data Retrieval complete: {retrieved_data['total_rows']} rows")
-        finally:
-            db_session.close()
+        # db_session = SessionLocal()
+        # try:
+        #     service = DataRetrievalService(db_session)
+        #     retrieved_data = service.execute_retrieval_plan(ev.plan, format=data_format)
+        #     logger.info(f"✓ Data Retrieval complete: {retrieved_data['total_rows']} rows")
+        # finally:
+        #     db_session.close()
         
-        # Track step in database
-        self._track_step(
-            step_name="retrieve_data",
-            step_type="data_retrieval",
-            input_data={
-                "num_queries": len(ev.plan.sql_queries),
-                "data_format": data_format
-            },
-            output_data={
-                "total_rows": retrieved_data['total_rows'],
-                "reasoning": retrieved_data['reasoning']
-            }
-        )
+        # # Track step in database
+        # self._track_step(
+        #     step_name="retrieve_data",
+        #     step_type="data_retrieval",
+        #     input_data={
+        #         "num_queries": len(ev.plan.sql_queries),
+        #         "data_format": data_format
+        #     },
+        #     output_data={
+        #         "total_rows": retrieved_data['total_rows'],
+        #         "reasoning": retrieved_data['reasoning']
+        #     }
+        # )
         
-        self._emit_event("step_complete", {
-            "step": 4,
-            "step_name": "Data Retrieval",
-            "result": {
-                "total_rows": retrieved_data['total_rows'],
-                "reasoning": retrieved_data['reasoning']
-            }
-        })
+        # self._emit_event("agent_step_complete", {
+        #     "step_id": step_id,
+        #     "agent_name": "Data Retriever",
+        #     "content": {
+        #         "total_rows": retrieved_data['total_rows'],
+        #         "reasoning": retrieved_data['reasoning']
+        #     },
+        #     "is_structured": True,
+        #     "step_order": 3
+        # })
         
         return DataRetrievedEvent(
             query=ev.query,
             analysis=ev.analysis,
             format_info=ev.format_info,
-            retrieved_data=retrieved_data
+            retrieved_data={}
         )
+
+    # @step
+    # async def retrieve_data(self, ctx: Context, ev: RetrievalPlanEvent) -> DataRetrievedEvent:
+    #     """Step 4: Execute data retrieval based on the plan."""
+    #     import uuid
+    #     step_id = str(uuid.uuid4())
+        
+    #     self._emit_event("agent_step_start", {
+    #         "agent_name": "Data Retriever",
+    #         "step_id": step_id,
+    #         "timestamp": datetime.utcnow().isoformat(),
+    #         "step_order": 3
+    #     })
+        
+    #     logger.info("▶️  Step 4: Data Retrieval")
+        
+    #     # Choose format based on whether NLP analysis is needed
+    #     data_format = "json" if ev.analysis.needs_nlp_analysis else "csv"
+    #     logger.info(f"Using {data_format} format for data retrieval (NLP analysis: {ev.analysis.needs_nlp_analysis})")
+        
+    #     db_session = SessionLocal()
+    #     try:
+    #         service = DataRetrievalService(db_session)
+    #         retrieved_data = service.execute_retrieval_plan(ev.plan, format=data_format)
+    #         logger.info(f"✓ Data Retrieval complete: {retrieved_data['total_rows']} rows")
+    #     finally:
+    #         db_session.close()
+        
+    #     # Track step in database
+    #     self._track_step(
+    #         step_name="retrieve_data",
+    #         step_type="data_retrieval",
+    #         input_data={
+    #             "num_queries": len(ev.plan.sql_queries),
+    #             "data_format": data_format
+    #         },
+    #         output_data={
+    #             "total_rows": retrieved_data['total_rows'],
+    #             "reasoning": retrieved_data['reasoning']
+    #         }
+    #     )
+        
+    #     self._emit_event("agent_step_complete", {
+    #         "step_id": step_id,
+    #         "agent_name": "Data Retriever",
+    #         "content": {
+    #             "total_rows": retrieved_data['total_rows'],
+    #             "reasoning": retrieved_data['reasoning']
+    #         },
+    #         "is_structured": True,
+    #         "step_order": 3
+    #     })
+        
+    #     return DataRetrievedEvent(
+    #         query=ev.query,
+    #         analysis=ev.analysis,
+    #         format_info=ev.format_info,
+    #         retrieved_data=retrieved_data
+    #     )
 
     @step
     async def nlp_analysis(self, ctx: Context, ev: DataRetrievedEvent) -> NLPAnalysisCompleteEvent:
         """Step 5: Perform NLP analysis if needed."""
+        import uuid
+        step_id = str(uuid.uuid4())
+        
         if not ev.analysis.needs_nlp_analysis:
-            self._emit_event("step_start", {
-                "step": 5,
-                "step_name": "NLP Analysis",
-                "description": "Skipping NLP analysis (not needed)..."
+            self._emit_event("agent_step_start", {
+                "agent_name": "NLP Analyzer",
+                "step_id": step_id,
+                "timestamp": datetime.utcnow().isoformat(),
+                "step_order": 4
             })
             
             logger.info("Skipping NLP analysis (not needed)")
@@ -456,10 +487,12 @@ class ProductGapWorkflow(Workflow):
                 output_data={"skipped": True}
             )
             
-            self._emit_event("step_complete", {
-                "step": 5,
-                "step_name": "NLP Analysis",
-                "result": {"skipped": True}
+            self._emit_event("agent_step_complete", {
+                "step_id": step_id,
+                "agent_name": "NLP Analyzer",
+                "content": {"skipped": True},
+                "is_structured": True,
+                "step_order": 4
             })
             
             return NLPAnalysisCompleteEvent(
@@ -470,16 +503,17 @@ class ProductGapWorkflow(Workflow):
                 nlp_results=None
             )
         
-        self._emit_event("step_start", {
-            "step": 5,
-            "step_name": "NLP Analysis",
-            "description": "Analyzing text data with NLP tools..."
+        self._emit_event("agent_step_start", {
+            "agent_name": "NLP Analyzer",
+            "step_id": step_id,
+            "timestamp": datetime.utcnow().isoformat(),
+            "step_order": 4
         })
         
         logger.info("▶️  Step 5: NLP Analysis")
         
         # Import here to avoid circular dependency
-        from app.workflow.agents.nlp_agent import perform_nlp_analysis
+        from app.optimal_workflow.agents.nlp_agent import perform_nlp_analysis
         
         # Step 5a: Agent selects which NLP tools to use
         nlp_plan = await perform_nlp_analysis(
@@ -494,17 +528,6 @@ class ProductGapWorkflow(Workflow):
         nlp_service = NLPService()
         tool_calls = nlp_plan.get('tool_calls', [])
         
-        # Emit tool call events as they execute
-        for tool_call in tool_calls:
-            tool_name = tool_call.get('tool_name', 'unknown')
-            dataset_name = tool_call.get('dataset_name', 'unknown')
-            
-            self._emit_event("tool_call_start", {
-                "tool_name": tool_name,
-                "dataset_name": dataset_name,
-                "parameters": tool_call.get('parameters', {})
-            })
-        
         nlp_results = nlp_service.execute_tool_calls(
             tool_calls=tool_calls,
             retrieved_data=ev.retrieved_data
@@ -512,36 +535,6 @@ class ProductGapWorkflow(Workflow):
         
         # Combine plan and results
         nlp_results['plan'] = nlp_plan
-        
-        # Emit tool call results
-        if nlp_results.get('tool_results'):
-            seen_calls = nlp_results.get('seen_calls', [])
-            for tool_key, result in nlp_results.get('tool_results', {}).items():
-                parts = tool_key.rsplit('@', 1)
-                tool_name = parts[0] if len(parts) > 1 else tool_key
-                dataset_name = parts[1] if len(parts) > 1 else 'unknown'
-                
-                # Find matching seen_call to get full parameters
-                parameters = {'dataset_name': dataset_name}
-                for seen_call in seen_calls:
-                    seen_tool_name, seen_dataset_name, param_key = seen_call
-                    if seen_tool_name == tool_name and seen_dataset_name == dataset_name:
-                        if isinstance(param_key, tuple):
-                            parameters = dict(param_key)
-                            parameters['dataset_name'] = dataset_name
-                        break
-                
-                # Sanitize result
-                sanitized_result = _sanitize_for_json(result) if result else None
-                
-                self._emit_event("tool_call_complete", {
-                    "tool_name": tool_name,
-                    "dataset_name": dataset_name,
-                    "parameters": _sanitize_for_json(parameters),
-                    "result": sanitized_result if not result.get('error') else None,
-                    "status": 'failed' if result.get('error') else 'completed',
-                    "error": result.get('error', None)
-                })
         
         logger.info(f"✓ NLP Execution complete: {nlp_results.get('successful', 0)} tools succeeded")
         
@@ -560,14 +553,16 @@ class ProductGapWorkflow(Workflow):
             }
         )
         
-        self._emit_event("step_complete", {
-            "step": 5,
-            "step_name": "NLP Analysis",
-            "result": {
+        self._emit_event("agent_step_complete", {
+            "step_id": step_id,
+            "agent_name": "NLP Analyzer",
+            "content": {
                 "tools_executed": nlp_results.get('total_tools_executed', 0),
                 "successful": nlp_results.get('successful', 0),
                 "deduplicated": nlp_results.get('deduplicated', 0)
-            }
+            },
+            "is_structured": True,
+            "step_order": 4
         })
         # Track individual tool calls
         if step and nlp_results.get('tool_results'):
@@ -614,10 +609,14 @@ class ProductGapWorkflow(Workflow):
     @step
     async def generate_final_answer(self, ctx: Context, ev: NLPAnalysisCompleteEvent | SkipRetrievalEvent) -> StopEvent:
         """Step 6: Generate the final answer using all collected information."""
-        self._emit_event("step_start", {
-            "step": 6,
-            "step_name": "Answer Generation",
-            "description": "Generating your final answer..."
+        import uuid
+        step_id = str(uuid.uuid4())
+        
+        self._emit_event("agent_step_start", {
+            "agent_name": "Answer Generator",
+            "step_id": step_id,
+            "timestamp": datetime.utcnow().isoformat(),
+            "step_order": 5
         })
         
         logger.info("▶️  Step 6: Generate Answer")
@@ -658,27 +657,27 @@ class ProductGapWorkflow(Workflow):
         format_type = ev.format_info.format_type if ev.format_info else "markdown"
         
         # Import the specific writer based on format
-        from app.workflow.agents.base import get_llm
+        from app.optimal_workflow.agents.base import get_llm
         
         # Determine which agent to use based on format
         if format_type.lower() in ['markdown', 'report', 'bullet points']:
-            from app.workflow.agents.markdown_writer import create_markdown_writer
+            from app.optimal_workflow.agents.markdown_writer import create_markdown_writer
             agent = create_markdown_writer()
             system_prompt = agent.system_prompt
         elif format_type.lower() in ['table', 'tabular', 'csv']:
-            from app.workflow.agents.table_writer import create_table_writer
+            from app.optimal_workflow.agents.table_writer import create_table_writer
             agent = create_table_writer()
             system_prompt = agent.system_prompt
         elif format_type.lower() in ['chart', 'visualization', 'graph']:
-            from app.workflow.agents.chart_writer import create_chart_writer
+            from app.optimal_workflow.agents.chart_writer import create_chart_writer
             agent = create_chart_writer()
             system_prompt = agent.system_prompt
         elif format_type.lower() in ['json', 'api', 'structured']:
-            from app.workflow.agents.json_writer import create_json_writer
+            from app.optimal_workflow.agents.json_writer import create_json_writer
             agent = create_json_writer()
             system_prompt = agent.system_prompt
         else:
-            from app.workflow.agents.markdown_writer import create_markdown_writer
+            from app.optimal_workflow.agents.markdown_writer import create_markdown_writer
             agent = create_markdown_writer()
             system_prompt = agent.system_prompt
         
@@ -707,10 +706,8 @@ class ProductGapWorkflow(Workflow):
                 content_chunk = chunk.delta if hasattr(chunk, 'delta') else str(chunk)
                 if content_chunk:
                     answer_parts.append(content_chunk)
-                    self._emit_event("answer_chunk", {
-                        "chunk": content_chunk,
-                        "position": None,
-                        "total_length": None
+                    self._emit_event("content", {
+                        "content": content_chunk
                     })
             
             answer = "".join(answer_parts)
@@ -718,17 +715,15 @@ class ProductGapWorkflow(Workflow):
         except Exception as e:
             logger.warning(f"LlamaIndex streaming failed: {e}, falling back to non-streaming")
             # Fallback to non-streaming
-            from app.workflow.agents.writer_team import generate_answer
+            from app.optimal_workflow.agents.writer_team import generate_answer
             answer = await generate_answer(context, format_type)
             
             # Stream in chunks as fallback
             chunk_size = 30
             for i in range(0, len(answer), chunk_size):
                 chunk = answer[i:i + chunk_size]
-                self._emit_event("answer_chunk", {
-                    "chunk": chunk,
-                    "position": i,
-                    "total_length": len(answer)
+                self._emit_event("content", {
+                    "content": chunk
                 })
                 import asyncio
                 await asyncio.sleep(0.01)
@@ -748,34 +743,31 @@ class ProductGapWorkflow(Workflow):
             }
         )
         
-        # Create assistant message with the answer
-        if self.conversation_id:
-            from app.database.repositories import MessageRepository
-            
-            db_session = SessionLocal()
-            try:
-                msg_repo = MessageRepository()
-                # Create assistant message
-                assistant_message = msg_repo.create(
-                    db=db_session,
-                    conversation_id=self.conversation_id,
-                    role="assistant",
-                    content=answer
-                )
-                logger.info(f"Created assistant message: {assistant_message.id}")
-            finally:
-                db_session.close()
+        # Note: Assistant message creation is handled by chat API endpoint
+        # after the workflow completes
         
-        self._emit_event("step_complete", {
-            "step": 6,
-            "step_name": "Answer Generation",
-            "result": {"answer_length": len(answer)}
+        self._emit_event("agent_step_complete", {
+            "step_id": step_id,
+            "agent_name": "Answer Generator",
+            "content": {"answer_length": len(answer)},
+            "is_structured": True,
+            "step_order": 5
         })
         
-        self._emit_event("workflow_complete", {
-            "conversation_id": self.conversation_id,
-            "message_id": self.message_id
-        })
+        # Create ChatResponse for complete event
+        from app.models.chat import ChatResponse as ChatResponseModel
+        chat_response_obj = ChatResponseModel(
+            message=answer,
+            session_id=self.session_id if self.session_id else "default",
+            message_id=str(uuid.uuid4()),
+            timestamp=datetime.utcnow(),
+            metadata={
+                "workflow": "llamaindex_optimal",
+                "user_id": self.user_id
+            }
+        )
+        
+        self._emit_event("complete", chat_response_obj.dict())
         
         logger.info("🏁 Workflow completed")
         

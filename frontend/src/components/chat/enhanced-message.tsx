@@ -75,86 +75,192 @@ const highlightKeywords = (text: string) => {
   return parts.length > 0 ? <>{parts}</> : text
 }
 
+// Parse markdown inline formatting (bold, italic)
+const parseInlineMarkdown = (text: string): (string | JSX.Element)[] => {
+  const parts: (string | JSX.Element)[] = []
+  let currentIndex = 0
+  let keyIndex = 0
+
+  // Match **bold** and *italic* patterns
+  const pattern = /(\*\*(.+?)\*\*)|(\*(.+?)\*)/g
+  let match
+
+  while ((match = pattern.exec(text)) !== null) {
+    // Add text before the match
+    if (match.index > currentIndex) {
+      parts.push(text.slice(currentIndex, match.index))
+    }
+
+    // Add the formatted match
+    if (match[1]) {
+      // Bold: **text**
+      parts.push(<strong key={`bold-${keyIndex++}`} className="font-bold text-white">{match[2]}</strong>)
+    } else if (match[3]) {
+      // Italic: *text*
+      parts.push(<em key={`italic-${keyIndex++}`} className="italic text-white/90">{match[4]}</em>)
+    }
+
+    currentIndex = pattern.lastIndex
+  }
+
+  // Add remaining text
+  if (currentIndex < text.length) {
+    parts.push(text.slice(currentIndex))
+  }
+
+  return parts.length > 0 ? parts : [text]
+}
+
 // Format assistant responses with structure
 const formatAssistantContent = (content: string) => {
   const lines = content.split('\n')
   const sections: JSX.Element[] = []
   let currentSection: string[] = []
+  let currentTable: string[] = []
   let sectionIndex = 0
+
+  const flushSection = () => {
+    if (currentSection.length > 0) {
+      sections.push(
+        <div key={`section-${sectionIndex++}`} className="mb-4">
+          <p className="text-white/80">{parseInlineMarkdown(currentSection.join(' '))}</p>
+        </div>
+      )
+      currentSection = []
+    }
+  }
+
+  const flushTable = () => {
+    if (currentTable.length > 0) {
+      const tableLines = currentTable.filter(l => !l.match(/^\s*\|[\s-:|]+\|\s*$/)) // Remove separator lines
+      if (tableLines.length > 0) {
+        const headers = tableLines[0].split('|').map(h => h.trim()).filter(h => h)
+        const rows = tableLines.slice(1).map(row => 
+          row.split('|').map(c => c.trim()).filter(c => c)
+        ).filter(row => row.length > 0)
+
+        sections.push(
+          <div key={`table-${sectionIndex++}`} className="mb-4 overflow-x-auto">
+            <table className="min-w-full border border-gray-700/30 rounded-lg overflow-hidden">
+              <thead className="bg-gray-800/50">
+                <tr>
+                  {headers.map((header, i) => (
+                    <th key={i} className="px-4 py-2 text-left text-xs font-semibold text-emerald-400 border-b border-gray-700/30">
+                      {parseInlineMarkdown(header)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="bg-gray-900/30">
+                {rows.map((row, i) => (
+                  <tr key={i} className="border-b border-gray-700/20 hover:bg-gray-800/20">
+                    {row.map((cell, j) => (
+                      <td key={j} className="px-4 py-2 text-sm text-white/80">
+                        {parseInlineMarkdown(cell)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      }
+      currentTable = []
+    }
+  }
 
   lines.forEach((line, idx) => {
     const trimmedLine = line.trim()
     
+    // Detect markdown table rows
+    if (trimmedLine.startsWith('|') && trimmedLine.endsWith('|')) {
+      flushSection()
+      currentTable.push(trimmedLine)
+      return
+    }
+    
+    // If we were building a table and hit non-table line, flush it
+    if (currentTable.length > 0) {
+      flushTable()
+    }
+    
+    // Detect bullet points (markdown or unicode) - CHECK THIS FIRST before headers
+    if (trimmedLine.startsWith('-') || trimmedLine.startsWith('•') || trimmedLine.startsWith('*')) {
+      flushSection()
+      
+      // Calculate indentation level (spaces before the bullet)
+      const leadingSpaces = line.search(/\S/)
+      const indentLevel = Math.floor(leadingSpaces / 2) // 2 spaces = 1 indent level
+      const marginLeft = indentLevel > 0 ? `${indentLevel * 1.5}rem` : '0'
+      
+      // Remove bullet marker - handle different cases
+      let content = trimmedLine
+      if (content.startsWith('- ')) content = content.substring(2)
+      else if (content.startsWith('* ')) content = content.substring(2)
+      else if (content.startsWith('• ')) content = content.substring(2)
+      else if (content.startsWith('-')) content = content.substring(1)
+      else if (content.startsWith('*')) content = content.substring(1)
+      else if (content.startsWith('•')) content = content.substring(1)
+      
+      // If content ends with :, remove it (it's a bullet header, not a real header)
+      if (content.endsWith(':')) content = content.slice(0, -1)
+      
+      sections.push(
+        <div key={`bullet-${idx}`} className="flex items-start mb-2" style={{ marginLeft }}>
+          <span className="text-emerald-400 mr-2 flex-shrink-0">•</span>
+          <span className="text-white/80 flex-1">{parseInlineMarkdown(content)}</span>
+        </div>
+      )
+    }
     // Detect markdown headers (##, ###, etc.)
-    if (trimmedLine.startsWith('#')) {
-      if (currentSection.length > 0) {
-        sections.push(
-          <div key={`section-${sectionIndex++}`} className="mb-4">
-            <p className="text-white/80">{highlightKeywords(currentSection.join(' '))}</p>
-          </div>
-        )
-        currentSection = []
-      }
+    else if (trimmedLine.startsWith('#')) {
+      flushSection()
       
       // Count # symbols to determine header level
       const headerMatch = trimmedLine.match(/^(#{1,6})\s+(.+)/)
       if (headerMatch) {
         const level = headerMatch[1].length
         const headerText = headerMatch[2]
-        const headerClass = level === 1 ? 'text-2xl' : level === 2 ? 'text-xl' : 'text-lg'
         
-        sections.push(
-          <h3 key={`header-${idx}`} className={`${headerClass} font-semibold text-white mb-3 mt-2 flex items-center`}>
-            <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full mr-2"></span>
-            {headerText}
-          </h3>
-        )
+        // Different styling based on header level
+        if (level === 1) {
+          // H1: Most prominent with gradient and border
+          sections.push(
+            <h1 key={`header-${idx}`} className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400 mb-4 mt-6 pb-2 border-b border-emerald-500/30">
+              {parseInlineMarkdown(headerText)}
+            </h1>
+          )
+        } else if (level === 2) {
+          // H2: Bold with left border accent
+          sections.push(
+            <h2 key={`header-${idx}`} className="text-xl font-bold text-white mb-3 mt-5 pl-3 border-l-4 border-emerald-400">
+              {parseInlineMarkdown(headerText)}
+            </h2>
+          )
+        } else {
+          // H3+: Simpler styling with subtle accent
+          sections.push(
+            <h3 key={`header-${idx}`} className="text-lg font-semibold text-white/90 mb-2 mt-4">
+              {parseInlineMarkdown(headerText)}
+            </h3>
+          )
+        }
       }
     }
-    // Detect headers (lines ending with :)
-    else if (trimmedLine.endsWith(':') && trimmedLine.length > 3 && !trimmedLine.includes('http')) {
-      if (currentSection.length > 0) {
-        sections.push(
-          <div key={`section-${sectionIndex++}`} className="mb-4">
-            <p className="text-white/80">{highlightKeywords(currentSection.join(' '))}</p>
-          </div>
-        )
-        currentSection = []
-      }
+    // Detect headers (lines ending with :) - but not long sentences
+    else if (trimmedLine.endsWith(':') && trimmedLine.length > 3 && trimmedLine.length < 80 && !trimmedLine.includes('http') && !trimmedLine.includes(',')) {
+      flushSection()
       sections.push(
         <h3 key={`header-${idx}`} className="text-lg font-semibold text-white mb-2 flex items-center">
           <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full mr-2"></span>
-          {trimmedLine.replace(':', '')}
+          {parseInlineMarkdown(trimmedLine.replace(':', ''))}
         </h3>
-      )
-    }
-    // Detect bullet points (markdown or unicode)
-    else if (trimmedLine.startsWith('-') || trimmedLine.startsWith('•') || trimmedLine.startsWith('*')) {
-      if (currentSection.length > 0) {
-        sections.push(
-          <div key={`section-${sectionIndex++}`} className="mb-4">
-            <p className="text-white/80">{highlightKeywords(currentSection.join(' '))}</p>
-          </div>
-        )
-        currentSection = []
-      }
-      sections.push(
-        <div key={`bullet-${idx}`} className="flex items-start mb-2">
-          <span className="text-emerald-400 mr-2">•</span>
-          <span className="text-white/80">{highlightKeywords(trimmedLine.replace(/^[-•*]\s*/, ''))}</span>
-        </div>
       )
     }
     // Code blocks
     else if (trimmedLine.startsWith('```')) {
-      if (currentSection.length > 0) {
-        sections.push(
-          <div key={`section-${sectionIndex++}`} className="mb-4">
-            <p className="text-white/80">{highlightKeywords(currentSection.join(' '))}</p>
-          </div>
-        )
-        currentSection = []
-      }
+      flushSection()
       sections.push(
         <div key={`code-${idx}`} className="bg-gray-900/50 border border-gray-700/30 rounded-lg p-3 mb-2 font-mono text-sm text-emerald-300">
           {trimmedLine.replace(/```/g, '')}
@@ -167,23 +273,13 @@ const formatAssistantContent = (content: string) => {
     }
     // Empty line - flush current section
     else if (currentSection.length > 0) {
-      sections.push(
-        <div key={`section-${sectionIndex++}`} className="mb-4">
-          <p className="text-white/80">{highlightKeywords(currentSection.join(' '))}</p>
-        </div>
-      )
-      currentSection = []
+      flushSection()
     }
   })
 
-  // Flush remaining content
-  if (currentSection.length > 0) {
-    sections.push(
-      <div key={`section-${sectionIndex}`} className="mb-4">
-        <p className="text-white/80">{highlightKeywords(currentSection.join(' '))}</p>
-      </div>
-    )
-  }
+  // Flush any remaining content
+  flushTable()
+  flushSection()
 
   return sections.length > 0 ? sections : [<p key="default" className="text-white/80">{content}</p>]
 }

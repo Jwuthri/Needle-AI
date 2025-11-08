@@ -22,6 +22,7 @@ class ChatMessageStepRepository:
         agent_name: str,
         step_order: int,
         tool_call: Optional[dict] = None,
+        structured_output: Optional[dict] = None,
         prediction: Optional[str] = None,
         **kwargs
     ) -> ChatMessageStep:
@@ -33,7 +34,8 @@ class ChatMessageStepRepository:
             message_id: ID of the chat message this step belongs to
             agent_name: Name of the agent that produced this step
             step_order: Order of this step in the execution sequence
-            tool_call: Structured output (BaseModel serialized to dict)
+            tool_call: Tool call data
+            structured_output: Structured output (BaseModel serialized to dict)
             prediction: Text output
             **kwargs: Additional fields
             
@@ -45,6 +47,7 @@ class ChatMessageStepRepository:
             agent_name=agent_name,
             step_order=step_order,
             tool_call=tool_call,
+            structured_output=structured_output,
             prediction=prediction,
             **kwargs
         )
@@ -129,7 +132,7 @@ class ChatMessageStepRepository:
         Args:
             db: Database session
             message_id: Chat message ID
-            steps: List of step data dicts with keys: agent_name, step_order, tool_call, prediction
+            steps: List of step data dicts with keys: agent_name, step_order, tool_call, structured_output, prediction
             
         Returns:
             List of created ChatMessageStep instances
@@ -142,6 +145,7 @@ class ChatMessageStepRepository:
                 agent_name=step_data['agent_name'],
                 step_order=step_data['step_order'],
                 tool_call=step_data.get('tool_call'),
+                structured_output=step_data.get('structured_output'),
                 prediction=step_data.get('prediction')
             )
             db.add(step)

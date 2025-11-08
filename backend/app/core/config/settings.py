@@ -141,7 +141,6 @@ class Settings(BaseSettings):
     # Vector Database Configuration
     vector_database: str = Field(default="pinecone", description="Vector database provider")
     memory_type: str = Field(default="vector", description="Memory storage type")
-
     
     # Pinecone Configuration
     pinecone_api_key: Optional[str] = Field(default=None, description="Pinecone API key")

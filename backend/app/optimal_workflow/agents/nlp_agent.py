@@ -10,7 +10,7 @@ from typing import Dict, Any, List
 
 from llama_index.core.agent.workflow import FunctionAgent
 
-from app import get_logger
+from app.utils.logging import get_logger
 from .base import get_llm, QueryAnalysis
 from ..tools import (
     compute_tfidf_tool,
