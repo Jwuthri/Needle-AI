@@ -11,17 +11,15 @@ import uvicorn
 from app.api.v1.router import api_router
 from app.config import get_settings
 from app.core.config.validation import setup_config_validation
+from app.core.container import get_container
 from app.core.monitoring import setup_monitoring
 from app.core.tracing import (
     initialize_tracing,
     instrument_fastapi_app,
     shutdown_tracing,
 )
-from app.dependencies import (
-    cleanup_request_scope,
-    cleanup_services,
-    initialize_services,
-)
+from app.database.session import cleanup_database, initialize_database
+from app.dependencies import cleanup_orchestrator_services
 from app.exceptions import setup_exception_handlers
 from app.middleware import setup_middleware
 from app.models.base import APIInfo
@@ -37,6 +35,42 @@ settings = get_settings()
 setup_logging(log_level=settings.log_level, environment=settings.environment)
 
 logger = get_logger("main")
+
+
+async def initialize_services():
+    """Initialize all application services."""
+    try:
+        # Initialize database
+        await initialize_database()
+        logger.info("Database initialized")
+
+        # Initialize DI container (this registers all services)
+        container = get_container()
+        logger.info("DI container initialized")
+
+        logger.info("All services initialized successfully")
+    except Exception as e:
+        logger.error(f"Error initializing services: {e}")
+        raise
+
+
+async def cleanup_services():
+    """Cleanup all application services."""
+    try:
+        # Cleanup orchestrator services
+        await cleanup_orchestrator_services()
+        logger.info("Orchestrator services cleaned up")
+
+        # Cleanup DI container
+        container = get_container()
+        await container.dispose()
+        logger.info("DI container disposed")
+
+        # Cleanup database
+        await cleanup_database()
+        logger.info("Database cleaned up")
+    except Exception as e:
+        logger.error(f"Error during service cleanup: {e}")
 
 
 @asynccontextmanager

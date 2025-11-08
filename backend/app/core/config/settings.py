@@ -110,6 +110,33 @@ class Settings(BaseSettings):
     use_agno_memory: bool = Field(default=True, description="Enable agent memory")
     structured_outputs: bool = Field(default=False, description="Enable structured outputs")
     agent_instructions: Optional[str] = Field(default=None, description="Default agent instructions")
+    
+    # Hybrid Router Configuration
+    router_model: str = Field(default="openai/gpt-5-nano", description="Model for query routing")
+    router_confidence_threshold: float = Field(default=0.7, ge=0.0, le=1.0, description="Routing confidence threshold")
+    
+    # Specialist Models
+    product_agent_model: str = Field(default="anthropic/claude-sonnet-4.5", description="Product specialist model")
+    research_agent_model: str = Field(default="anthropic/claude-sonnet-4.5", description="Research specialist model")
+    analytics_agent_model: str = Field(default="openai/gpt-5", description="Analytics specialist model")
+    general_agent_model: str = Field(default="openai/gpt-4o-mini", description="General assistant model")
+    
+    # MCP API Configurations
+    mcp_apis: Dict[str, Dict[str, any]] = Field(
+        default_factory=dict,
+        description="MCP API configurations for external integrations"
+    )
+    
+    # Performance Configuration
+    max_reasoning_steps: int = Field(default=10, ge=1, le=50, description="Max ReAct reasoning steps")
+    tool_timeout_seconds: int = Field(default=30, ge=5, le=120, description="Tool execution timeout")
+    
+    # Security Configuration (Guardrails)
+    openai_api_key: Optional[str] = Field(default=None, description="OpenAI API key for moderation")
+    enable_pii_detection: bool = Field(default=True, description="Enable PII detection and redaction")
+    enable_injection_detection: bool = Field(default=True, description="Enable prompt injection detection")
+    enable_content_moderation: bool = Field(default=True, description="Enable content moderation")
+    injection_confidence_threshold: float = Field(default=0.4, ge=0.0, le=1.0, description="Injection detection threshold")
 
     # Vector Database Configuration
     vector_database: str = Field(default="pinecone", description="Vector database provider")

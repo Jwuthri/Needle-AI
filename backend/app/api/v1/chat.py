@@ -12,7 +12,7 @@ from app.api.deps import (
     validate_session_id,
 )
 from app.core.security.clerk_auth import ClerkUser, get_current_user
-from app.dependencies import get_orchestrator_service, get_tree_orchestrator_service
+from app.dependencies import get_orchestrator_service, get_tree_orchestrator_service, get_hybrid_orchestrator_service
 from app.exceptions import NotFoundError, ValidationError
 from app.models.chat import ChatRequest, ChatResponse, ChatSession, MessageHistory
 from app.models.feedback import ChatFeedback, FeedbackResponse, FeedbackType
@@ -915,4 +915,184 @@ async def send_message_tree_stream(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Tree stream failed: {str(e)}"
+        )
+
+
+@router.post("/hybrid/stream")
+async def send_message_hybrid_stream(
+    request: ChatRequest,
+    hybrid_orchestrator = Depends(get_hybrid_orchestrator_service),
+    current_user: Optional[ClerkUser] = Depends(get_current_user),
+    _rate_limit_check = Depends(check_rate_limit),
+    db = Depends(get_db)
+):
+    """
+    Send a message using hybrid router + specialist architecture with streaming.
+    
+    This endpoint uses security guardrails, smart routing, and specialized agents:
+    - Security: PII detection, prompt injection detection, content moderation
+    - Router: Fast LLM-based query classification
+    - Specialists: Product, Research, Analytics, or General agents
+    - Streaming: Real-time visibility of routing, reasoning, tool calls, and responses
+    
+    Returns Server-Sent Events (SSE) stream with:
+    - security_check: Guardrails validation results
+    - routing: Specialist selection and reasoning
+    - specialist_start: Agent begins processing
+    - reasoning: Agent's thought process
+    - tool_selection: Which tools are being called
+    - tool_start/tool_result: Tool execution events
+    - content: Streaming response text
+    - complete: Final response with metadata
+    - error: If something goes wrong
+    """
+    try:
+        from app.database.repositories.chat_session import ChatSessionRepository
+        from app.database.repositories.chat_message import ChatMessageRepository
+        from app.database.models.chat_message import MessageRoleEnum
+        import uuid
+        
+        user_id = current_user.id if current_user else None
+        
+        # Ensure session exists in database
+        session_id = request.session_id or str(uuid.uuid4())
+        db_session = await ChatSessionRepository.get_by_id(db, session_id)
+        if not db_session:
+            db_session = await ChatSessionRepository.create(
+                db, 
+                user_id=user_id, 
+                id=session_id,
+                extra_metadata={"company_id": request.company_id} if request.company_id else {}
+            )
+            await db.commit()
+            logger.info(f"Created database session {session_id} for hybrid orchestration")
+        
+        # Save user message to database
+        user_message = await ChatMessageRepository.create(
+            db=db,
+            session_id=session_id,
+            content=request.message,
+            role=MessageRoleEnum.USER
+        )
+        await db.commit()
+        logger.info(f"Saved user message {user_message.id} for hybrid orchestration")
+        
+        # Stream processing function
+        async def event_stream():
+            from app.database.session import get_async_session
+            from datetime import datetime, date
+            import asyncio
+            
+            def make_json_serializable(obj):
+                """Recursively convert any object to be JSON serializable."""
+                if obj is None:
+                    return None
+                elif isinstance(obj, (datetime, date)):
+                    return obj.isoformat()
+                elif hasattr(obj, "model_dump"):
+                    return obj.model_dump(mode='json')
+                elif isinstance(obj, dict):
+                    return {k: make_json_serializable(v) for k, v in obj.items()}
+                elif isinstance(obj, (list, tuple)):
+                    return [make_json_serializable(item) for item in obj]
+                elif isinstance(obj, (str, int, float, bool)):
+                    return obj
+                else:
+                    return str(obj)
+            
+            accumulated_content = ""
+            update_count = 0
+            
+            try:
+                # Process stream with hybrid orchestrator
+                async for update in hybrid_orchestrator.process_message_stream(
+                    request=request,
+                    user_id=user_id,
+                    db=None  # No DB during streaming to avoid lifecycle issues
+                ):
+                    update_count += 1
+                    
+                    # Accumulate content for database storage
+                    if update["type"] == "content":
+                        accumulated_content += update["data"].get("content", "")
+                        logger.debug(f"Hybrid streaming content update #{update_count}")
+                    
+                    # Make entire update JSON serializable
+                    serializable_update = make_json_serializable(update)
+                    
+                    # Yield the SSE data
+                    sse_data = f"data: {json.dumps(serializable_update)}\n\n"
+                    yield sse_data
+                    
+                    # Force a small delay to ensure data is flushed
+                    if update["type"] in ["content", "reasoning"]:
+                        await asyncio.sleep(0.001)
+                
+                logger.info(f"Hybrid stream completed: {update_count} updates sent, {len(accumulated_content)} chars total")
+                
+                # Save final response to database in a separate session
+                if accumulated_content:
+                    try:
+                        async with get_async_session() as save_db:
+                            assistant_message = await ChatMessageRepository.create(
+                                db=save_db,
+                                session_id=session_id,
+                                content=accumulated_content,
+                                role=MessageRoleEnum.ASSISTANT
+                            )
+                            await save_db.commit()
+                            logger.info(f"Saved assistant message {assistant_message.id} from hybrid orchestration")
+                    except Exception as db_error:
+                        logger.error(f"Failed to save hybrid final message to DB: {db_error}")
+                
+            except Exception as e:
+                logger.error(f"Hybrid stream error: {e}", exc_info=True)
+                error_event = {
+                    "type": "error",
+                    "data": {"error": str(e)}
+                }
+                yield f"data: {json.dumps(error_event)}\n\n"
+        
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Hybrid chat stream error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Hybrid stream failed: {str(e)}"
+        )
+
+
+@router.get("/hybrid/config")
+async def get_hybrid_config(
+    hybrid_orchestrator = Depends(get_hybrid_orchestrator_service)
+):
+    """
+    Get hybrid orchestrator configuration.
+    
+    Returns information about:
+    - Available specialists and their capabilities
+    - Router configuration
+    - Security guardrails settings
+    - Tool availability
+    
+    Useful for frontend to understand what the system can do.
+    """
+    try:
+        config = hybrid_orchestrator.get_config()
+        return config
+        
+    except Exception as e:
+        logger.error(f"Failed to get hybrid config: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get configuration: {str(e)}"
         )
