@@ -4,13 +4,12 @@ API-specific dependencies for NeedleAi.
 
 from typing import AsyncGenerator, Optional
 
-from app.config import Settings, get_settings
+from app.core.config.settings import Settings, get_settings
 from app.core.security.rate_limit import RateLimiter
 from app.database.session import get_async_db_session
 from app.dependencies import (
     get_orchestrator_service,
     get_tree_orchestrator_service,
-    get_hybrid_orchestrator_service,
     get_redis_client,
     get_chat_service,
     get_conversation_service,

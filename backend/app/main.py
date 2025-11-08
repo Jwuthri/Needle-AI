@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from app.api.v1.router import api_router
-from app.config import get_settings
+from app.core.config.settings import get_settings
 from app.core.config.validation import setup_config_validation
 from app.core.container import get_container
 from app.core.monitoring import setup_monitoring

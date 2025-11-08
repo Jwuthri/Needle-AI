@@ -7,17 +7,15 @@ from typing import Optional, Any
 
 from app.services.orchestrator_service import OrchestratorService
 from app.services.tree_orchestrator_service import TreeOrchestratorService
-from app.services.hybrid_orchestrator_service import HybridOrchestratorService
 from app.services.conversation_service import ConversationService
 from app.services.redis_client import RedisClient
 from app.core.container import get_container
-from app.config import get_settings
+from app.core.config.settings import get_settings
 
 
 # Cache orchestrator instances
 _orchestrator_instance: Optional[OrchestratorService] = None
 _tree_orchestrator_instance: Optional[TreeOrchestratorService] = None
-_hybrid_orchestrator_instance: Optional[HybridOrchestratorService] = None
 
 
 @lru_cache()
@@ -60,26 +58,9 @@ async def get_tree_orchestrator_service() -> TreeOrchestratorService:
     return _tree_orchestrator_instance
 
 
-async def get_hybrid_orchestrator_service() -> HybridOrchestratorService:
-    """
-    Get or create the hybrid orchestrator service instance.
-    
-    Returns:
-        HybridOrchestratorService instance
-    """
-    global _hybrid_orchestrator_instance
-    
-    if _hybrid_orchestrator_instance is None:
-        settings = get_settings_cached()
-        _hybrid_orchestrator_instance = HybridOrchestratorService(settings)
-        await _hybrid_orchestrator_instance.initialize()
-    
-    return _hybrid_orchestrator_instance
-
-
 async def cleanup_orchestrator_services():
     """Cleanup orchestrator service instances."""
-    global _orchestrator_instance, _tree_orchestrator_instance, _hybrid_orchestrator_instance
+    global _orchestrator_instance, _tree_orchestrator_instance
     
     if _orchestrator_instance:
         await _orchestrator_instance.cleanup()
@@ -88,10 +69,6 @@ async def cleanup_orchestrator_services():
     if _tree_orchestrator_instance:
         await _tree_orchestrator_instance.cleanup()
         _tree_orchestrator_instance = None
-    
-    if _hybrid_orchestrator_instance:
-        # Hybrid orchestrator doesn't need cleanup (no resources to close)
-        _hybrid_orchestrator_instance = None
 
 
 async def get_conversation_service() -> ConversationService:

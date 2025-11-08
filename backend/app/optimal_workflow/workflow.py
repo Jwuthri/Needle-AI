@@ -264,21 +264,13 @@ class ProductGapWorkflow(Workflow):
             step_name="start_workflow",
             step_type="query_analysis",
             input_data={"query": query},
-            output_data={
-                "needs_data_retrieval": analysis.needs_data_retrieval,
-                "needs_nlp_analysis": analysis.needs_nlp_analysis,
-                "query_type": analysis.query_type
-            }
+            output_data=analysis
         )
         
         self._emit_event("step_complete", {
             "step": 1,
             "step_name": "Query Analysis",
-            "result": {
-                "needs_data_retrieval": analysis.needs_data_retrieval,
-                "needs_nlp_analysis": analysis.needs_nlp_analysis,
-                "query_type": analysis.query_type
-            }
+            "result": analysis
         })
         
         return QueryAnalyzedEvent(query=query, analysis=analysis)
