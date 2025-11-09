@@ -25,7 +25,7 @@ def create_json_writer() -> FunctionAgent:
         - Ensure all strings are properly escaped
         - Provide structured data that's API-ready
         
-        When you receive context, create a JSON-formatted report and then hand off to the coordinator.""",
+        When you receive context, create a JSON-formatted report.""",
         llm=llm,
-        can_handoff_to=["ReportCoordinator"],
+        # can_handoff_to=["ReportCoordinator"],
     )

@@ -25,7 +25,7 @@ def create_markdown_writer() -> FunctionAgent:
         - Format data insights in readable tables when appropriate
         - Use proper markdown syntax (*italic*, **bold**, `code`)
         
-        When you receive context, write a comprehensive markdown report and then hand off to the coordinator.""",
+        When you receive context, write a comprehensive markdown report.""",
         llm=llm,
-        can_handoff_to=["ReportCoordinator"],
+        # can_handoff_to=["ReportCoordinator"],
     )

@@ -50,9 +50,9 @@ async def classify_query(
     
     # Use gpt-5-nano for fast classification
     llm = OpenAI(
-        model="gpt-5-nano",
+        model="gpt-5-mini",
         api_key=api_key,
-        temperature=0.0
+        temperature=0.1
     )
     
     # Build context for classification

@@ -100,7 +100,7 @@ class WorkflowOrchestratorService:
                     from app.database.repositories.chat_message import ChatMessageRepository
                     
                     # Get last 10 messages for context (5 exchanges)
-                    messages = await ChatMessageRepository.get_by_session(
+                    messages = await ChatMessageRepository.get_recent_messages(
                         db=db,
                         session_id=session_id,
                         limit=10
@@ -175,7 +175,7 @@ class WorkflowOrchestratorService:
                     from app.database.repositories.chat_message import ChatMessageRepository
                     
                     # Get last 10 messages for context (5 exchanges)
-                    messages = await ChatMessageRepository.get_by_session(
+                    messages = await ChatMessageRepository.get_recent_messages(
                         db=db,
                         session_id=session_id,
                         limit=10

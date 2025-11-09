@@ -24,7 +24,7 @@ def create_table_writer() -> FunctionAgent:
         - Add summary rows when appropriate
         - Ensure tables are readable and informative
         
-        When you receive context, create a table-focused report and then hand off to the coordinator.""",
+        When you receive context, create a table-focused report.""",
         llm=llm,
-        can_handoff_to=["ReportCoordinator"],
+        # can_handoff_to=["ReportCoordinator"],
     )

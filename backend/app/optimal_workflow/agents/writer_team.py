@@ -37,7 +37,7 @@ def create_answer_writer_workflow(format_type: str = "markdown") -> AgentWorkflo
     
     # Create the workflow
     workflow = AgentWorkflow(
-        agents=[markdown_writer, table_writer, chart_writer, json_writer, coordinator],
+        agents=[markdown_writer, table_writer, chart_writer, json_writer],
         root_agent=root_agent,
         initial_state={
             "format_type": format_type,

@@ -24,7 +24,7 @@ def create_chart_writer() -> FunctionAgent:
         - Include insights that visual representations would highlight
         - Format data ready for visualization tools
         
-        When you receive context, create a chart-focused report and then hand off to the coordinator.""",
+        When you receive context, create a chart-focused report.""",
         llm=llm,
-        can_handoff_to=["ReportCoordinator"],
+        # can_handoff_to=["ReportCoordinator"],
     )
