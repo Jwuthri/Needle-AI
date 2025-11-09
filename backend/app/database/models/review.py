@@ -7,6 +7,7 @@ from datetime import datetime
 
 from sqlalchemy import JSON, Column, DateTime, Float, ForeignKey, Index, String, Text
 from sqlalchemy.orm import relationship
+from pgvector.sqlalchemy import Vector
 
 from ..base import Base
 
@@ -19,22 +20,24 @@ class Review(Base):
 
     # References
     company_id = Column(String, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
-    source_id = Column(String, ForeignKey("review_sources.id", ondelete="CASCADE"), nullable=False)
+    source_id = Column(String, ForeignKey("review_sources.id", ondelete="CASCADE"), nullable=True)  # Optional: for complex source tracking
     scraping_job_id = Column(String, ForeignKey("scraping_jobs.id", ondelete="CASCADE"), nullable=True)  # Null for manual imports
 
     # Content
     content = Column(Text, nullable=False)
     author = Column(String(255), nullable=True)
     url = Column(String(500), nullable=True)  # Link to original review
+    platform = Column(String(100), nullable=True)  # Source platform (e.g., "app_store", "reddit", "trustpilot")
 
     # Analysis
     sentiment_score = Column(Float, nullable=True)  # -1.0 (negative) to 1.0 (positive)
     
     # Additional metadata (e.g., upvotes, platform-specific data)
     extra_metadata = Column(JSON, default={}, nullable=False)
-
-    # Vector database reference
-    vector_id = Column(String, nullable=True, index=True)  # Pinecone vector ID
+    
+    # Embedding vector for semantic search (1536 dimensions for OpenAI text-embedding-3-small)
+    # Note: If using external vector stores like Pinecone, just use the review.id as the vector ID
+    embedding = Column(Vector(1536), nullable=True)
 
     # Timestamps
     scraped_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -51,8 +54,9 @@ class Review(Base):
         Index('idx_reviews_company_scraped', 'company_id', 'scraped_at'),
         Index('idx_reviews_sentiment', 'sentiment_score'),
         Index('idx_reviews_source', 'source_id', 'scraped_at'),
+        # Index on platform - created by migration 011
+        # Index('idx_reviews_platform', 'platform'),
         Index('idx_reviews_job', 'scraping_job_id'),
-        Index('idx_reviews_vector', 'vector_id'),
     )
 
     def __repr__(self):

@@ -151,7 +151,6 @@ def upgrade() -> None:
         sa.Column('url', sa.String(length=500), nullable=True),
         sa.Column('sentiment_score', sa.Float(), nullable=True),
         sa.Column('extra_metadata', sa.JSON(), nullable=False),
-        sa.Column('vector_id', sa.String(), nullable=True),
         sa.Column('scraped_at', sa.DateTime(), nullable=False),
         sa.Column('processed_at', sa.DateTime(), nullable=True),
         sa.Column('review_date', sa.DateTime(), nullable=True),
@@ -164,8 +163,6 @@ def upgrade() -> None:
     op.create_index('idx_reviews_sentiment', 'reviews', ['sentiment_score'])
     op.create_index('idx_reviews_source', 'reviews', ['source_id', 'scraped_at'])
     op.create_index('idx_reviews_job', 'reviews', ['scraping_job_id'])
-    op.create_index('idx_reviews_vector', 'reviews', ['vector_id'])
-    op.create_index(op.f('ix_reviews_vector_id'), 'reviews', ['vector_id'])
     
     # Create credit_transactions table
     op.create_table(
