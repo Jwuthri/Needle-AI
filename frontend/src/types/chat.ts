@@ -3,6 +3,7 @@ export interface Message {
   content: string;
   role: "user" | "assistant" | "system";
   timestamp: string;
+  completed_at?: string;
   error?: boolean;
   metadata?: Record<string, any>;
 }
@@ -12,6 +13,7 @@ export interface ChatMessage {
   content: string;
   role: "user" | "assistant" | "system";
   timestamp: string;
+  completed_at?: string;
   error?: boolean;
   metadata?: Record<string, any>;
 }
@@ -95,6 +97,7 @@ export interface ChatResponse {
   session_id: string;
   message_id: string;
   timestamp: string;
+  completed_at?: string;
   metadata?: Record<string, any>;
   query_type?: string;
   pipeline_steps?: QueryPipelineStep[];

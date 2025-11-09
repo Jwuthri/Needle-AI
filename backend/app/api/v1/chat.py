@@ -49,7 +49,6 @@ async def send_message_stream(
     Each event is JSON with {type, data} structure.
     """
     try:
-        # breakpoint()
         from app.database.repositories.chat_session import ChatSessionRepository
         from app.database.repositories.chat_message import ChatMessageRepository
         from app.database.models.chat_message import MessageRoleEnum
@@ -107,83 +106,47 @@ async def send_message_stream(
                     return str(obj)
             
             accumulated_content = ""
-            completed_steps = []
             update_count = 0
+            assistant_message_id = None
             
             try:
-                # Process stream without database (to avoid session lifecycle issues)
+                # Create assistant message BEFORE starting the workflow
+                try:
+                    async with get_async_session() as save_db:
+                        assistant_message = await ChatMessageRepository.create(
+                            db=save_db,
+                            session_id=session_id,
+                            content="",
+                            role=MessageRoleEnum.ASSISTANT
+                        )
+                        await save_db.commit()
+                        assistant_message_id = assistant_message.id
+                        logger.info(f"[CHAT API] Created assistant message {assistant_message_id} BEFORE workflow starts")
+                except Exception as db_error:
+                    logger.error(f"Failed to create assistant message: {db_error}")
+                    raise
+                
+                # Process stream - workflow handles ALL database operations (steps + final answer)
                 async for update in orchestrator.process_message_stream(
                     request=request,
                     user_id=user_id,
-                    db=None  # No DB during streaming to avoid lifecycle issues
+                    assistant_message_id=assistant_message_id,
+                    db=None
                 ):
                     update_count += 1
                     
-                    # Accumulate content for database storage
                     if update["type"] == "content":
                         accumulated_content += update["data"]["content"]
                         logger.debug(f"Streaming content update #{update_count}: {len(update['data']['content'])} chars")
-                    elif update["type"] == "complete":
-                        # Extract completed steps from metadata
-                        if "metadata" in update["data"] and "completed_steps" in update["data"]["metadata"]:
-                            completed_steps = update["data"]["metadata"]["completed_steps"]
-                            # Remove from metadata before sending to frontend
-                            del update["data"]["metadata"]["completed_steps"]
                     
-                    # Make entire update JSON serializable
                     serializable_update = make_json_serializable(update)
-                    
-                    # Yield the SSE data
                     sse_data = f"data: {json.dumps(serializable_update)}\n\n"
                     yield sse_data
                     
-                    # Force a small delay to ensure data is flushed
-                    # This helps with buffering issues
                     if update["type"] == "content":
-                        await asyncio.sleep(0.001)  # 1ms delay for content chunks
+                        await asyncio.sleep(0.001)
                 
-                logger.info(f"Stream completed: {update_count} updates sent, {len(accumulated_content)} chars total, {len(completed_steps)} agent steps")
-                
-                # Save final response to database in a separate session
-                if accumulated_content:
-                    try:
-                        from app.database.repositories.chat_message_step import ChatMessageStepRepository
-                        async with get_async_session() as save_db:
-                            assistant_message = await ChatMessageRepository.create(
-                                db=save_db,
-                                session_id=session_id,
-                                content=accumulated_content,
-                                role=MessageRoleEnum.ASSISTANT
-                            )
-                            await save_db.commit()
-                            logger.info(f"Saved assistant message {assistant_message.id} to database")
-                            
-                            # Save agent steps if any
-                            if completed_steps:
-                                for step in completed_steps:
-                                    # Determine which field to populate based on is_structured
-                                    if step['is_structured']:
-                                        # Structured output goes to structured_output column
-                                        await ChatMessageStepRepository.create(
-                                            db=save_db,
-                                            message_id=assistant_message.id,
-                                            agent_name=step['agent_name'],
-                                            step_order=step['step_order'],
-                                            structured_output=step['content']
-                                        )
-                                    else:
-                                        # Text output goes to prediction column
-                                        await ChatMessageStepRepository.create(
-                                            db=save_db,
-                                            message_id=assistant_message.id,
-                                            agent_name=step['agent_name'],
-                                            step_order=step['step_order'],
-                                            prediction=step['content'] if isinstance(step['content'], str) else str(step['content'])
-                                        )
-                                await save_db.commit()
-                                logger.info(f"Saved {len(completed_steps)} agent steps for message {assistant_message.id}")
-                    except Exception as db_error:
-                        logger.error(f"Failed to save final message to DB: {db_error}")
+                logger.info(f"Stream completed: {update_count} updates sent, {len(accumulated_content)} chars total")
                 
             except Exception as e:
                 logger.error(f"Stream error: {e}", exc_info=True)

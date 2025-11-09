@@ -137,10 +137,11 @@ class ProductGapWorkflow(Workflow):
     6. NLP Analysis OR Skip Retrieval -> Generate Answer
     """
 
-    def __init__(self, user_id: str = None, session_id: str = None, stream_callback=None, **kwargs):
+    def __init__(self, user_id: str = None, session_id: str = None, assistant_message_id: int = None, stream_callback=None, **kwargs):
         super().__init__(**kwargs)
         self.user_id = user_id
         self.session_id = session_id
+        self.assistant_message_id = assistant_message_id  # For saving steps to DB
         self.message_id = None  # Will be set in start_workflow step
         self.stream_callback = stream_callback  # Callback for streaming events
         self.table_schemas = {}
@@ -173,14 +174,53 @@ class ProductGapWorkflow(Workflow):
         else:
             logger.warning(f"Invalid event format from agent: {event}")
 
-    def _track_step(self, step_name: str, step_type: str, input_data: dict = None, output_data: dict = None, status: str = "completed", error_message: str = None):
-        """Track workflow step in database - currently disabled, handled by chat API."""
-        # Steps are now tracked via ChatMessageStep in chat API endpoint
-        return None
+    async def _track_step_in_db(self, agent_name: str, step_order: int, content: Any, is_structured: bool):
+        """
+        Track workflow step in database immediately.
+        
+        This stores the step execution details in the database for persistence and auditing.
+        
+        Returns:
+            The created ChatMessageStep object, or None if tracking failed
+        """
+        if not self.assistant_message_id:
+            logger.warning(f"Cannot save step {agent_name} - no assistant_message_id set")
+            return None
+            
+        try:
+            from app.database.session import get_async_session
+            from app.database.repositories.chat_message_step import ChatMessageStepRepository
+            
+            async with get_async_session() as db:
+                logger.info(f"[WORKFLOW DB] Saving step: {agent_name} (order: {step_order})")
+                
+                if is_structured:
+                    step = await ChatMessageStepRepository.create(
+                        db=db,
+                        message_id=self.assistant_message_id,
+                        agent_name=agent_name,
+                        step_order=step_order,
+                        structured_output=content
+                    )
+                else:
+                    step = await ChatMessageStepRepository.create(
+                        db=db,
+                        message_id=self.assistant_message_id,
+                        agent_name=agent_name,
+                        step_order=step_order,
+                        prediction=content if isinstance(content, str) else str(content)
+                    )
+                await db.commit()
+                logger.info(f"[WORKFLOW DB] ✅ Saved step: {agent_name}")
+                return step
+        except Exception as e:
+            logger.error(f"[WORKFLOW DB] Failed to save step {agent_name}: {e}", exc_info=True)
+            return None
     
     def _track_tool_calls(self, workflow_step_id: int, tool_calls: list):
-        """Track tool calls in database - currently disabled, handled by chat API."""
-        # Tool calls are now tracked via ChatMessageStep in chat API endpoint
+        """Track tool calls in database."""
+        # Tool calls are tracked as part of step content via agent_step_complete events
+        logger.debug(f"Tool calls tracked: {len(tool_calls) if tool_calls else 0}")
         return None
 
     @step
@@ -207,14 +247,7 @@ class ProductGapWorkflow(Workflow):
         analysis = await analyze_query(query, stream_callback=self._emit_event_from_agent)
         logger.info(f"✓ Query Analysis complete: needs_data={analysis.needs_data_retrieval}")
         
-        # Track step in database
-        self._track_step(
-            step_name="start_workflow",
-            step_type="query_analysis",
-            input_data={"query": query},
-            output_data=analysis.dict()
-        )
-        
+        # Emit completion event for streaming
         self._emit_event("agent_step_complete", {
             "step_id": step_id,
             "agent_name": "Query Analyzer",
@@ -222,6 +255,14 @@ class ProductGapWorkflow(Workflow):
             "is_structured": True,
             "step_order": 0
         })
+        
+        # Save to database immediately
+        await self._track_step_in_db(
+            agent_name="Query Analyzer",
+            step_order=0,
+            content=analysis.dict(),
+            is_structured=True
+        )
         
         return QueryAnalyzedEvent(query=query, analysis=analysis)
 
@@ -242,14 +283,7 @@ class ProductGapWorkflow(Workflow):
         format_info = await detect_format(ev.query, stream_callback=self._emit_event_from_agent)
         logger.info(f"✓ Format Detection complete: {format_info.format_type}")
         
-        # Track step in database
-        self._track_step(
-            step_name="detect_output_format",
-            step_type="format_detection",
-            input_data={"query": ev.query},
-            output_data=format_info.dict()
-        )
-        
+        # Emit completion event for streaming
         self._emit_event("agent_step_complete", {
             "step_id": step_id,
             "agent_name": "Format Detector",
@@ -257,6 +291,14 @@ class ProductGapWorkflow(Workflow):
             "is_structured": True,
             "step_order": 1
         })
+        
+        # Save to database immediately
+        await self._track_step_in_db(
+            agent_name="Format Detector",
+            step_order=1,
+            content=format_info.dict(),
+            is_structured=True
+        )
         
         return FormatDetectedEvent(
             query=ev.query,
@@ -280,14 +322,7 @@ class ProductGapWorkflow(Workflow):
             
             logger.info("▶️  Step 3: Skipping data retrieval (not needed)")
             
-            # Track skip step in database
-            self._track_step(
-                step_name="plan_data_retrieval",
-                step_type="skip_retrieval",
-                input_data={"needs_data_retrieval": False},
-                output_data={"skipped": True}
-            )
-            
+            # Emit completion event for streaming
             self._emit_event("agent_step_complete", {
                 "step_id": step_id,
                 "agent_name": "Retrieval Planner",
@@ -295,6 +330,14 @@ class ProductGapWorkflow(Workflow):
                 "is_structured": True,
                 "step_order": 2
             })
+            
+            # Save to database immediately
+            await self._track_step_in_db(
+                agent_name="Retrieval Planner",
+                step_order=2,
+                content={"skipped": True},
+                is_structured=True
+            )
             
             return SkipRetrievalEvent(
                 query=ev.query,
@@ -316,17 +359,7 @@ class ProductGapWorkflow(Workflow):
         plan = await plan_retrieval(ev.query, self.table_schemas, ev.analysis, stream_callback=self._emit_event_from_agent)
         logger.info(f"✓ Retrieval Planning complete: {len(plan.sql_queries)} queries")
         
-        # Track step in database
-        self._track_step(
-            step_name="plan_data_retrieval",
-            step_type="retrieval_planning",
-            input_data={"query": ev.query, "num_schemas": len(self.table_schemas)},
-            output_data={
-                "num_queries": len(plan.sql_queries),
-                "reasoning": plan.reasoning
-            }
-        )
-        
+        # Emit completion event for streaming
         self._emit_event("agent_step_complete", {
             "step_id": step_id,
             "agent_name": "Retrieval Planner",
@@ -337,6 +370,17 @@ class ProductGapWorkflow(Workflow):
             "is_structured": True,
             "step_order": 2
         })
+        
+        # Save to database immediately
+        await self._track_step_in_db(
+            agent_name="Retrieval Planner",
+            step_order=2,
+            content={
+                "num_queries": len(plan.sql_queries),
+                "reasoning": plan.reasoning
+            },
+            is_structured=True
+        )
         
         return RetrievalPlanEvent(
             query=ev.query,
@@ -480,11 +524,11 @@ class ProductGapWorkflow(Workflow):
             logger.info("Skipping NLP analysis (not needed)")
             
             # Track skip step in database
-            self._track_step(
-                step_name="nlp_analysis",
-                step_type="nlp_analysis",
-                input_data={"needs_nlp_analysis": False},
-                output_data={"skipped": True}
+            await self._track_step_in_db(
+                agent_name="NLP Analyzer",
+                step_order=4,
+                content={"skipped": True},
+                is_structured=True
             )
             
             self._emit_event("agent_step_complete", {
@@ -539,18 +583,17 @@ class ProductGapWorkflow(Workflow):
         logger.info(f"✓ NLP Execution complete: {nlp_results.get('successful', 0)} tools succeeded")
         
         # Track step in database (including tool calls)
-        step = self._track_step(
-            step_name="nlp_analysis",
-            step_type="nlp_analysis",
-            input_data={
+        step = await self._track_step_in_db(
+            agent_name="NLP Analyzer",
+            step_order=4,
+            content={
                 "num_tool_calls": len(nlp_plan.get('tool_calls', [])),
-                "tools_requested": nlp_results.get('total_tools_requested', 0)
-            },
-            output_data={
+                "tools_requested": nlp_results.get('total_tools_requested', 0),
                 "tools_executed": nlp_results.get('total_tools_executed', 0),
                 "successful": nlp_results.get('successful', 0),
                 "deduplicated": nlp_results.get('deduplicated', 0)
-            }
+            },
+            is_structured=True
         )
         
         self._emit_event("agent_step_complete", {
@@ -730,22 +773,7 @@ class ProductGapWorkflow(Workflow):
         
         logger.info("✓ Answer generation complete")
         
-        # Track step in database
-        self._track_step(
-            step_name="generate_final_answer",
-            step_type="answer_generation",
-            input_data={
-                "context_length": len(context),
-                "format_type": format_type
-            },
-            output_data={
-                "answer_length": len(answer)
-            }
-        )
-        
-        # Note: Assistant message creation is handled by chat API endpoint
-        # after the workflow completes
-        
+        # Emit completion event for streaming
         self._emit_event("agent_step_complete", {
             "step_id": step_id,
             "agent_name": "Answer Generator",
@@ -754,13 +782,38 @@ class ProductGapWorkflow(Workflow):
             "step_order": 5
         })
         
+        # Save to database immediately
+        await self._track_step_in_db(
+            agent_name="Answer Generator",
+            step_order=5,
+            content={"answer_length": len(answer)},
+            is_structured=True
+        )
+        
+        # Update assistant message with final answer
+        if self.assistant_message_id:
+            try:
+                from app.database.session import get_async_session
+                from app.database.repositories.chat_message import ChatMessageRepository
+                
+                async with get_async_session() as db:
+                    assistant_msg = await ChatMessageRepository.get_by_id(db, self.assistant_message_id)
+                    if assistant_msg:
+                        assistant_msg.content = answer
+                        assistant_msg.completed_at = datetime.utcnow()  # Set completion timestamp
+                        await db.commit()
+                        logger.info(f"[WORKFLOW] Updated assistant message {self.assistant_message_id} with final answer and completed_at")
+            except Exception as e:
+                logger.error(f"[WORKFLOW] Failed to update assistant message: {e}", exc_info=True)
+        
         # Create ChatResponse for complete event
         from app.models.chat import ChatResponse as ChatResponseModel
         chat_response_obj = ChatResponseModel(
             message=answer,
             session_id=self.session_id if self.session_id else "default",
-            message_id=str(uuid.uuid4()),
+            message_id=str(self.assistant_message_id) if self.assistant_message_id else str(uuid.uuid4()),
             timestamp=datetime.utcnow(),
+            completed_at=datetime.utcnow(),  # Include completion timestamp
             metadata={
                 "workflow": "llamaindex_optimal",
                 "user_id": self.user_id

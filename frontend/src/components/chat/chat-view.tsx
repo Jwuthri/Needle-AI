@@ -72,7 +72,15 @@ function StreamingMarkdown({ content }: { content: string }) {
       currentTable = []
     }
 
-    // Headers
+    // Horizontal rule (----, ****, ____)
+    if (/^(\-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
+      elements.push(
+        <hr key={lineIndex++} className="border-t border-gray-700/50 my-4" />
+      )
+      continue
+    }
+
+    // Headers (both # style and underline style)
     if (trimmed.startsWith('#')) {
       const match = trimmed.match(/^(#{1,6})\s+(.+)/)
       if (match) {
@@ -89,15 +97,36 @@ function StreamingMarkdown({ content }: { content: string }) {
       }
     }
 
+    // Underline-style headers (check if next line is === or ---)
+    if (i < lines.length - 1) {
+      const nextLine = lines[i + 1].trim()
+      if (trimmed && (/^={3,}$/.test(nextLine) || /^-{3,}$/.test(nextLine))) {
+        const isH1 = /^={3,}$/.test(nextLine)
+        const className = isH1 ? 'text-2xl' : 'text-xl'
+        elements.push(
+          <h3 key={lineIndex++} className={`${className} font-semibold text-white mb-2 mt-2 flex items-center`}>
+            <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full mr-2"></span>
+            {trimmed}
+          </h3>
+        )
+        i++ // Skip the next line (the underline)
+        continue
+      }
+    }
+
     // Bullet points
     if (trimmed.startsWith('-') || trimmed.startsWith('•') || trimmed.startsWith('*')) {
-      elements.push(
-        <div key={lineIndex++} className="flex items-start mb-2">
-          <span className="text-emerald-400 mr-2">•</span>
-          <span className="text-white/80">{trimmed.replace(/^[-•*]\s*/, '')}</span>
-        </div>
-      )
-      continue
+      // Check if it's a bullet (has text after) or just a horizontal rule handled above
+      const bulletMatch = trimmed.match(/^[-•*]\s+(.+)/)
+      if (bulletMatch) {
+        elements.push(
+          <div key={lineIndex++} className="flex items-start mb-2">
+            <span className="text-emerald-400 mr-2">•</span>
+            <span className="text-white/80">{bulletMatch[1]}</span>
+          </div>
+        )
+        continue
+      }
     }
 
     // Regular text
@@ -124,7 +153,8 @@ function StreamingMarkdown({ content }: { content: string }) {
 // Helper function to format structured agent output - generic display of all fields
 function formatAgentContent(content: any): JSX.Element | string {
   if (typeof content === 'string') {
-    return content.slice(0, 200) + (content.length > 200 ? '...' : '')
+    // No truncation - show full content
+    return content
   }
 
   // Generic rendering of all fields in the structured output
@@ -149,18 +179,15 @@ function formatAgentContent(content: any): JSX.Element | string {
           } else if (typeof value === 'boolean') {
             displayValue = value ? 'true' : 'false'
           } else if (typeof value === 'object') {
-            // Handle arrays and nested objects
+            // Handle arrays and nested objects - show full content
             displayValue = Array.isArray(value) 
               ? `[${value.length} items]`
-              : JSON.stringify(value, null, 2).slice(0, 100) + '...'
+              : JSON.stringify(value, null, 2)
           } else {
             displayValue = String(value)
           }
 
-          // Truncate long values
-          if (displayValue.length > 150) {
-            displayValue = displayValue.slice(0, 150) + '...'
-          }
+          // No truncation - show full content
 
           return (
             <div key={key} className="flex flex-col">
@@ -418,8 +445,19 @@ export function ChatView({ companyId, sessionId, onSessionIdChange, onCompanyCha
                 return (
                 <div key={message.id} className="space-y-3">
                   {/* Show execution steps above assistant messages */}
-                  {message.role === 'assistant' && message.agent_steps && message.agent_steps.length > 0 && (
-                    <div className="bg-gray-900/50 border border-purple-500/30 rounded-xl overflow-hidden">
+                  {message.role === 'assistant' && message.agent_steps && message.agent_steps.length > 0 && (() => {
+                    // Calculate execution time from completed_at and created_at (timestamp)
+                    let executionTimeSec = "0.00"
+                    
+                    if (message.completed_at && message.timestamp) {
+                      const completedMs = new Date(message.completed_at).getTime()
+                      const createdMs = new Date(message.timestamp).getTime()
+                      const executionTimeMs = completedMs - createdMs
+                      executionTimeSec = (executionTimeMs / 1000).toFixed(2)
+                    }
+                    
+                    return (
+                    <div className="bg-gradient-to-br from-purple-900/30 via-gray-900/50 to-blue-900/30 border border-purple-500/40 rounded-xl overflow-hidden shadow-lg shadow-purple-500/10">
                       <button
                         onClick={() => {
                           setExpandedSteps(prev => {
@@ -432,50 +470,77 @@ export function ChatView({ companyId, sessionId, onSessionIdChange, onCompanyCha
                             return next
                           })
                         }}
-                        className="w-full bg-purple-500/10 px-4 py-3 border-b border-purple-500/20 hover:bg-purple-500/20 transition-colors"
+                        className="w-full bg-gradient-to-r from-purple-500/10 via-purple-500/5 to-blue-500/10 px-5 py-4 border-b border-purple-500/20 hover:from-purple-500/20 hover:to-blue-500/20 transition-all duration-300"
                       >
                         <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-2">
-                            <div className="w-6 h-6 rounded-lg bg-purple-500/20 flex items-center justify-center border border-purple-500/30">
-                              <span className="text-xs font-bold text-purple-400">{message.agent_steps.length}</span>
+                          <div className="flex items-center space-x-3">
+                            <div className="relative">
+                              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500/30 to-blue-500/30 flex items-center justify-center border border-purple-400/40 shadow-lg shadow-purple-500/20">
+                                <span className="text-sm font-bold text-purple-300">{message.agent_steps.length}</span>
+                              </div>
+                              <div className="absolute -inset-1 bg-gradient-to-r from-purple-500 to-blue-500 rounded-lg opacity-20 blur"></div>
                             </div>
-                            <span className="text-white font-medium">Execution Steps</span>
+                            <div className="text-left">
+                              <div className="flex items-center space-x-2">
+                                <span className="text-white font-semibold">Execution Pipeline</span>
+                                <Zap className="w-4 h-4 text-yellow-400" />
+                              </div>
+                            </div>
                           </div>
-                          {expandedSteps.has(message.id) ? (
-                            <ChevronUp className="w-5 h-5 text-white/60" />
-                          ) : (
-                            <ChevronDown className="w-5 h-5 text-white/60" />
-                          )}
+                          <div className="flex items-center space-x-2">
+                            <span className="text-xs text-purple-300/70 font-mono">{message.agent_steps.length} steps</span>
+                            {expandedSteps.has(message.id) ? (
+                              <ChevronUp className="w-5 h-5 text-white/60" />
+                            ) : (
+                              <ChevronDown className="w-5 h-5 text-white/60" />
+                            )}
+                          </div>
                         </div>
                       </button>
                       
                       {expandedSteps.has(message.id) && (
-                        <div className="p-4 space-y-3">
-                          {message.agent_steps.map((step, index) => (
+                        <div className="p-5 space-y-3 relative">
+                          {/* Timeline connector line */}
+                          <div className="absolute left-9 top-5 bottom-5 w-0.5 bg-gradient-to-b from-purple-500/30 via-blue-500/30 to-emerald-500/30"></div>
+                          
+                          {message.agent_steps.map((step, index) => {
+                            const isLast = index === message.agent_steps.length - 1
+                            return (
                             <div
                               key={step.step_id}
-                              className="bg-gray-800/50 border border-gray-700/30 rounded-xl overflow-hidden"
+                              className="relative bg-gray-800/40 backdrop-blur-sm border border-gray-700/40 rounded-xl overflow-hidden hover:border-purple-500/30 transition-all duration-300"
                             >
+                              {/* Timeline dot */}
+                              <div className="absolute left-[-38px] top-5 w-3 h-3 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 ring-4 ring-gray-900/50 shadow-lg shadow-purple-500/50"></div>
+                              
                               {/* Step Header */}
-                              <div className="p-4 bg-gray-800/70">
+                              <div className="p-4 bg-gradient-to-r from-gray-800/60 to-gray-800/40">
                                 <div className="flex items-start justify-between">
                                   <div className="flex items-center space-x-3">
                                     {/* Step Number Badge */}
-                                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-purple-500/20 text-purple-400 flex items-center justify-center font-bold text-sm border border-purple-500/30">
+                                    <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-gradient-to-br from-purple-500/20 to-blue-500/20 text-purple-300 flex items-center justify-center font-bold text-sm border border-purple-500/40 shadow-md">
                                       {(step.step_order ?? index) + 1}
                                     </div>
                                     <div>
                                       <div className="flex items-center space-x-2">
-                                        <span className="text-white/90 text-sm font-semibold font-mono">{step.agent_name}</span>
+                                        <span className="text-white text-sm font-semibold font-mono bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">
+                                          {step.agent_name}
+                                        </span>
                                         {step.is_structured && (
-                                          <span className="text-xs bg-blue-500/10 text-blue-400 px-2 py-1 rounded border border-blue-500/30 flex items-center gap-1">
+                                          <span className="text-xs bg-gradient-to-r from-blue-500/20 to-cyan-500/20 text-blue-300 px-2 py-1 rounded-md border border-blue-500/40 flex items-center gap-1 shadow-sm">
                                             <BarChart3 className="w-3 h-3" />
-                                            Structured Output
+                                            Structured
+                                          </span>
+                                        )}
+                                        {isLast && (
+                                          <span className="text-xs bg-gradient-to-r from-emerald-500/20 to-green-500/20 text-emerald-300 px-2 py-1 rounded-md border border-emerald-500/40 flex items-center gap-1">
+                                            <CheckCircle className="w-3 h-3" />
+                                            Final
                                           </span>
                                         )}
                                       </div>
                                       {step.timestamp && (
-                                        <div className="text-xs text-white/40 mt-1">
+                                        <div className="text-xs text-white/40 mt-1.5 font-mono">
                                           {new Date(step.timestamp).toLocaleTimeString()}
                                         </div>
                                       )}
@@ -488,7 +553,7 @@ export function ChatView({ companyId, sessionId, onSessionIdChange, onCompanyCha
                                         step.is_structured ? JSON.stringify(step.content, null, 2) : step.content
                                       )
                                     }}
-                                    className="p-2 text-white/40 hover:text-white transition-colors rounded-lg hover:bg-white/5"
+                                    className="p-2 text-white/40 hover:text-white transition-colors rounded-lg hover:bg-white/10"
                                     title="Copy to clipboard"
                                   >
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -499,11 +564,11 @@ export function ChatView({ companyId, sessionId, onSessionIdChange, onCompanyCha
                               </div>
 
                               {/* Step Content */}
-                              <div className="p-4 bg-gray-900/30">
+                              <div className="p-4 bg-gray-900/40 max-h-[400px] overflow-y-auto scrollbar-thin scrollbar-thumb-purple-500/30 scrollbar-track-gray-800/50">
                                 {step.is_structured ? (
-                                  <pre className="text-xs text-white/70 bg-gray-950/50 p-4 rounded-lg overflow-x-auto border border-gray-700/30 font-mono">
-                                    {JSON.stringify(step.content, null, 2)}
-                                  </pre>
+                                  <div className="text-xs text-white/70">
+                                    {formatAgentContent(step.content)}
+                                  </div>
                                 ) : (
                                   <div className="text-sm text-white/80 whitespace-pre-wrap leading-relaxed">
                                     {step.content}
@@ -511,11 +576,12 @@ export function ChatView({ companyId, sessionId, onSessionIdChange, onCompanyCha
                                 )}
                               </div>
                             </div>
-                          ))}
+                          )})}
                         </div>
                       )}
                     </div>
-                  )}
+                    )
+                  })()}
                   
                   {/* Message */}
                   <EnhancedMessage 

@@ -56,6 +56,7 @@ class WorkflowOrchestratorService:
         self,
         request: ChatRequest,
         user_id: Optional[str] = None,
+        assistant_message_id: Optional[int] = None,
         db: Optional[Any] = None
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
@@ -74,6 +75,7 @@ class WorkflowOrchestratorService:
         Args:
             request: Chat request
             user_id: User ID
+            assistant_message_id: ID of assistant message for saving steps
             db: Database session (not used by workflow, kept for interface compatibility)
             
         Yields:
@@ -91,58 +93,19 @@ class WorkflowOrchestratorService:
                 "data": {}
             }
             
-            logger.info(f"Starting workflow execution for session {session_id}")
+            logger.info(f"Starting workflow execution for session {session_id}, assistant_message_id={assistant_message_id}")
             
-            # Track all agent steps for database storage
-            completed_steps = []
-            current_step = None
-            
-            # Execute workflow with streaming
+            # Execute workflow with streaming - workflow now handles DB storage directly
             async for event in run_workflow_streaming(
                 query=request.message,
                 user_id=user_id,
-                session_id=session_id
+                session_id=session_id,
+                assistant_message_id=assistant_message_id
             ):
-                event_type = event.get("type")
-                
-                # Track agent steps for database storage
-                if event_type == "agent_step_start":
-                    current_step = {
-                        "agent_name": event.get("agent_name"),
-                        "step_order": event.get("step_order", 0),
-                        "content_buffer": [],
-                        "is_structured": False
-                    }
-                
-                elif event_type == "agent_step_content" and current_step:
-                    # Buffer content for this step
-                    current_step["content_buffer"].append(event.get("content_chunk", ""))
-                
-                elif event_type == "agent_step_complete":
-                    # Finalize step and add to completed steps
-                    if current_step:
-                        current_step["content"] = event.get("content")
-                        current_step["is_structured"] = event.get("is_structured", False)
-                        completed_steps.append({
-                            "agent_name": current_step["agent_name"],
-                            "step_order": current_step["step_order"],
-                            "content": current_step["content"],
-                            "is_structured": current_step["is_structured"]
-                        })
-                        current_step = None
-                
-                elif event_type == "complete":
-                    # Add completed steps to metadata for chat API to save
-                    event_data = event.get("data", event)
-                    if isinstance(event_data, dict):
-                        if "metadata" not in event_data:
-                            event_data["metadata"] = {}
-                        event_data["metadata"]["completed_steps"] = completed_steps
-                
                 # Yield the event to the chat API
                 yield event
             
-            logger.info(f"Workflow execution completed for session {session_id} with {len(completed_steps)} steps")
+            logger.info(f"Workflow execution completed for session {session_id}")
             
         except Exception as e:
             logger.error(f"Error in workflow execution: {e}", exc_info=True)

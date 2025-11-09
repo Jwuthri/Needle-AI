@@ -45,11 +45,17 @@ async def run_workflow(query: str, user_id: str = None, session_id: str = None, 
     return result
 
 
-async def run_workflow_streaming(query: str, user_id: str = None, session_id: str = None):
+async def run_workflow_streaming(query: str, user_id: str = None, session_id: str = None, assistant_message_id: int = None):
     """
     Execute the workflow with streaming support using async generator.
     
     Yields step progress events and final answer chunks.
+    
+    Args:
+        query: User query
+        user_id: User ID
+        session_id: Session ID
+        assistant_message_id: ID of assistant message for saving steps to DB
     """
     import asyncio
     
@@ -77,6 +83,7 @@ async def run_workflow_streaming(query: str, user_id: str = None, session_id: st
             workflow = ProductGapWorkflow(
                 user_id=user_id,
                 session_id=session_id,
+                assistant_message_id=assistant_message_id,
                 stream_callback=stream_callback,
                 timeout=900,
                 verbose=True

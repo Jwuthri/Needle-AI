@@ -39,6 +39,7 @@ class ChatMessage(Base):
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    completed_at = Column(DateTime, nullable=True)  # When assistant finished generating response
 
     # Additional metadata
     extra_metadata = Column(JSON, default={})  # Context, parameters, etc.
@@ -58,6 +59,8 @@ class ChatMessage(Base):
         Index('ix_chat_message_session_created', 'session_id', 'created_at'),
         # Foreign key index
         Index('ix_chat_message_session_id', 'session_id'),
+        # Index for analytics on completion times
+        Index('ix_chat_message_completed_at', 'completed_at'),
     )
 
     def __repr__(self):

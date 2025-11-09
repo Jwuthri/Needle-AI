@@ -22,6 +22,7 @@ class ChatMessage(BaseModel):
     content: str = Field(..., description="The message content")
     role: MessageRole = Field(..., description="The role of the message sender")
     timestamp: datetime = Field(default_factory=datetime.now, description="When the message was created")
+    completed_at: Optional[datetime] = Field(default=None, description="When the assistant finished generating the response")
     metadata: Optional[dict] = Field(default=None, description="Additional message metadata")
 
 
@@ -49,6 +50,7 @@ class ChatResponse(BaseModel):
     session_id: str = Field(..., description="Session identifier")
     message_id: str = Field(..., description="Unique identifier for this response message")
     timestamp: datetime = Field(default_factory=datetime.now, description="When the response was generated")
+    completed_at: Optional[datetime] = Field(default=None, description="When the response was completed")
     output_format: Optional[str] = Field(default="text", description="Output format (text, visualization, cited_summary)")
     visualization: Optional[dict] = Field(default=None, description="Visualization configuration if applicable")
     sources: Optional[List[dict]] = Field(default=None, description="Source citations")

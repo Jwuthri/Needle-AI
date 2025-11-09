@@ -185,33 +185,66 @@ const formatAssistantContent = (content: string) => {
       flushTable()
     }
     
-    // Detect bullet points (markdown or unicode) - CHECK THIS FIRST before headers
-    if (trimmedLine.startsWith('-') || trimmedLine.startsWith('•') || trimmedLine.startsWith('*')) {
+    // Detect horizontal rules (----, ****, ____) - CHECK BEFORE bullets
+    if (/^(\-{3,}|\*{3,}|_{3,})$/.test(trimmedLine)) {
       flushSection()
-      
-      // Calculate indentation level (spaces before the bullet)
-      const leadingSpaces = line.search(/\S/)
-      const indentLevel = Math.floor(leadingSpaces / 2) // 2 spaces = 1 indent level
-      const marginLeft = indentLevel > 0 ? `${indentLevel * 1.5}rem` : '0'
-      
-      // Remove bullet marker - handle different cases
-      let content = trimmedLine
-      if (content.startsWith('- ')) content = content.substring(2)
-      else if (content.startsWith('* ')) content = content.substring(2)
-      else if (content.startsWith('• ')) content = content.substring(2)
-      else if (content.startsWith('-')) content = content.substring(1)
-      else if (content.startsWith('*')) content = content.substring(1)
-      else if (content.startsWith('•')) content = content.substring(1)
-      
-      // If content ends with :, remove it (it's a bullet header, not a real header)
-      if (content.endsWith(':')) content = content.slice(0, -1)
-      
       sections.push(
-        <div key={`bullet-${idx}`} className="flex items-start mb-2" style={{ marginLeft }}>
-          <span className="text-emerald-400 mr-2 flex-shrink-0">•</span>
-          <span className="text-white/80 flex-1">{parseInlineMarkdown(content)}</span>
-        </div>
+        <hr key={`hr-${idx}`} className="border-t border-gray-700/50 my-4" />
       )
+      return
+    }
+    
+    // Detect underline-style headers (check if next line is === or ---)
+    if (idx < lines.length - 1) {
+      const nextLine = lines[idx + 1].trim()
+      if (trimmedLine && (/^={3,}$/.test(nextLine) || /^-{3,}$/.test(nextLine))) {
+        flushSection()
+        const isH1 = /^={3,}$/.test(nextLine)
+        if (isH1) {
+          sections.push(
+            <h1 key={`header-${idx}`} className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400 mb-4 mt-6 pb-2 border-b border-emerald-500/30">
+              {parseInlineMarkdown(trimmedLine)}
+            </h1>
+          )
+        } else {
+          sections.push(
+            <h2 key={`header-${idx}`} className="text-xl font-bold text-white mb-3 mt-5 pl-3 border-l-4 border-emerald-400">
+              {parseInlineMarkdown(trimmedLine)}
+            </h2>
+          )
+        }
+        // Skip the next line (the underline) by marking it processed
+        lines[idx + 1] = '' // Clear it so it doesn't get processed
+        return
+      }
+    }
+    
+    // Detect bullet points (markdown or unicode) - CHECK THIS AFTER horizontal rules
+    if (trimmedLine.startsWith('-') || trimmedLine.startsWith('•') || trimmedLine.startsWith('*')) {
+      // Make sure it's actually a bullet with content, not a horizontal rule
+      const bulletMatch = trimmedLine.match(/^[-•*]\s+(.+)/)
+      if (bulletMatch) {
+        flushSection()
+        
+        // Calculate indentation level (spaces before the bullet)
+        const leadingSpaces = line.search(/\S/)
+        const indentLevel = Math.floor(leadingSpaces / 2) // 2 spaces = 1 indent level
+        const marginLeft = indentLevel > 0 ? `${indentLevel * 1.5}rem` : '0'
+        
+        // Get content after the bullet
+        let content = bulletMatch[1]
+        
+        // If content ends with :, remove it (it's a bullet header, not a real header)
+        if (content.endsWith(':')) content = content.slice(0, -1)
+        
+        sections.push(
+          <div key={`bullet-${idx}`} className="flex items-start mb-2" style={{ marginLeft }}>
+            <span className="text-emerald-400 mr-2 flex-shrink-0">•</span>
+            <span className="text-white/80 flex-1">{parseInlineMarkdown(content)}</span>
+          </div>
+        )
+        return
+      }
     }
     // Detect markdown headers (##, ###, etc.)
     else if (trimmedLine.startsWith('#')) {
@@ -473,19 +506,46 @@ export function EnhancedMessage({ message, onQuestionClick }: EnhancedMessagePro
 
           {/* Message Actions */}
           {!message.error && (
-            <div className="flex items-center space-x-2 mt-4">
-              <button className="p-2 text-white/40 hover:text-green-400 hover:bg-green-400/10 rounded-lg transition-all">
-                <ThumbsUp className="w-4 h-4" />
-              </button>
-              <button className="p-2 text-white/40 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all">
-                <ThumbsDown className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => navigator.clipboard.writeText(message.content)}
-                className="p-2 text-white/40 hover:text-white hover:bg-white/5 rounded-lg transition-all"
-              >
-                <Copy className="w-4 h-4" />
-              </button>
+            <div className="flex items-center justify-between mt-4">
+              <div className="flex items-center space-x-2">
+                <button className="p-2 text-white/40 hover:text-green-400 hover:bg-green-400/10 rounded-lg transition-all">
+                  <ThumbsUp className="w-4 h-4" />
+                </button>
+                <button className="p-2 text-white/40 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all">
+                  <ThumbsDown className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => navigator.clipboard.writeText(message.content)}
+                  className="p-2 text-white/40 hover:text-white hover:bg-white/5 rounded-lg transition-all"
+                >
+                  <Copy className="w-4 h-4" />
+                </button>
+              </div>
+              
+              {/* Execution Time */}
+              {(() => {
+                console.log('Message timing data:', {
+                  id: message.id,
+                  timestamp: message.timestamp,
+                  completed_at: message.completed_at,
+                  role: message.role
+                })
+                
+                if (message.completed_at && message.timestamp) {
+                  const completedMs = new Date(message.completed_at).getTime()
+                  const createdMs = new Date(message.timestamp).getTime()
+                  const executionTimeMs = completedMs - createdMs
+                  const executionTimeSec = (executionTimeMs / 1000).toFixed(2)
+                  
+                  return (
+                    <div className="flex items-center space-x-1">
+                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-400"></div>
+                      <span className="text-xs text-emerald-400/80 font-medium">Finished in {executionTimeSec}s</span>
+                    </div>
+                  )
+                }
+                return null
+              })()}
             </div>
           )}
         </div>
