@@ -93,14 +93,42 @@ class WorkflowOrchestratorService:
                 "data": {}
             }
             
+            # Retrieve conversation history for context-aware routing
+            conversation_history = []
+            if session_id and db:
+                try:
+                    from app.database.repositories.chat_message import ChatMessageRepository
+                    
+                    # Get last 10 messages for context (5 exchanges)
+                    messages = await ChatMessageRepository.get_by_session(
+                        db=db,
+                        session_id=session_id,
+                        limit=10
+                    )
+                    
+                    # Convert to simple format for the workflow
+                    conversation_history = [
+                        {
+                            "role": msg.role.value,
+                            "content": msg.content
+                        }
+                        for msg in messages
+                    ]
+                    
+                    logger.debug(f"Retrieved {len(conversation_history)} messages for context")
+                except Exception as e:
+                    logger.warning(f"Could not retrieve conversation history: {e}")
+                    conversation_history = []
+            
             logger.info(f"Starting workflow execution for session {session_id}, assistant_message_id={assistant_message_id}")
             
-            # Execute workflow with streaming - workflow now handles DB storage directly
+            # Execute workflow with streaming and conversation history
             async for event in run_workflow_streaming(
                 query=request.message,
                 user_id=user_id,
                 session_id=session_id,
-                assistant_message_id=assistant_message_id
+                assistant_message_id=assistant_message_id,
+                conversation_history=conversation_history
             ):
                 # Yield the event to the chat API
                 yield event
@@ -140,13 +168,39 @@ class WorkflowOrchestratorService:
         try:
             session_id = request.session_id or str(uuid.uuid4())
             
+            # Retrieve conversation history for context-aware routing
+            conversation_history = []
+            if session_id and db:
+                try:
+                    from app.database.repositories.chat_message import ChatMessageRepository
+                    
+                    # Get last 10 messages for context (5 exchanges)
+                    messages = await ChatMessageRepository.get_by_session(
+                        db=db,
+                        session_id=session_id,
+                        limit=10
+                    )
+                    
+                    # Convert to simple format for the workflow
+                    conversation_history = [
+                        {
+                            "role": msg.role.value,
+                            "content": msg.content
+                        }
+                        for msg in messages
+                    ]
+                except Exception as e:
+                    logger.warning(f"Could not retrieve conversation history: {e}")
+                    conversation_history = []
+            
             logger.info(f"Starting non-streaming workflow execution for session {session_id}")
             
-            # Execute workflow without streaming
+            # Execute workflow without streaming but with conversation history
             result = await run_workflow(
                 query=request.message,
                 user_id=user_id,
-                session_id=session_id
+                session_id=session_id,
+                conversation_history=conversation_history
             )
             
             # Create response

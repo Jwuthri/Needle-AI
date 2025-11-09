@@ -127,11 +127,12 @@ async def send_message_stream(
                     raise
                 
                 # Process stream - workflow handles ALL database operations (steps + final answer)
+                # Pass db session for retrieving conversation history
                 async for update in orchestrator.process_message_stream(
                     request=request,
                     user_id=user_id,
                     assistant_message_id=assistant_message_id,
-                    db=None
+                    db=db
                 ):
                     update_count += 1
                     
@@ -574,6 +575,7 @@ async def get_session(
                 content=msg.content,
                 role=MessageRole(msg.role.value),
                 timestamp=msg.created_at if msg.created_at else datetime.utcnow(),
+                completed_at=msg.completed_at,  # ADD THIS LINE
                 metadata=metadata
             ))
         

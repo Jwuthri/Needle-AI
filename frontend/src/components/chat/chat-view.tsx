@@ -259,6 +259,7 @@ export function ChatView({ companyId, sessionId, onSessionIdChange, onCompanyCha
         content: response.message,
         role: 'assistant',
         timestamp: response.timestamp,
+        completed_at: response.completed_at,  // ADD THIS LINE
         metadata: response.metadata,
         agent_steps: formattedSteps,
         visualization: response.visualization,
@@ -341,6 +342,7 @@ export function ChatView({ companyId, sessionId, onSessionIdChange, onCompanyCha
           content: msg.content,
           role: msg.role as 'user' | 'assistant' | 'system',
           timestamp: msg.timestamp,
+          completed_at: msg.completed_at,  // ADD THIS LINE
           metadata: msg.metadata,
           agent_steps: msg.metadata?.agent_steps || [],
         }))
