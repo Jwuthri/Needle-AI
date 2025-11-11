@@ -110,6 +110,9 @@ dependencies = [
     # Web search and NLP for orchestrator
     "duckduckgo-search>=6.0.0", # Free web search
     "scikit-learn>=1.5.0", # For TF-IDF and analytics
+    # Visualization
+    "plotly>=5.18.0", # For graph generation
+    "kaleido>=0.2.1", # For PNG export from plotly
 ]
 
 [project.optional-dependencies]

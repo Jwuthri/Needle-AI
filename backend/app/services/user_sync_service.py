@@ -118,6 +118,19 @@ class UserSyncService:
                 await db.commit()
             
             logger.info(f"Successfully created user {new_user.id}")
+            
+            # Create user reviews table
+            try:
+                from app.services.user_reviews_service import UserReviewsService
+                reviews_service = UserReviewsService(db)
+                await reviews_service.ensure_user_reviews_table(new_user.id)
+                if commit:
+                    await db.commit()
+                logger.info(f"Created reviews table for user {new_user.id}")
+            except Exception as e:
+                logger.warning(f"Failed to create reviews table for user {new_user.id}: {e}")
+                # Don't fail user creation if reviews table creation fails
+            
             return new_user
 
     @staticmethod
