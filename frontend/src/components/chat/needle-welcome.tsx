@@ -2,17 +2,25 @@
 
 import { useEffect, useRef } from 'react'
 import { motion, useMotionValue, useSpring } from 'framer-motion'
+import { Target, MessageCircle, Trophy, Sparkles } from 'lucide-react'
 
 interface NeedleWelcomeProps {
   onPromptSelect: (prompt: string) => void
   companySelected: boolean
 }
 
+const iconComponents = {
+  Target,
+  MessageCircle,
+  Trophy,
+  Sparkles,
+}
+
 const prompts = [
-  { icon: '🎯', title: 'Product Gaps', prompt: 'What are the main product gaps mentioned in reviews?' },
-  { icon: '💭', title: 'Sentiment', prompt: 'What is the overall sentiment of our reviews?' },
-  { icon: '🏆', title: 'Competitors', prompt: 'Which competitors are mentioned most often?' },
-  { icon: '✨', title: 'Features', prompt: 'What features are customers requesting?' },
+  { icon: 'Target', title: 'Product Gaps', prompt: 'What are the main product gaps mentioned in reviews?' },
+  { icon: 'MessageCircle', title: 'Sentiment', prompt: 'What is the overall sentiment of our reviews?' },
+  { icon: 'Trophy', title: 'Competitors', prompt: 'Which competitors are mentioned most often?' },
+  { icon: 'Sparkles', title: 'Features', prompt: 'What features are customers requesting?' },
 ]
 
 export function NeedleWelcome({ onPromptSelect, companySelected }: NeedleWelcomeProps) {
@@ -170,18 +178,14 @@ export function NeedleWelcome({ onPromptSelect, companySelected }: NeedleWelcome
         transition={{ delay: 0.5, duration: 0.8 }}
         style={styles.titleContainer}
       >
-        <h2 style={styles.title}>
-          {companySelected ? 'Ask Needle' : 'Select a Company'}
-        </h2>
+        <h2 style={styles.title}>Ask Needle</h2>
         <p style={styles.subtitle}>
-          {companySelected
-            ? 'Precision insights from your customer data'
-            : 'Choose a company from the dropdown to begin'}
+          Precision insights from your customer data
         </p>
       </motion.div>
 
       {/* Prompt Cards */}
-      {companySelected && (
+      {(
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -208,7 +212,12 @@ export function NeedleWelcome({ onPromptSelect, companySelected }: NeedleWelcome
               onClick={() => onPromptSelect(item.prompt)}
               style={styles.promptCard}
             >
-              <div style={styles.promptIcon}>{item.icon}</div>
+              <div style={styles.promptIcon}>
+                {(() => {
+                  const IconComponent = iconComponents[item.icon as keyof typeof iconComponents]
+                  return <IconComponent className="w-7 h-7 text-emerald-400" />
+                })()}
+              </div>
               <div style={styles.promptTitle}>{item.title}</div>
               <div style={styles.promptText}>{item.prompt}</div>
             </motion.button>
@@ -227,8 +236,9 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: '500px',
-    padding: '48px 24px',
+    padding: '24px 16px',
     overflow: 'hidden',
+    width: '100%',
   },
   circlesContainer: {
     position: 'absolute' as const,
@@ -250,8 +260,8 @@ const styles = {
     top: '50%',
     left: '50%',
     transform: 'translate(-50%, -50%)',
-    width: '400px',
-    height: '400px',
+    width: 'min(400px, 80vw)',
+    height: 'min(400px, 80vw)',
     pointerEvents: 'none' as const,
   },
   scanLine: {
@@ -267,20 +277,20 @@ const styles = {
   needleContainer: {
     position: 'relative' as const,
     zIndex: 10,
-    marginBottom: '80px',
+    marginBottom: 'clamp(40px, 10vw, 80px)',
   },
   needleOuter: {
     position: 'relative' as const,
-    width: '120px',
-    height: '120px',
+    width: 'min(120px, 25vw)',
+    height: 'min(120px, 25vw)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
   },
   outerRing: {
     position: 'absolute' as const,
-    width: '110px',
-    height: '110px',
+    width: 'min(110px, 23vw)',
+    height: 'min(110px, 23vw)',
     borderRadius: '50%',
     border: '2px solid rgba(16, 185, 129, 0.3)',
   },
@@ -323,30 +333,33 @@ const styles = {
   },
   titleContainer: {
     textAlign: 'center' as const,
-    marginBottom: '48px',
+    marginBottom: 'clamp(24px, 6vw, 48px)',
     position: 'relative' as const,
     zIndex: 10,
+    width: '100%',
   },
   title: {
-    fontSize: '32px',
+    fontSize: 'clamp(24px, 5vw, 32px)',
     fontWeight: 'bold' as const,
     color: 'white',
     marginBottom: '12px',
     letterSpacing: '-0.5px',
   },
   subtitle: {
-    fontSize: '16px',
+    fontSize: 'clamp(14px, 3vw, 16px)',
     color: 'rgba(255, 255, 255, 0.6)',
     maxWidth: '500px',
     margin: '0 auto',
     lineHeight: '1.6',
+    padding: '0 16px',
   },
   promptsGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))',
     gap: '16px',
-    maxWidth: '900px',
+    maxWidth: '1200px',
     width: '100%',
+    padding: '0 16px',
     position: 'relative' as const,
     zIndex: 10,
   },
@@ -364,8 +377,10 @@ const styles = {
     backdropFilter: 'blur(10px)',
   },
   promptIcon: {
-    fontSize: '28px',
     marginBottom: '12px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
   },
   promptTitle: {
     fontSize: '16px',

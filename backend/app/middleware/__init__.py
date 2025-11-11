@@ -178,13 +178,18 @@ class InputSanitizationMiddleware(BaseHTTPMiddleware):
 
     # Endpoints that require strict prompt injection checking
     CHAT_ENDPOINTS = ["/api/v1/chat/", "/api/v1/completions/"]
+    
+    # Streaming endpoints that should skip body sanitization
+    STREAMING_ENDPOINTS = ["/api/v1/chat/stream"]
 
     # Maximum request body size (10MB)
     MAX_BODY_SIZE = 10 * 1024 * 1024
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        # Skip for GET requests and certain endpoints
-        if request.method == "GET" or request.url.path in ["/health", "/docs", "/redoc", "/openapi.json"]:
+        # Skip for GET requests, certain endpoints, and streaming endpoints
+        if (request.method == "GET" or 
+            request.url.path in ["/health", "/docs", "/redoc", "/openapi.json"] or
+            request.url.path in self.STREAMING_ENDPOINTS):
             return await call_next(request)
 
         try:

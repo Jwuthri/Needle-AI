@@ -1,0 +1,123 @@
+# LLM Call Logging Rule
+
+## Requirement
+
+**ALL LLM calls MUST be logged to the `llm_calls` table.**
+
+This is a mandatory requirement for:
+- Cost tracking and analysis
+- Debugging and troubleshooting
+- Performance monitoring
+- Audit trails
+- Compliance
+
+## Implementation
+
+### 1. Use the LLM Call Logger Utility
+
+Always use `app.utils.llm_call_logger` helpers when making LLM calls:
+
+```python
+from app.utils.llm_call_logger import log_llm_call, complete_llm_call, fail_llm_call
+from app.database.models.llm_call import LLMCallTypeEnum
+
+# Before LLM call
+log_id = await log_llm_call(
+    llm=llm,
+    messages=messages,
+    call_type=LLMCallTypeEnum.SYSTEM,  # or CHAT, RAG_QUERY, etc.
+    db=db,
+    user_id=user_id,  # if available
+    # ... other metadata
+)
+
+try:
+    # Make LLM call
+    response = await llm.achat(messages)
+    
+    # Log success
+    await complete_llm_call(log_id, response, db)
+except Exception as e:
+    # Log failure
+    await fail_llm_call(log_id, e, db)
+    raise
+```
+
+### 2. Call Types
+
+Use appropriate `LLMCallTypeEnum` values:
+- `CHAT` - User-facing chat messages
+- `RAG_QUERY` - RAG retrieval queries
+- `RAG_SYNTHESIS` - RAG answer synthesis
+- `SENTIMENT_ANALYSIS` - Sentiment analysis
+- `SUMMARIZATION` - Text summarization
+- `EMBEDDING` - Embedding generation
+- `CLASSIFICATION` - Text classification
+- `EXTRACTION` - Information extraction
+- `SYSTEM` - Internal/system calls (EDA generation, dataset naming, etc.)
+- `OTHER` - Other types
+
+### 3. Required Context
+
+Always include:
+- `user_id` - If the call is user-initiated
+- `session_id` - For chat sessions
+- `company_id` - If related to a company
+- `extra_metadata` - Additional context (table_name, purpose, etc.)
+
+### 4. Error Handling
+
+- Logging failures should NOT break the main flow
+- Use try/except around logging calls
+- Log warnings if logging fails, but continue execution
+
+### 5. Examples
+
+#### EDA Generation
+```python
+eda_response = await self.eda_generator.generate_table_eda(
+    table_name=table_name,
+    column_stats=column_stats,
+    row_count=row_count,
+    model=model_name,
+    db=self.db,  # Required for logging
+    user_id=user_id  # Required for logging
+)
+```
+
+#### Dataset Name Generation
+```python
+log_id = await log_llm_call(
+    llm=llm,
+    messages=messages,
+    call_type=LLMCallTypeEnum.SYSTEM,
+    db=self.db,
+    user_id=user_id,
+    extra_metadata={'filename': filename, 'purpose': 'dataset_name_generation'}
+)
+
+try:
+    response = await llm.achat(messages)
+    await complete_llm_call(log_id, response, self.db)
+except Exception as e:
+    await fail_llm_call(log_id, e, self.db)
+    raise
+```
+
+## Enforcement
+
+- Code reviews MUST check that all LLM calls are logged
+- New LLM call sites MUST include logging
+- Existing LLM calls MUST be updated to include logging
+- Tests MUST verify logging occurs
+
+## Files to Update
+
+When adding new LLM calls, ensure logging is added to:
+- `app/core/llm/eda_generator.py` ✅
+- `app/services/user_dataset_service.py` ✅
+- `app/optimal_workflow/agents/*.py` (TODO)
+- `app/optimal_workflow/workflow.py` (TODO)
+- `app/optimal_workflow/simple_workflow.py` (TODO)
+- `app/optimal_workflow/medium_workflow.py` (TODO)
+- Any other files making LLM calls

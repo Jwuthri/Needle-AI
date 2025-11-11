@@ -22,7 +22,7 @@ class Company(Base):
     description = Column(Text, nullable=True)
 
     # Ownership
-    created_by = Column(String, ForeignKey("users.id"), nullable=False)
+    created_by = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

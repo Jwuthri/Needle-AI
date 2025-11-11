@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Upload, Play, Clock, CheckCircle, XCircle } from 'lucide-react'
+import { Upload, Play, Clock, CheckCircle, XCircle, FolderOpen, Loader2, AlertCircle } from 'lucide-react'
 import { useAuth } from '@clerk/nextjs'
 import { createApiClient } from '@/lib/api'
 import { Company } from '@/types/company'
+import { CompanySelector } from '@/components/ui/company-selector'
 
 export default function DataSourcesPage() {
   const searchParams = useSearchParams()
@@ -15,10 +16,15 @@ export default function DataSourcesPage() {
   const [selectedCompany, setSelectedCompany] = useState<string | null>(
     searchParams.get('company_id')
   )
-  const [companies, setCompanies] = useState<Company[]>([])
   const [sources, setSources] = useState<any[]>([])
   const [jobs, setJobs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [uploadSuccess, setUploadSuccess] = useState<string | null>(null)
+  const [tableName, setTableName] = useState('')
+  const [dragActive, setDragActive] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (isLoaded && !isSignedIn) {
@@ -34,13 +40,11 @@ export default function DataSourcesPage() {
         const token = await getToken()
         const api = createApiClient(token)
         
-        const [companiesData, sourcesData, jobsData] = await Promise.all([
-          api.listCompanies(),
+        const [sourcesData, jobsData] = await Promise.all([
           api.listScrapingSources(),
           api.listScrapingJobs(selectedCompany || undefined),
         ])
 
-        setCompanies(companiesData.companies || [])
         setSources(sourcesData.sources || [])
         setJobs(jobsData.jobs || [])
       } catch (error) {
@@ -75,6 +79,81 @@ export default function DataSourcesPage() {
     }
   }
 
+  const handleFileSelect = async (file: File) => {
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      setUploadError('Only CSV files are supported')
+      setTimeout(() => setUploadError(null), 5000)
+      return
+    }
+
+    // Generate table name from filename if not provided
+    const nameToUse = tableName.trim() || file.name.replace(/\.csv$/i, '').replace(/[^a-zA-Z0-9_]/g, '_')
+
+    if (!nameToUse) {
+      setUploadError('Please enter a table name')
+      setTimeout(() => setUploadError(null), 5000)
+      return
+    }
+
+    setUploading(true)
+    setUploadError(null)
+    setUploadSuccess(null)
+
+    try {
+      const token = await getToken()
+      const api = createApiClient(token)
+      const response = await api.uploadUserDataset(file, nameToUse)
+
+      setUploadSuccess(`Successfully uploaded ${response.row_count} rows!`)
+      setTableName('')
+      
+      // Clear success message after 5 seconds
+      setTimeout(() => setUploadSuccess(null), 5000)
+      
+      // Optionally redirect to datasets page
+      setTimeout(() => {
+        router.push('/datasets')
+      }, 2000)
+    } catch (error: any) {
+      let errorMessage = error.message || 'Failed to upload CSV'
+      
+      if (error.status === 409 || (error.message && error.message.toLowerCase().includes('already exists'))) {
+        errorMessage = `A dataset with this name already exists. Please choose a different name.`
+      }
+      
+      setUploadError(errorMessage)
+      setTimeout(() => setUploadError(null), 8000)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (e.type === 'dragenter' || e.type === 'dragover') {
+      setDragActive(true)
+    } else if (e.type === 'dragleave') {
+      setDragActive(false)
+    }
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragActive(false)
+
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleFileSelect(e.dataTransfer.files[0])
+    }
+  }
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      handleFileSelect(e.target.files[0])
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-950 p-8">
       <div className="max-w-7xl mx-auto">
@@ -85,24 +164,19 @@ export default function DataSourcesPage() {
         </div>
 
         {/* Company Selector */}
-        <div className="mb-8">
-          <select
-            value={selectedCompany || ''}
-            onChange={(e) => setSelectedCompany(e.target.value || null)}
-            className="px-4 py-2 bg-gray-800/50 border border-gray-700 rounded-xl text-white focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
-          >
-            <option value="">Select a company...</option>
-            {companies.map((company) => (
-              <option key={company.id} value={company.id}>
-                {company.name}
-              </option>
-            ))}
-          </select>
+        <div className="mb-8 max-w-md">
+          <CompanySelector
+            value={selectedCompany}
+            onChange={setSelectedCompany}
+            placeholder="Select a company..."
+          />
         </div>
 
         {!selectedCompany ? (
           <div className="flex flex-col items-center justify-center py-20">
-            <div className="text-6xl mb-4">📁</div>
+            <div className="mb-4">
+              <FolderOpen className="w-16 h-16 text-emerald-400" />
+            </div>
             <h3 className="text-xl font-semibold text-white mb-2">Select a Company</h3>
             <p className="text-white/60 text-center max-w-md">
               Choose a company to start importing or scraping review data
@@ -155,16 +229,90 @@ export default function DataSourcesPage() {
             >
               <h2 className="text-xl font-bold text-white mb-6">Import Data</h2>
               
-              <div className="border-2 border-dashed border-gray-700 rounded-xl p-8 text-center hover:border-emerald-500/50 transition-colors cursor-pointer">
-                <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <div className="text-white font-medium mb-2">Upload CSV or JSON</div>
-                <div className="text-white/40 text-sm mb-4">
-                  Drag and drop or click to browse
-                </div>
-                <button className="px-6 py-2 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white rounded-xl transition-all duration-200 shadow-lg shadow-emerald-500/20 hover:shadow-xl hover:shadow-emerald-500/30">
-                  Browse Files
-                </button>
+              {/* Table Name Input */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-white/80 mb-2">
+                  Table Name (optional)
+                </label>
+                <input
+                  type="text"
+                  value={tableName}
+                  onChange={(e) => setTableName(e.target.value)}
+                  placeholder="e.g., products, sales (auto-generated from filename if empty)"
+                  className="w-full px-4 py-2 bg-gray-800/50 border border-gray-700/50 rounded-xl text-white placeholder-white/40 focus:outline-none focus:border-emerald-500/50 transition-colors"
+                  disabled={uploading}
+                />
               </div>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv"
+                onChange={handleFileInputChange}
+                className="hidden"
+                disabled={uploading}
+              />
+              
+              <div
+                onDragEnter={handleDrag}
+                onDragLeave={handleDrag}
+                onDragOver={handleDrag}
+                onDrop={handleDrop}
+                onClick={() => !uploading && fileInputRef.current?.click()}
+                className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer ${
+                  dragActive
+                    ? 'border-emerald-500 bg-emerald-500/10'
+                    : 'border-gray-700 hover:border-emerald-500/50'
+                } ${uploading ? 'cursor-not-allowed opacity-50' : ''}`}
+              >
+                {uploading ? (
+                  <>
+                    <Loader2 className="w-12 h-12 text-emerald-400 animate-spin mx-auto mb-4" />
+                    <div className="text-white font-medium">Uploading and processing...</div>
+                    <div className="text-white/40 text-sm mt-2">This may take a moment</div>
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                    <div className="text-white font-medium mb-2">Upload CSV File</div>
+                    <div className="text-white/40 text-sm mb-4">
+                      Drag and drop or click to browse
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        fileInputRef.current?.click()
+                      }}
+                      className="px-6 py-2 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white rounded-xl transition-all duration-200 shadow-lg shadow-emerald-500/20 hover:shadow-xl hover:shadow-emerald-500/30"
+                    >
+                      Browse Files
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {/* Error/Success Messages */}
+              {uploadError && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mt-4 p-4 bg-red-500/10 border border-red-500/30 rounded-xl flex items-center space-x-3"
+                >
+                  <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
+                  <div className="text-red-400 text-sm">{uploadError}</div>
+                </motion.div>
+              )}
+
+              {uploadSuccess && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mt-4 p-4 bg-green-500/10 border border-green-500/30 rounded-xl flex items-center space-x-3"
+                >
+                  <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0" />
+                  <div className="text-green-400 text-sm">{uploadSuccess}</div>
+                </motion.div>
+              )}
             </motion.div>
           </div>
         )}

@@ -1,217 +1,93 @@
 """
-Dependency injection for NeedleAi.
+FastAPI dependencies for dependency injection.
 """
 
-from typing import Type, TypeVar
+from functools import lru_cache
+from typing import Optional, Any
 
-from app.config import Settings, get_settings
-from app.core.container import DIContainer, ServiceLifetime, get_container
-from app.core.llm.factory import get_llm_client
-from app.core.memory.base import MemoryInterface
-from app.database.base import get_db
-from app.database.repositories import (
-    ApiKeyRepository,
-    ChatMessageRepository,
-    ChatSessionRepository,
-    TaskResultRepository,
-    UserRepository,
-)
+from app.services.workflow_orchestrator_service import WorkflowOrchestratorService
 from app.services.conversation_service import ConversationService
 from app.services.redis_client import RedisClient
-from fastapi import Depends, HTTPException, Request, status
-from sqlalchemy.orm import Session
-
-T = TypeVar("T")
+from app.core.container import get_container
+from app.core.config.settings import get_settings
 
 
-# Request-scoped dependency injection
-async def get_scoped_container(request: Request) -> DIContainer:
-    """Get request-scoped DI container."""
-    if not hasattr(request.state, "container_scope"):
-        container = get_container()
-        request.state.container_scope = container.scope()
-        request.state.scoped_container = await request.state.container_scope.__aenter__()
-
-    return request.state.scoped_container
+# Cache orchestrator instance
+_workflow_orchestrator_instance: Optional[WorkflowOrchestratorService] = None
 
 
-async def get_service(service_type: Type[T], container: DIContainer = Depends(get_scoped_container)) -> T:
-    """Generic service resolver."""
-    return await container.get_service(service_type)
+@lru_cache()
+def get_settings_cached():
+    """Get cached settings instance."""
+    return get_settings()
 
 
-# Service-specific dependency functions
-async def get_redis_client(container: DIContainer = Depends(get_scoped_container)) -> RedisClient:
-    """Get Redis client instance."""
-    return await container.get_service(RedisClient)
+async def get_orchestrator_service() -> WorkflowOrchestratorService:
+    """
+    Get or create the workflow orchestrator service instance.
+    
+    Returns:
+        WorkflowOrchestratorService instance
+    """
+    global _workflow_orchestrator_instance
+    
+    if _workflow_orchestrator_instance is None:
+        settings = get_settings_cached()
+        _workflow_orchestrator_instance = WorkflowOrchestratorService(settings)
+        await _workflow_orchestrator_instance.initialize()
+    
+    return _workflow_orchestrator_instance
 
 
-# Note: WebSocket manager is available for real-time updates
+async def cleanup_orchestrator_services():
+    """Cleanup orchestrator service instance."""
+    global _workflow_orchestrator_instance
+    
+    if _workflow_orchestrator_instance:
+        await _workflow_orchestrator_instance.cleanup()
+        _workflow_orchestrator_instance = None
 
 
-# Orchestrator service (singleton)
-_orchestrator_instance = None
-
-
-async def get_orchestrator_service():
-    """Get orchestrator service instance (singleton)."""
-    global _orchestrator_instance
-    if _orchestrator_instance is None:
-        from app.services.orchestrator_service import OrchestratorService
-        _orchestrator_instance = OrchestratorService()
-        await _orchestrator_instance.initialize()
-    return _orchestrator_instance
-
-
-async def get_memory_store(container: DIContainer = Depends(get_scoped_container)) -> MemoryInterface:
-    """Get memory store implementation."""
-    return await container.get_service(MemoryInterface)
-
-
-def get_llm_service(settings: Settings = Depends(get_settings)):
-    """Get LLM service instance."""
-    return get_llm_client(settings.llm_provider, settings)
-
-
-async def get_chat_service(container: DIContainer = Depends(get_scoped_container)):
-    """Get Chat service instance."""
-    # Use string key for ChatService since we use different implementations
-    if "ChatService" in container._services:
-        descriptor = container._services["ChatService"]
-        if descriptor.lifetime == ServiceLifetime.SCOPED:
-            return await container._get_scoped(descriptor)
-        else:
-            return await container._create_instance(descriptor)
-    else:
-        raise ValueError("ChatService not registered")
-
-
-async def get_conversation_service(container: DIContainer = Depends(get_scoped_container)) -> ConversationService:
-    """Get Conversation service instance."""
+async def get_conversation_service() -> ConversationService:
+    """
+    Get conversation service instance from DI container.
+    
+    Returns:
+        ConversationService instance
+    """
+    container = get_container()
     return await container.get_service(ConversationService)
 
 
-# Repository dependencies
-async def get_user_repository(container: DIContainer = Depends(get_scoped_container)) -> UserRepository:
-    """Get User repository."""
-    return await container.get_service(UserRepository)
-
-
-async def get_chat_session_repository(container: DIContainer = Depends(get_scoped_container)) -> ChatSessionRepository:
-    """Get ChatSession repository."""
-    return await container.get_service(ChatSessionRepository)
-
-
-async def get_chat_message_repository(container: DIContainer = Depends(get_scoped_container)) -> ChatMessageRepository:
-    """Get ChatMessage repository."""
-    return await container.get_service(ChatMessageRepository)
-
-
-# Note: CompletionRepository removed - use ChatMessage for conversation history
-# If you need raw LLM completion tracking, consider re-implementing with the new async pattern
-
-
-async def get_api_key_repository(container: DIContainer = Depends(get_scoped_container)) -> ApiKeyRepository:
-    """Get ApiKey repository."""
-    return await container.get_service(ApiKeyRepository)
-
-
-async def get_task_result_repository(container: DIContainer = Depends(get_scoped_container)) -> TaskResultRepository:
-    """Get TaskResult repository."""
-    return await container.get_service(TaskResultRepository)
-
-
-# Database health check
-async def check_database_health(db: Session = Depends(get_db)) -> bool:
-    """Check database connectivity."""
-    try:
-        # Simple query to test database connection
-        db.execute("SELECT 1")
-        return True
-    except Exception:
-        return False
-
-
-# Health check dependencies
-async def check_redis_health(redis_client: RedisClient = Depends(get_redis_client)) -> bool:
-    """Check Redis health."""
-    try:
-        return await redis_client.health_check()
-    except Exception:
-        return False
-
-
-# Validation dependencies
-def validate_session_id(session_id: str) -> str:
-    """Validate session ID format."""
-    if not session_id or len(session_id) < 3:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid session ID"
-        )
-    return session_id
-
-
-def validate_message_content(message: str, settings: Settings = Depends(get_settings)) -> str:
-    """Validate message content."""
-    if not message or not message.strip():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Message cannot be empty"
-        )
-
-    max_length = getattr(settings, "max_message_length", 2000)
-    if len(message) > max_length:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Message too long"
-        )
-
-    return message.strip()
-
-
-# Request cleanup middleware
-async def cleanup_request_scope(request: Request):
-    """Cleanup request-scoped services."""
-    if hasattr(request.state, "container_scope"):
-        try:
-            await request.state.container_scope.__aexit__(None, None, None)
-        except Exception as e:
-            # Log but don't fail the request
-            print(f"Error cleaning up request scope: {e}")
-
-
-# Cleanup function for startup/shutdown
-async def cleanup_services():
-    """Clean up all services in DI container."""
-    from app.database.session import cleanup_database
-
-    # Cleanup DI container first
+async def get_chat_service() -> Any:
+    """
+    Get chat service instance from DI container.
+    
+    Returns:
+        Chat service instance (protocol-based, can be various implementations)
+    """
+    from app.core.container import ServiceLifetime
+    
     container = get_container()
-    await container.dispose()
+    # ChatService is registered with string key "ChatService"
+    descriptor = container._services.get("ChatService")
+    if not descriptor:
+        raise ValueError("ChatService not registered in container")
+    
+    if descriptor.lifetime == ServiceLifetime.SCOPED:
+        return await container._get_scoped(descriptor)
+    elif descriptor.lifetime == ServiceLifetime.SINGLETON:
+        return await container._get_singleton(descriptor)
+    else:
+        return await container._create_instance(descriptor)
 
-    # Cleanup database connections
-    await cleanup_database()
 
-
-# Initialize services
-async def initialize_services():
-    """Initialize all service connections via DI container."""
-    from app.database.session import initialize_database
-
-    # Initialize async database first
-    try:
-        await initialize_database()
-    except Exception as e:
-        print(f"Warning: Database initialization failed: {e}")
-        # Continue with other services even if database fails
-
-    # Pre-initialize singleton services
+async def get_redis_client() -> RedisClient:
+    """
+    Get Redis client instance from DI container.
+    
+    Returns:
+        RedisClient instance
+    """
     container = get_container()
-    try:
-        await container.get_service(RedisClient)
-        # Note: WebSocket connections are managed separately via websocket_manager.py
-    except Exception as e:
-        # Clean up on failure
-        await container.dispose()
-        raise e
+    return await container.get_service(RedisClient)

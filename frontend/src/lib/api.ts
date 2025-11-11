@@ -261,6 +261,66 @@ class ApiClient {
     const url = companyId ? `/data-imports?company_id=${companyId}` : '/data-imports'
     return this.request(url)
   }
+
+  // User dataset endpoints
+  async uploadUserDataset(file: File, tableName?: string): Promise<any> {
+    const formData = new FormData()
+    formData.append('file', file)
+    if (tableName) {
+      formData.append('table_name', tableName)
+    }
+
+    const url = `${this.baseUrl}/user-datasets/upload`
+    const headers: Record<string, string> = {}
+    if (this.token) {
+      headers.Authorization = `Bearer ${this.token}`
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: formData,
+    })
+
+    if (!response.ok) {
+      let errorMessage = `HTTP ${response.status}: ${response.statusText}`
+      try {
+        const errorData = await response.json()
+        errorMessage = errorData.detail || errorData.message || errorMessage
+      } catch {
+        // If we can't parse the error, use the default message
+      }
+      
+      // Create error with status code for better handling
+      const error = new Error(errorMessage) as any
+      error.status = response.status
+      throw error
+    }
+
+    return response.json()
+  }
+
+  async listUserDatasets(limit?: number, offset?: number): Promise<{ datasets: any[]; total: number }> {
+    const params = new URLSearchParams()
+    if (limit !== undefined) params.append('limit', limit.toString())
+    if (offset !== undefined) params.append('offset', offset.toString())
+    const queryString = params.toString()
+    const url = queryString ? `/user-datasets?${queryString}` : '/user-datasets'
+    return this.request(url)
+  }
+
+  async getUserDataset(datasetId: string): Promise<any> {
+    return this.request(`/user-datasets/${datasetId}`)
+  }
+
+  async getDatasetData(datasetId: string, limit?: number, offset?: number): Promise<any> {
+    const params = new URLSearchParams()
+    if (limit !== undefined) params.append('limit', limit.toString())
+    if (offset !== undefined) params.append('offset', offset.toString())
+    const queryString = params.toString()
+    const url = queryString ? `/user-datasets/${datasetId}/data?${queryString}` : `/user-datasets/${datasetId}/data`
+    return this.request(url)
+  }
 }
 
 // Default unauthenticated client (for public endpoints)

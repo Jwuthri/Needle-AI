@@ -99,7 +99,7 @@ class Settings(BaseSettings):
     # LLM Configuration
     llm_provider: str = Field(default="openrouter", description="LLM provider")
     openrouter_api_key: Optional[str] = Field(default=None, description="OpenRouter API key")
-    default_model: str = Field(default="gpt-5", description="Default LLM model")
+    default_model: str = Field(default="gpt-5-mini", description="Default LLM model")
     max_tokens: int = Field(default=1000, ge=1, le=32000, description="Maximum tokens per request")
     temperature: float = Field(default=0.7, ge=0.0, le=2.0, description="LLM temperature")
     site_url: Optional[str] = Field(default=None, description="Site URL for OpenRouter referrer tracking")
@@ -110,11 +110,37 @@ class Settings(BaseSettings):
     use_agno_memory: bool = Field(default=True, description="Enable agent memory")
     structured_outputs: bool = Field(default=False, description="Enable structured outputs")
     agent_instructions: Optional[str] = Field(default=None, description="Default agent instructions")
+    
+    # Hybrid Router Configuration
+    router_model: str = Field(default="openai/gpt-5-nano", description="Model for query routing")
+    router_confidence_threshold: float = Field(default=0.7, ge=0.0, le=1.0, description="Routing confidence threshold")
+    
+    # Specialist Models
+    product_agent_model: str = Field(default="anthropic/claude-sonnet-4.5", description="Product specialist model")
+    research_agent_model: str = Field(default="anthropic/claude-sonnet-4.5", description="Research specialist model")
+    analytics_agent_model: str = Field(default="openai/gpt-5", description="Analytics specialist model")
+    general_agent_model: str = Field(default="openai/gpt-4o-mini", description="General assistant model")
+    
+    # MCP API Configurations
+    mcp_apis: Dict[str, Dict[str, any]] = Field(
+        default_factory=dict,
+        description="MCP API configurations for external integrations"
+    )
+    
+    # Performance Configuration
+    max_reasoning_steps: int = Field(default=10, ge=1, le=50, description="Max ReAct reasoning steps")
+    tool_timeout_seconds: int = Field(default=30, ge=5, le=120, description="Tool execution timeout")
+    
+    # Security Configuration (Guardrails)
+    openai_api_key: Optional[str] = Field(default=None, description="OpenAI API key for moderation")
+    enable_pii_detection: bool = Field(default=True, description="Enable PII detection and redaction")
+    enable_injection_detection: bool = Field(default=True, description="Enable prompt injection detection")
+    enable_content_moderation: bool = Field(default=True, description="Enable content moderation")
+    injection_confidence_threshold: float = Field(default=0.4, ge=0.0, le=1.0, description="Injection detection threshold")
 
     # Vector Database Configuration
     vector_database: str = Field(default="pinecone", description="Vector database provider")
     memory_type: str = Field(default="vector", description="Memory storage type")
-
     
     # Pinecone Configuration
     pinecone_api_key: Optional[str] = Field(default=None, description="Pinecone API key")
@@ -418,6 +444,58 @@ class Settings(BaseSettings):
             base_url = re.sub(r'/\d+$', f'/{db}', base_url)
 
         return base_url
+    
+    def parse_database_url(self) -> Dict[str, str]:
+        """
+        Parse database URL into components.
+        
+        Returns:
+            Dictionary with host, port, user, password, and database name
+        """
+        if not self.database_url:
+            return {
+                "user": "postgres",
+                "password": "",
+                "host": "localhost",
+                "port": "5432",
+                "database": "needleai"
+            }
+        
+        # Parse PostgreSQL URL: postgresql://user:password@host:port/database
+        # or SQLite: sqlite:///path/to/db.sqlite
+        if self.database_url.startswith("sqlite"):
+            return {
+                "user": "",
+                "password": "",
+                "host": "",
+                "port": "",
+                "database": self.database_url.split("///")[-1]
+            }
+        
+        # Parse PostgreSQL-style URL
+        match = re.match(
+            r'(?:postgresql|postgres)://(?:([^:]+):([^@]+)@)?([^:/]+)(?::(\d+))?/(.+)',
+            self.database_url
+        )
+        
+        if match:
+            user, password, host, port, database = match.groups()
+            return {
+                "user": user or "postgres",
+                "password": password or "",
+                "host": host or "localhost",
+                "port": port or "5432",
+                "database": database or "needleai"
+            }
+        
+        # Fallback defaults
+        return {
+            "user": "postgres",
+            "password": "",
+            "host": "localhost",
+            "port": "5432",
+            "database": "needleai"
+        }
 
     # Pydantic v2 Model Configuration (updated from v1 Config class)
     model_config = SettingsConfigDict(

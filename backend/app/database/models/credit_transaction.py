@@ -29,8 +29,8 @@ class CreditTransaction(Base):
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
 
     # References
-    user_credit_id = Column(String, ForeignKey("user_credits.id"), nullable=False)
-    scraping_job_id = Column(String, ForeignKey("scraping_jobs.id"), nullable=True)  # If related to scraping
+    user_credit_id = Column(String, ForeignKey("user_credits.id", ondelete="CASCADE"), nullable=False)
+    scraping_job_id = Column(String, ForeignKey("scraping_jobs.id", ondelete="SET NULL"), nullable=True)  # If related to scraping
 
     # Transaction details
     transaction_type = Column(SQLEnum(TransactionTypeEnum), nullable=False, index=True)

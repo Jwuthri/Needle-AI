@@ -5,7 +5,6 @@ import { motion } from 'framer-motion'
 import { User, Sparkles, ChevronDown, ChevronUp, ExternalLink, Copy, ThumbsUp, ThumbsDown } from 'lucide-react'
 import { EnhancedChatMessage } from '@/types/chat'
 import ReactMarkdown from 'react-markdown'
-import { ExecutionTree } from './execution-tree'
 import { VisualizationRenderer } from './visualization-renderer'
 import { SourceCitations } from './source-citations'
 
@@ -92,13 +91,6 @@ export function MessageWithSources({ message }: MessageWithSourcesProps) {
                   full_content: source.content,
                 }))}
               />
-            </div>
-          )}
-
-          {/* Execution Tree */}
-          {!isUser && message.execution_tree && (
-            <div className="mt-4">
-              <ExecutionTree tree={message.execution_tree} />
             </div>
           )}
 

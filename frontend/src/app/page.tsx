@@ -2,7 +2,7 @@
 
 import React from 'react'
 import { motion } from 'framer-motion'
-import { MessageCircle, BarChart3, Database, Sparkles, ArrowRight } from 'lucide-react'
+import { MessageCircle, BarChart3, Database, Sparkles, ArrowRight, Lightbulb } from 'lucide-react'
 import Link from 'next/link'
 import { SignInButton, SignUpButton, useUser } from '@clerk/nextjs'
 import { useRouter } from 'next/navigation'
@@ -102,7 +102,10 @@ export default function LandingPage() {
               <div className="font-mono text-sm space-y-2">
                 <div className="text-emerald-400">$ What are the main complaints about our competitor? ✦</div>
                 <div className="text-blue-400">→ Analyzing 1,247 reviews... Vector search complete...</div>
-                <div className="text-white/80">💡 Top complaints: Slow customer support (342 mentions), Complex pricing (189 mentions), Limited integrations (156 mentions) ■</div>
+                <div className="text-white/80 flex items-start gap-2">
+                  <Lightbulb className="w-4 h-4 mt-0.5 text-yellow-400 flex-shrink-0" />
+                  <span>Top complaints: Slow customer support (342 mentions), Complex pricing (189 mentions), Limited integrations (156 mentions) ■</span>
+                </div>
               </div>
             </div>
           </motion.div>

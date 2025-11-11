@@ -26,7 +26,7 @@ class ChatMessage(Base):
     __tablename__ = "chat_messages"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    session_id = Column(String, ForeignKey("chat_sessions.id"), nullable=False)
+    session_id = Column(String, ForeignKey("chat_sessions.id", ondelete="CASCADE"), nullable=False)
 
     # Message content
     content = Column(Text, nullable=False)
@@ -39,16 +39,19 @@ class ChatMessage(Base):
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    completed_at = Column(DateTime, nullable=True)  # When assistant finished generating response
 
     # Additional metadata
     extra_metadata = Column(JSON, default={})  # Context, parameters, etc.
 
     # Parent message for threading (if implemented later)
-    parent_message_id = Column(String, ForeignKey("chat_messages.id"), nullable=True)
+    parent_message_id = Column(String, ForeignKey("chat_messages.id", ondelete="CASCADE"), nullable=True)
 
     # Relationships
     session = relationship("ChatSession", back_populates="messages")
-    parent_message = relationship("ChatMessage", remote_side=[id])
+    parent_message = relationship("ChatMessage", remote_side=[id], foreign_keys=[parent_message_id])
+    child_messages = relationship("ChatMessage", remote_side=[parent_message_id], cascade="all, delete-orphan", overlaps="parent_message")
+    steps = relationship("ChatMessageStep", back_populates="message", cascade="all, delete-orphan")
 
     # Essential indexes only (avoid index bloat!)
     __table_args__ = (
@@ -56,6 +59,8 @@ class ChatMessage(Base):
         Index('ix_chat_message_session_created', 'session_id', 'created_at'),
         # Foreign key index
         Index('ix_chat_message_session_id', 'session_id'),
+        # Index for analytics on completion times
+        Index('ix_chat_message_completed_at', 'completed_at'),
     )
 
     def __repr__(self):

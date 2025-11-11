@@ -11,20 +11,21 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@clerk/nextjs": "^4.29.3",
+    "@tanstack/react-table": "^8.21.3",
+    "axios": "^1.6.2",
+    "chart.js": "^4.4.0",
+    "clsx": "^2.0.0",
+    "date-fns": "^2.30.0",
+    "framer-motion": "^10.16.16",
+    "lucide-react": "^0.294.0",
     "next": "^14.2.25",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "axios": "^1.6.2",
-    "lucide-react": "^0.294.0",
-    "date-fns": "^2.30.0",
+    "react-hot-toast": "^2.4.1",
     "react-markdown": "^9.0.1",
     "remark-gfm": "^4.0.0",
-    "clsx": "^2.0.0",
-    "tailwind-merge": "^2.2.0",
-    "@clerk/nextjs": "^4.29.3",
-    "framer-motion": "^10.16.16",
-    "react-hot-toast": "^2.4.1",
-    "chart.js": "^4.4.0"
+    "tailwind-merge": "^2.2.0"
   },
   "devDependencies": {
     "@types/node": "20.9.2",

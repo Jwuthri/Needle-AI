@@ -186,6 +186,19 @@ async def scrape_reviews_async(
             await ScrapingJobRepository.update_progress(session, job_id, 100.0, saved_count)
             await session.commit()
 
+            # Sync reviews to user's aggregated table
+            try:
+                from app.services.user_reviews_service import UserReviewsService
+                reviews_service = UserReviewsService(session)
+                synced_count = await reviews_service.sync_reviews_to_user_table(
+                    user_id=user_id,
+                    scraping_job_id=job_id
+                )
+                logger.info(f"Synced {synced_count} reviews to user table for job {job_id}")
+            except Exception as e:
+                logger.warning(f"Failed to sync reviews to user table for job {job_id}: {e}")
+                # Don't fail job completion if sync fails
+
             logger.info(f"Scraping job {job_id} completed successfully")
 
             return {
