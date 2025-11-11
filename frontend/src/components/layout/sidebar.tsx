@@ -15,6 +15,7 @@ import {
   History,
   MoreVertical,
   Trash2,
+  FileText,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -38,6 +39,7 @@ const navItems = [
   { icon: MessageSquare, label: 'Chat', href: '/chat' },
   { icon: BarChart3, label: 'Analytics', href: '/analytics' },
   { icon: Database, label: 'Data Sources', href: '/data-sources' },
+  { icon: FileText, label: 'Datasets', href: '/datasets' },
   { icon: Coins, label: 'Credits', href: '/credits' },
 ]
 

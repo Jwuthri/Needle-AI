@@ -16,6 +16,7 @@ from .scraping_job import ScrapingJobRepository
 from .task_result import TaskResultRepository
 from .user import UserRepository
 from .user_credit import UserCreditRepository
+from .user_dataset import UserDatasetRepository
 
 __all__ = [
     # Core Repositories
@@ -34,6 +35,7 @@ __all__ = [
     "UserCreditRepository",
     "CreditTransactionRepository",
     "DataImportRepository",
+    "UserDatasetRepository",
 
     # Utilities
     "ModelConverter",

@@ -16,6 +16,7 @@ from .scraping_job import JobStatusEnum, ScrapingJob
 from .task_result import TaskResult
 from .user import User, UserStatusEnum
 from .user_credit import UserCredit
+from .user_dataset import UserDataset
 
 __all__ = [
     # Core Models
@@ -35,6 +36,7 @@ __all__ = [
     "UserCredit",
     "CreditTransaction",
     "DataImport",
+    "UserDataset",
 
     # Enums
     "UserStatusEnum",

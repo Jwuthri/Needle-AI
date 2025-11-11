@@ -49,6 +49,7 @@ class User(Base):
     data_imports = relationship("DataImport", back_populates="user", cascade="all, delete-orphan")
     credit_account = relationship("UserCredit", back_populates="user", uselist=False, cascade="all, delete-orphan")
     api_keys = relationship("ApiKey", back_populates="user", cascade="all, delete-orphan")
+    user_datasets = relationship("UserDataset", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<User(id={self.id}, email={self.email}, status={self.status})>"
