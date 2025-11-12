@@ -7,6 +7,7 @@ from .base import *
 from .chat import *
 from .task import *
 from .user import *
+from .workflow import *
 
 __all__ = [
     # Chat models
@@ -25,6 +26,16 @@ __all__ = [
     "LoginResponse",
     "UserStats",
     "UserListResponse",
+    # Workflow models
+    "Insight",
+    "ThoughtStep",
+    "NextAction",
+    "SynthesisThought",
+    "QueryClassification",
+    "ExecutionContext",
+    "VisualizationResult",
+    "StepResult",
+    "RetryConfig",
     # Note: API Key and advanced Task models available but not currently used in endpoints
     # Base models
     "HealthResponse",

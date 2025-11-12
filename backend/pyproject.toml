@@ -113,6 +113,7 @@ dependencies = [
     # Visualization
     "plotly>=5.18.0", # For graph generation
     "kaleido>=0.2.1", # For PNG export from plotly
+    "llama-index-llms-anthropic>=0.10.2",
 ]
 
 [project.optional-dependencies]

@@ -18,7 +18,7 @@ import asyncio
 from typing import Any, Dict, List, Optional
 
 from app.core.config.settings import get_settings
-from app.core.llm.workflow.tools import review_analysis_tools
+from app.core.llm.simple_workflow import review_analysis_tools
 from llama_index.core.agent.workflow import AgentWorkflow, FunctionAgent
 from llama_index.core.tools import FunctionTool
 from llama_index.core.workflow import Event, StartEvent, StopEvent, Workflow, step, Context
@@ -26,8 +26,8 @@ from llama_index.llms.openai import OpenAI
 
 settings = get_settings()
 
-# Get API key from settings
-api_key = settings.get_secret("openai_api_key")
+# Get OpenRouter API key from settings
+api_key = settings.get_secret("anthropic_api_key")
 
 
 # ============================================================================
@@ -327,7 +327,7 @@ class StreamingProductReviewWorkflow(Workflow):
         
         # Create LlamaIndex Context object for this workflow run
         from llama_index.core.workflow import Context
-        from app.core.llm.workflow.tools.review_analysis_tools import (
+        from app.core.llm.simple_workflow.review_analysis_tools import (
             register_workflow_context,
             clear_workflow_context,
             set_workflow_context_value,
@@ -342,7 +342,7 @@ class StreamingProductReviewWorkflow(Workflow):
         register_workflow_context(self.user_id, ctx)
         
         # Sync any data from sync store to Context
-        from app.core.llm.workflow.tools.review_analysis_tools import _sync_context_store
+        from app.core.llm.simple_workflow.review_analysis_tools import _sync_context_store
         if self.user_id in _sync_context_store:
             for key, value in _sync_context_store[self.user_id].items():
                 await ctx.store.set(key, value)
@@ -425,10 +425,11 @@ async def create_and_run_workflow(
     """
     if llm is None:
         llm = OpenAI(
-            model="gpt-4",
-            temperature=0.3,
+            model="gpt-5-mini",
+            temperature=0.1,
             streaming=True,
-            api_key=api_key
+            api_key=api_key,
+            reasoning_effort="low"
         )
     
     # Create the agent workflow
@@ -456,9 +457,14 @@ async def main():
     """
     Run the multi-agent product review analysis system with test scenarios
     """
-    
+    from llama_index.llms.openai import OpenAI
+    from llama_index.llms.anthropic import Anthropic
+
+    # Get Anthropic API key from settings
+    api_key = settings.get_secret("openai_api_key")
     # Initialize LLM
-    llm = OpenAI(model="gpt-4", temperature=0.3, streaming=True, api_key=api_key)
+    llm = OpenAI(model="gpt-5-mini", temperature=0.05, streaming=True, api_key=api_key, reasoning_effort="low", max_tokens=10000)
+    # llm = Anthropic(model="claude-haiku-4-5", temperature=0.05, api_key=api_key, thinking_dict={'type': 'enabled', 'budget_tokens': 4096}, max_tokens=10000)
     
     print("\n" + "="*80)
     print("LLAMAINDEX MULTI-AGENT PRODUCT REVIEW ANALYSIS SYSTEM")

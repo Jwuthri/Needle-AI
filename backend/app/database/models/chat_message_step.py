@@ -31,6 +31,9 @@ class ChatMessageStep(Base):
     # Step ordering (0-indexed)
     step_order = Column(Integer, nullable=False)
     
+    # The "Thinking" part - agent's reasoning before action
+    thought = Column(Text, nullable=True)  # Agent's inner monologue explaining what it will do and why
+    
     # Content storage - one of these will be populated
     tool_call = Column(JSON, nullable=True)  # For tool calls
     structured_output = Column(JSON, nullable=True)  # For structured outputs (BaseModel)
