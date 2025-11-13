@@ -388,7 +388,7 @@ Generate ONLY the name, nothing else. No quotes, no explanation, just the name."
                 db=self.db,
                 user_id=user_id,
                 origin=filename,
-                table_name=table_name,
+                table_name=dynamic_table_name,
                 row_count=row_count,
                 description=eda_response.summary,
                 meta={"field_metadata": field_metadata_dict}

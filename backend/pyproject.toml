@@ -109,7 +109,11 @@ dependencies = [
     "textblob>=0.17.0", # Simple sentiment analysis
     # Web search and NLP for orchestrator
     "duckduckgo-search>=6.0.0", # Free web search
-    "scikit-learn>=1.5.0", # For TF-IDF and analytics
+    "scikit-learn>=1.5.0", # For analytics
+    "hdbscan>=0.8.33", # For density-based clustering
+    "sentence-transformers>=2.2.0", # For text embeddings (all-MiniLM-L6-v2)
+    "scipy>=1.11.0", # For statistical analysis
+    "nltk>=3.8.0", # For text processing and NLP
     # Visualization
     "plotly>=5.18.0", # For graph generation
     "kaleido>=0.2.1", # For PNG export from plotly

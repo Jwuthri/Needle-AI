@@ -18,7 +18,26 @@ import asyncio
 from typing import Any, Dict, List, Optional
 
 from app.core.config.settings import get_settings
-from app.core.llm.simple_workflow import review_analysis_tools
+from app.utils.logging import get_logger
+from app.core.llm.simple_workflow.tools import (
+    analyze_sentiment_patterns,
+    cluster_reviews,
+    detect_product_gaps,
+    detect_trends,
+    extract_keywords,
+    format_date,
+    generate_bar_chart,
+    generate_heatmap,
+    generate_line_chart,
+    generate_pie_chart,
+    get_current_time,
+    get_review_statistics,
+    get_table_eda,
+    get_user_datasets,
+    query_user_reviews_table,
+    semantic_search_reviews,
+)
+from app.database.session import get_async_db_session
 from llama_index.core.agent.workflow import AgentWorkflow, FunctionAgent
 from llama_index.core.agent.workflow.workflow_events import AgentStream
 from llama_index.core.tools import FunctionTool
@@ -26,6 +45,7 @@ from llama_index.core.workflow import Event, StartEvent, StopEvent, Workflow, st
 from llama_index.llms.openai import OpenAI
 
 settings = get_settings()
+logger = get_logger(__name__)
 
 # Get OpenRouter API key from settings
 api_key = settings.get_secret("anthropic_api_key")
@@ -36,7 +56,7 @@ api_key = settings.get_secret("anthropic_api_key")
 # ============================================================================
 
 
-def create_product_review_workflow(llm: OpenAI, user_id: str = "user_123") -> AgentWorkflow:
+def create_product_review_workflow(llm: OpenAI, user_id: str = "user_123", ctx: Optional[Context] = None) -> AgentWorkflow:
     """
     Create a multi-agent product review analysis workflow with specialized agents.
     
@@ -48,35 +68,349 @@ def create_product_review_workflow(llm: OpenAI, user_id: str = "user_123") -> Ag
     Args:
         llm: Language model instance
         user_id: User ID for data access (injected into agent prompts)
+        ctx: LlamaIndex Context object for sharing data between tools
     """
     
     # ========================================================================
-    # Create Tools
+    # Create Context-Aware Tool Wrappers
     # ========================================================================
+    # These wrappers inject the Context into tool calls so tools can
+    # store/retrieve data without passing large payloads through LLM tokens
     
     # Data Access Tools
-    get_user_datasets_tool = FunctionTool.from_defaults(fn=review_analysis_tools.get_user_datasets)
-    get_table_eda_tool = FunctionTool.from_defaults(fn=review_analysis_tools.get_table_eda)
-    query_user_reviews_tool = FunctionTool.from_defaults(fn=review_analysis_tools.query_user_reviews_table)
-    semantic_search_tool = FunctionTool.from_defaults(fn=review_analysis_tools.semantic_search_reviews)
-    get_review_stats_tool = FunctionTool.from_defaults(fn=review_analysis_tools.get_review_statistics)
+    async def _get_user_datasets(user_id: str) -> Dict[str, Any]:
+        """Get all datasets available for a user.
+        
+        Returns information about all tables the user can analyze, including:
+        - Table names
+        - Row counts
+        - Available columns
+        - Data types
+        
+        Args:
+            user_id: The user's ID
+            
+        Returns:
+            Dict containing datasets list and metadata
+        """
+        return await get_user_datasets(user_id, ctx)
+    
+    async def _get_table_eda(user_id: str, table_name: str) -> Dict[str, Any]:
+        """Get exploratory data analysis (EDA) for a specific table.
+        
+        Returns statistical summary and insights about the table including:
+        - Column statistics (mean, median, std, min, max)
+        - Missing values
+        - Data distributions
+        - Sample rows
+        
+        Args:
+            user_id: The user's ID
+            table_name: Name of the table to analyze (e.g., "__user_123_reviews")
+            
+        Returns:
+            Dict with EDA metadata and statistics
+        """
+        return await get_table_eda(user_id, table_name, ctx)
+    
+    async def _query_user_reviews_table(user_id: str, query: str, filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Query any user dataset table.
+        
+        Use this to retrieve data from any user table. Works with all dataset types.
+        
+        Args:
+            user_id: The user's ID
+            query: Fields to retrieve (comma-separated, e.g., "rating, text, source")
+            filters: Optional dict with simple filter keys:
+                - "source": Filter by source column
+                - "min_rating": Minimum rating value
+                - "max_rating": Maximum rating value
+                - "date_from": Start date filter
+                - "date_to": End date filter
+                - "limit": Max results (default: 100)
+            
+        Returns:
+            Dict with query results from the table
+        """
+        return await query_user_reviews_table(user_id, query, filters, ctx)
+    
+    async def _semantic_search_reviews(user_id: str, query: str, limit: int = 10) -> Dict[str, Any]:
+        """Search any user dataset using semantic similarity.
+        
+        Finds records similar to the query text using embeddings. Works across all dataset types.
+        Use this when looking for specific topics, themes, or content patterns.
+        
+        Args:
+            user_id: The user's ID
+            query: Natural language search query (e.g., "battery life issues")
+            limit: Max number of results (default: 10)
+            
+        Returns:
+            Dict with similar records and similarity scores
+        """
+        return await semantic_search_reviews(user_id, query, limit, ctx)
+    
+    async def _get_review_statistics(user_id: str, filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Get aggregate statistics for any user dataset.
+        
+        Returns summary stats like:
+        - Total record count
+        - Average ratings/scores
+        - Distribution breakdowns
+        - Time ranges
+        - Source/category breakdowns
+        
+        Args:
+            user_id: The user's ID
+            filters: Optional dict with simple filter keys:
+                - "source": Filter by source column
+                - "min_rating": Minimum rating value
+                - "max_rating": Maximum rating value
+                - "date_from": Start date
+                - "date_to": End date
+            
+        Returns:
+            Dict with aggregate statistics from the dataset
+        """
+        return await get_review_statistics(user_id, filters, ctx)
     
     # Analysis Tools
-    detect_gaps_tool = FunctionTool.from_defaults(fn=review_analysis_tools.detect_product_gaps)
-    analyze_sentiment_tool = FunctionTool.from_defaults(fn=review_analysis_tools.analyze_sentiment_patterns)
-    detect_trends_tool = FunctionTool.from_defaults(fn=review_analysis_tools.detect_trends)
-    cluster_reviews_tool = FunctionTool.from_defaults(fn=review_analysis_tools.cluster_reviews)
-    extract_keywords_tool = FunctionTool.from_defaults(fn=review_analysis_tools.extract_keywords)
+    async def _detect_product_gaps(user_id: str, analysis_params: Optional[Dict[str, Any]] = None, table_name: Optional[str] = None) -> Dict[str, Any]:
+        """Identify gaps, unmet needs, and frequently mentioned issues in any dataset.
+        
+        Uses ML to cluster text content and identify frequently mentioned gaps or patterns.
+        Works with any user dataset that has text fields.
+        Automatically stores results in context with key 'gap_analysis_data' for visualization.
+        
+        Args:
+            user_id: The user's ID
+            analysis_params: Optional dict with:
+                - min_frequency: Minimum mentions to consider (default: 3)
+                - top_n: Number of top gaps to return (default: 10)
+            table_name: Optional table name (defaults to main dataset, specify for others)
+            
+        Returns:
+            Dict with detected gaps, frequencies, and representative records
+        """
+        return await detect_product_gaps(user_id, ctx, analysis_params, table_name)
+    
+    async def _analyze_sentiment_patterns(user_id: str, filters: Optional[Dict[str, Any]] = None, table_name: Optional[str] = None) -> Dict[str, Any]:
+        """Analyze sentiment patterns and trends across any dataset.
+        
+        Calculates sentiment distribution (positive/neutral/negative) and identifies
+        patterns by source, time period, or other attributes.
+        Works with any dataset that has text or rating fields.
+        Stores results in context with key 'sentiment_distribution_data' for visualization.
+        
+        Args:
+            user_id: The user's ID
+            filters: Optional dict with simple filter keys:
+                - "source": Filter by source column
+                - "min_rating": Minimum rating value
+                - "max_rating": Maximum rating value
+                - "date_from": Start date
+                - "date_to": End date
+            table_name: Optional table name (defaults to main dataset, specify for others)
+            
+        Returns:
+            Dict with sentiment breakdown, patterns, and insights
+        """
+        return await analyze_sentiment_patterns(user_id, ctx, filters, table_name)
+    
+    async def _detect_trends(user_id: str, time_field: str = "date", metric: str = "rating", period: str = "month", table_name: Optional[str] = None) -> Dict[str, Any]:
+        """Detect temporal trends in any dataset metrics over time.
+        
+        Analyzes how metrics change over time using statistical trend detection.
+        Works with any dataset that has time/date fields and numeric metrics.
+        Stores results in context with keys 'trend_data' and 'sentiment_trend_data'.
+        
+        Args:
+            user_id: The user's ID
+            time_field: Time/date column name (default: "date")
+            metric: Metric column to analyze (e.g., "rating", "sentiment", "count")
+            period: Grouping period - "day", "week", "month" (default: "month")
+            table_name: Optional table name (defaults to main dataset, specify for others)
+            
+        Returns:
+            Dict with trend data, slope, direction, and statistical significance
+        """
+        return await detect_trends(user_id, ctx, time_field, metric, period, table_name)
+    
+    async def _cluster_reviews(user_id: str, n_clusters: int = 5, filters: Optional[Dict[str, Any]] = None, table_name: Optional[str] = None) -> Dict[str, Any]:
+        """Cluster similar records to identify common themes in any dataset.
+        
+        Uses KMeans clustering on embeddings to group similar content.
+        Works with any dataset that has text fields and embeddings.
+        Stores results in context with key 'cluster_data' for visualization.
+        
+        Args:
+            user_id: The user's ID
+            n_clusters: Number of clusters to create (default: 5)
+            filters: Optional dict with simple filter keys:
+                - "source": Filter by source column
+                - "min_rating": Minimum rating value
+                - "max_rating": Maximum rating value
+                - "date_from": Start date
+                - "date_to": End date
+            table_name: Optional table name (defaults to main dataset, specify for others)
+            
+        Returns:
+            Dict with clusters, themes, sizes, and representative records
+        """
+        return await cluster_reviews(user_id, ctx, n_clusters, filters, table_name)
+    
+    async def _extract_keywords(user_id: str, filters: Optional[Dict[str, Any]] = None, top_n: int = 20, table_name: Optional[str] = None) -> Dict[str, Any]:
+        """Extract top keywords and phrases from any dataset.
+        
+        Uses TF-IDF to identify the most important and frequent terms.
+        Works with any dataset that has text fields.
+        Stores results in context with key 'keyword_data' for visualization.
+        
+        Args:
+            user_id: The user's ID
+            filters: Optional dict with simple filter keys:
+                - "source": Filter by source column
+                - "min_rating": Minimum rating value
+                - "max_rating": Maximum rating value  
+                - "date_from": Start date
+                - "date_to": End date
+            top_n: Number of keywords to extract (default: 20)
+            table_name: Optional table name (defaults to main dataset, specify for others)
+            
+        Returns:
+            Dict with keywords, frequencies, and TF-IDF scores
+        """
+        return await extract_keywords(user_id, ctx, filters, top_n, table_name)
+    
+    # Visualization Tools (these fetch data from Context using context_key)
+    async def _generate_bar_chart(
+        data: Optional[List[Dict[str, Any]]] = None,
+        title: str = "",
+        x_label: str = "",
+        y_label: str = "",
+        user_id: str = "",
+        context_key: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Generate a bar chart visualization.
+        
+        IMPORTANT: Use context_key to reference data stored by analysis tools.
+        DO NOT pass large datasets directly - reference them from context instead.
+        
+        Available context keys from analysis tools:
+        - 'gap_analysis_data': From detect_product_gaps
+        - 'keyword_data': From extract_keywords
+        
+        Args:
+            data: Optional small dataset with [{"x": label, "y": value}] format
+            title: Chart title
+            x_label: X-axis label
+            y_label: Y-axis label
+            user_id: User ID for file storage
+            context_key: Key to retrieve data from context (preferred method)
+            
+        Returns:
+            Dict with chart_path and chart_url
+        """
+        return await generate_bar_chart(data, title, x_label, y_label, user_id, context_key, ctx)
+    
+    async def _generate_line_chart(
+        data: Optional[List[Dict[str, Any]]] = None,
+        title: str = "",
+        x_label: str = "",
+        y_label: str = "",
+        user_id: str = "",
+        context_key: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Generate a line chart for time-series or sequential data.
+        
+        IMPORTANT: Use context_key to reference data stored by analysis tools.
+        
+        Available context keys from analysis tools:
+        - 'trend_data': From detect_trends (rating trends)
+        - 'sentiment_trend_data': From detect_trends (sentiment over time)
+        
+        Args:
+            data: Optional small dataset with [{"x": label, "y": value}] format
+            title: Chart title
+            x_label: X-axis label (e.g., "Month")
+            y_label: Y-axis label (e.g., "Average Rating")
+            user_id: User ID for file storage
+            context_key: Key to retrieve data from context (preferred method)
+            
+        Returns:
+            Dict with chart_path and chart_url
+        """
+        return await generate_line_chart(data, title, x_label, y_label, user_id, context_key, ctx)
+    
+    async def _generate_pie_chart(
+        data: Optional[List[Dict[str, Any]]] = None,
+        title: str = "",
+        user_id: str = "",
+        context_key: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Generate a pie chart for proportional data.
+        
+        IMPORTANT: Use context_key to reference data stored by analysis tools.
+        
+        Available context keys from analysis tools:
+        - 'sentiment_distribution_data': From analyze_sentiment_patterns
+        - 'cluster_data': From cluster_reviews
+        
+        Args:
+            data: Optional small dataset with [{"label": name, "value": count}] format
+            title: Chart title
+            user_id: User ID for file storage
+            context_key: Key to retrieve data from context (preferred method)
+            
+        Returns:
+            Dict with chart_path and chart_url
+        """
+        return await generate_pie_chart(data, title, user_id, context_key, ctx)
+    
+    async def _generate_heatmap(
+        data: Optional[List[Dict[str, Any]]] = None,
+        title: str = "",
+        user_id: str = "",
+        context_key: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Generate a heatmap for 2D data matrices.
+        
+        IMPORTANT: Use context_key to reference data stored by analysis tools.
+        
+        Args:
+            data: Optional dataset with [{"x": label, "y": label, "value": number}] format
+            title: Chart title
+            user_id: User ID for file storage
+            context_key: Key to retrieve data from context (preferred method)
+            
+        Returns:
+            Dict with chart_path and chart_url
+        """
+        return await generate_heatmap(data, title, user_id, context_key, ctx)
+    
+    # Create FunctionTool instances
+    get_user_datasets_tool = FunctionTool.from_defaults(fn=_get_user_datasets, async_fn=_get_user_datasets)
+    get_table_eda_tool = FunctionTool.from_defaults(fn=_get_table_eda, async_fn=_get_table_eda)
+    query_user_reviews_tool = FunctionTool.from_defaults(fn=_query_user_reviews_table, async_fn=_query_user_reviews_table)
+    semantic_search_tool = FunctionTool.from_defaults(fn=_semantic_search_reviews, async_fn=_semantic_search_reviews)
+    get_review_stats_tool = FunctionTool.from_defaults(fn=_get_review_statistics, async_fn=_get_review_statistics)
+    
+    # Analysis Tools
+    detect_gaps_tool = FunctionTool.from_defaults(fn=_detect_product_gaps, async_fn=_detect_product_gaps)
+    analyze_sentiment_tool = FunctionTool.from_defaults(fn=_analyze_sentiment_patterns, async_fn=_analyze_sentiment_patterns)
+    detect_trends_tool = FunctionTool.from_defaults(fn=_detect_trends, async_fn=_detect_trends)
+    cluster_reviews_tool = FunctionTool.from_defaults(fn=_cluster_reviews, async_fn=_cluster_reviews)
+    extract_keywords_tool = FunctionTool.from_defaults(fn=_extract_keywords, async_fn=_extract_keywords)
     
     # Visualization Tools
-    generate_bar_chart_tool = FunctionTool.from_defaults(fn=review_analysis_tools.generate_bar_chart)
-    generate_line_chart_tool = FunctionTool.from_defaults(fn=review_analysis_tools.generate_line_chart)
-    generate_pie_chart_tool = FunctionTool.from_defaults(fn=review_analysis_tools.generate_pie_chart)
-    generate_heatmap_tool = FunctionTool.from_defaults(fn=review_analysis_tools.generate_heatmap)
+    generate_bar_chart_tool = FunctionTool.from_defaults(fn=_generate_bar_chart, async_fn=_generate_bar_chart)
+    generate_line_chart_tool = FunctionTool.from_defaults(fn=_generate_line_chart, async_fn=_generate_line_chart)
+    generate_pie_chart_tool = FunctionTool.from_defaults(fn=_generate_pie_chart, async_fn=_generate_pie_chart)
+    generate_heatmap_tool = FunctionTool.from_defaults(fn=_generate_heatmap, async_fn=_generate_heatmap)
     
     # Utility Tools
-    get_current_time_tool = FunctionTool.from_defaults(fn=review_analysis_tools.get_current_time)
-    format_date_tool = FunctionTool.from_defaults(fn=review_analysis_tools.format_date)
+    get_current_time_tool = FunctionTool.from_defaults(fn=get_current_time)
+    format_date_tool = FunctionTool.from_defaults(fn=format_date)
     
     # ========================================================================
     # Coordinator Agent - Routes queries to appropriate specialists
@@ -344,96 +678,90 @@ class StreamingProductReviewWorkflow(Workflow):
         
         # Create LlamaIndex Context object for this workflow run
         from llama_index.core.workflow import Context
-        from app.core.llm.simple_workflow.review_analysis_tools import (
-            register_workflow_context,
-            clear_workflow_context,
-            set_workflow_context_value,
-        )
         
-        # Clear any previous context for this user
-        clear_workflow_context(self.user_id)
-        
-        # Create Context object and register it
+        # Create Context object
         ctx = Context(self.agent_workflow)
-        await ctx.store.set("user_id", self.user_id)
-        register_workflow_context(self.user_id, ctx)
+        await ctx.set("user_id", self.user_id)
         
-        # Sync any data from sync store to Context
-        from app.core.llm.simple_workflow.review_analysis_tools import _sync_context_store
-        if self.user_id in _sync_context_store:
-            for key, value in _sync_context_store[self.user_id].items():
-                await ctx.store.set(key, value)
-        
-        # Create a task to run the agent workflow with Context
-        handler = self.agent_workflow.run(
-            user_msg=user_msg,
-            initial_state={"user_id": self.user_id},
-            ctx=ctx
-        )
-        
-        current_agent = None
-        response_started = False
-        
-        # Stream events from the agent workflow
-        async for event in handler.stream_events():
-            # Check for agent handoff using either field
-            new_agent = getattr(event, "current_agent_name", None) or getattr(event, "agent_name", None)
-            # if isinstance(event, AgentStream):
-            #     print(f"💭 * {event.raw.get('delta', {}).get('thinking')}")
-            #     print(f"💭 ** {event.thinking_delta}")
-
-            if new_agent:
-                # Detect and display agent handoff/transition
-                if current_agent and current_agent != new_agent:
-                    print(f"\n🔀 Handoff: {current_agent.upper()} → {new_agent.upper()}")
-                elif not current_agent:
-                    print(f"\n🤖 Starting Agent: {new_agent.upper()}")
+        # Create database session and store in context
+        async for db_session in get_async_db_session():
+            try:
+                await ctx.set("db_session", db_session)
+                logger.info(f"Database session created and stored in context for user {self.user_id}")
                 
-                current_agent = new_agent
-            
-            if hasattr(event, 'tool_call'):
-                tool_call = event.tool_call
-                print(f"   🔧 Tool: {tool_call.tool_name}")
-                if hasattr(tool_call, 'tool_kwargs'):
-                    # Format kwargs nicely
-                    kwargs_str = ", ".join(f"{k}={v}" for k, v in tool_call.tool_kwargs.items() if k != 'user_id')
-                    print(f"   📝 Args: {kwargs_str}")
-            
-            if hasattr(event, 'tool_output'):
-                output = event.tool_output.content if hasattr(event.tool_output, 'content') else str(event.tool_output)
-                # Truncate long outputs
-                output_str = str(output)[:200]
-                if len(str(output)) > 200:
-                    output_str += "..."
-                print(f"   ✅ Result: {output_str}")
-            
-            # Stream the actual response text
-            if hasattr(event, 'delta'):
-                if not response_started:
-                    print(f"\n   💬 Response: ", end='', flush=True)
-                    response_started = True
-                print(event.delta, end='', flush=True)
-            
-            if hasattr(event, 'msg'):
-                msg = event.msg
-                if hasattr(msg, 'content') and msg.content and not response_started:
-                    # Fallback if streaming doesn't work
-                    print(f"\n   💬 Response: {msg.content}")
-            
-            # Handle thinking/reasoning output from Claude
-            if hasattr(event, 'raw') and isinstance(event.raw, dict):
-                raw_delta = event.raw.get('delta')
-                if raw_delta and hasattr(raw_delta, 'type') and raw_delta.type == 'thinking_delta':
-                    if hasattr(raw_delta, 'thinking'):
-                        print(f"{raw_delta.thinking}", end='', flush=True)
+                # Create a task to run the agent workflow with Context
+                handler = self.agent_workflow.run(
+                    user_msg=user_msg,
+                    initial_state={"user_id": self.user_id},
+                    ctx=ctx
+                )
+                
+                current_agent = None
+                response_started = False
+                
+                # Stream events from the agent workflow
+                async for event in handler.stream_events():
+                    # Check for agent handoff using either field
+                    new_agent = getattr(event, "current_agent_name", None) or getattr(event, "agent_name", None)
+                    # if isinstance(event, AgentStream):
+                    #     print(f"💭 * {event.raw.get('delta', {}).get('thinking')}")
+                    #     print(f"💭 ** {event.thinking_delta}")
 
-        if response_started:
-            print()  # New line after streaming
-        
-        # Get final result
-        result = await handler
-        
-        return StopEvent(result=result)
+                    if new_agent:
+                        # Detect and display agent handoff/transition
+                        if current_agent and current_agent != new_agent:
+                            print(f"\n🔀 Handoff: {current_agent.upper()} → {new_agent.upper()}")
+                        elif not current_agent:
+                            print(f"\n🤖 Starting Agent: {new_agent.upper()}")
+                        
+                        current_agent = new_agent
+                    
+                    if hasattr(event, 'tool_call'):
+                        tool_call = event.tool_call
+                        print(f"   🔧 Tool: {tool_call.tool_name}")
+                        if hasattr(tool_call, 'tool_kwargs'):
+                            # Format kwargs nicely
+                            kwargs_str = ", ".join(f"{k}={v}" for k, v in tool_call.tool_kwargs.items() if k != 'user_id')
+                            print(f"   📝 Args: {kwargs_str}")
+                    
+                    if hasattr(event, 'tool_output'):
+                        output = event.tool_output.content if hasattr(event.tool_output, 'content') else str(event.tool_output)
+                        # Truncate long outputs
+                        output_str = str(output)[:200]
+                        if len(str(output)) > 200:
+                            output_str += "..."
+                        print(f"   ✅ Result: {output_str}")
+                    
+                    # Stream the actual response text
+                    if hasattr(event, 'delta'):
+                        if not response_started:
+                            print(f"\n   💬 Response: ", end='', flush=True)
+                            response_started = True
+                        print(event.delta, end='', flush=True)
+                    
+                    if hasattr(event, 'msg'):
+                        msg = event.msg
+                        if hasattr(msg, 'content') and msg.content and not response_started:
+                            # Fallback if streaming doesn't work
+                            print(f"\n   💬 Response: {msg.content}")
+                    
+                    # Handle thinking/reasoning output from Claude
+                    if hasattr(event, 'raw') and isinstance(event.raw, dict):
+                        raw_delta = event.raw.get('delta')
+                        if raw_delta and hasattr(raw_delta, 'type') and raw_delta.type == 'thinking_delta':
+                            if hasattr(raw_delta, 'thinking'):
+                                print(f"{raw_delta.thinking}", end='', flush=True)
+
+                if response_started:
+                    print()  # New line after streaming
+                
+                # Get final result
+                result = await handler
+                
+                return StopEvent(result=result)
+            finally:
+                # Database session automatically closed by context manager
+                pass
 
 
 # ============================================================================
@@ -466,8 +794,14 @@ async def create_and_run_workflow(
             reasoning_effort="low"
         )
     
-    # Create the agent workflow with user_id injected into prompts
-    agent_workflow = create_product_review_workflow(llm, user_id=user_id)
+    # Create temporary Context for agent workflow creation
+    # The actual context with DB session will be created in StreamingProductReviewWorkflow
+    from llama_index.core.workflow import Workflow as BaseWorkflow
+    temp_workflow = BaseWorkflow(timeout=900)
+    ctx = Context(temp_workflow)
+    
+    # Create the agent workflow with user_id and context injected
+    agent_workflow = create_product_review_workflow(llm, user_id=user_id, ctx=ctx)
     
     # Wrap it in our streaming workflow
     workflow = StreamingProductReviewWorkflow(
@@ -509,17 +843,23 @@ async def main():
     print("  ✓ Tool calling for data access, analysis, visualization")
     print("  ✓ PNG graph generation with plotly")
     print("  ✓ Context management across agents")
+    print("  ✓ Real database integration with sklearn analysis")
     print("="*80 + "\n")
     
-    # Create the agent workflow with user_id injected into prompts
+    # Create temporary Context for agent workflow creation
+    from llama_index.core.workflow import Workflow as BaseWorkflow
+    temp_workflow = BaseWorkflow(timeout=900)
+    ctx = Context(temp_workflow)
+    
+    # Create the agent workflow with user_id and context injected
     test_user_id = "user_123"
-    agent_workflow = create_product_review_workflow(llm, user_id=test_user_id)
+    agent_workflow = create_product_review_workflow(llm, user_id=test_user_id, ctx=ctx)
     
     # Wrap it in our streaming workflow for better visibility
     workflow = StreamingProductReviewWorkflow(
         agent_workflow=agent_workflow,
         user_id=test_user_id,
-        timeout=300,
+        timeout=900,
         verbose=True
     )
     

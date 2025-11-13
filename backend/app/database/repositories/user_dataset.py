@@ -55,7 +55,24 @@ class UserDatasetRepository:
         user_id: str,
         table_name: str
     ) -> Optional[UserDataset]:
-        """Get user dataset by user ID and table name."""
+        """
+        Get user dataset by user ID and table name.
+        
+        Args:
+            db: Database session
+            user_id: User ID
+            table_name: Table name in format user_{id}_table_name (or legacy format)
+        """
+        # table_name should already be in user_{id}_table_name format
+        # but handle legacy format for backward compatibility
+        from app.utils.dynamic_tables import sanitize_table_name
+        sanitized_user_id = sanitize_table_name(user_id)
+        
+        # If table_name doesn't start with user_{id}_, construct it
+        if not table_name.startswith(f"user_{sanitized_user_id}_"):
+            sanitized_base_name = sanitize_table_name(table_name)
+            table_name = f"user_{sanitized_user_id}_{sanitized_base_name}"
+        
         result = await db.execute(
             select(UserDataset).filter(
                 UserDataset.user_id == user_id,

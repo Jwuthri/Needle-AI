@@ -24,7 +24,7 @@ class UserDataset(Base):
     origin = Column(String(500), nullable=False)  # File path or URL
     description = Column(Text, nullable=True)  # LLM-generated summary
     row_count = Column(Integer, nullable=False, default=0)
-    table_name = Column(String(255), nullable=False)  # User-provided table name
+    table_name = Column(String(255), nullable=False)  # Table name in format: user_{id}_table_name
     
     # Field metadata from EDA (stored as JSON)
     meta = Column(JSON, nullable=True)  # List[FieldMetadata] as JSON
