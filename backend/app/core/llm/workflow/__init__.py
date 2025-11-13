@@ -10,10 +10,12 @@ from app.core.llm.workflow.orchestrator import (
     ExecutionPlan,
     ExecutionResult,
 )
+from app.core.llm.workflow.context_manager import ConversationalContextManager
 
 __all__ = [
     "WorkflowOrchestrator",
     "PlanStep",
     "ExecutionPlan",
     "ExecutionResult",
+    "ConversationalContextManager",
 ]

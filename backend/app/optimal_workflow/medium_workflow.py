@@ -39,6 +39,30 @@ async def run_medium_workflow(
     """
     logger.info(f"🚀 Starting Medium Workflow (gpt-5-mini) for query: {query[:100]}")
     
+    # Track workflow start in database
+    if assistant_message_id:
+        try:
+            from app.database.session import get_async_session
+            from app.database.repositories.chat_message_step import ChatMessageStepRepository
+            
+            async with get_async_session() as db:
+                await ChatMessageStepRepository.create(
+                    db=db,
+                    message_id=assistant_message_id,
+                    agent_name="MediumWorkflow",
+                    step_order=0,
+                    thought="Query classified as medium complexity - using conversation history with gpt-5-mini",
+                    structured_output={
+                        "workflow_type": "medium",
+                        "model": "gpt-5-mini",
+                        "history_messages": len(conversation_history) if conversation_history else 0
+                    }
+                )
+                await db.commit()
+                logger.info(f"[WORKFLOW DB] ✅ Tracked medium workflow start")
+        except Exception as e:
+            logger.error(f"[WORKFLOW DB] Failed to track workflow start: {e}")
+    
     if stream_callback:
         stream_callback({
             "type": "step_start",
@@ -122,15 +146,33 @@ async def run_medium_workflow(
             try:
                 from app.database.session import get_async_session
                 from app.database.repositories.chat_message import ChatMessageRepository
+                from app.database.repositories.chat_message_step import ChatMessageStepRepository
                 from datetime import datetime
                 
                 async with get_async_session() as db:
+                    # Update message content
                     await ChatMessageRepository.update(
                         db=db,
                         message_id=assistant_message_id,
                         content=accumulated_answer,
                         completed_at=datetime.utcnow()
                     )
+                    
+                    # Track completion step
+                    await ChatMessageStepRepository.create(
+                        db=db,
+                        message_id=assistant_message_id,
+                        agent_name="MediumWorkflow",
+                        step_order=1,
+                        prediction=accumulated_answer[:500],  # Store first 500 chars
+                        structured_output={
+                            "status": "completed",
+                            "response_length": len(accumulated_answer),
+                            "model": "gpt-5-mini",
+                            "history_used": len(conversation_history) if conversation_history else 0
+                        }
+                    )
+                    
                     await db.commit()
                     logger.info(f"💾 Saved medium workflow response to DB (message_id={assistant_message_id})")
             except Exception as db_error:

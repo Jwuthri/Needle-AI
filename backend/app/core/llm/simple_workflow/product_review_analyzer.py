@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional
 from app.core.config.settings import get_settings
 from app.core.llm.simple_workflow import review_analysis_tools
 from llama_index.core.agent.workflow import AgentWorkflow, FunctionAgent
+from llama_index.core.agent.workflow.workflow_events import AgentStream
 from llama_index.core.tools import FunctionTool
 from llama_index.core.workflow import Event, StartEvent, StopEvent, Workflow, step, Context
 from llama_index.llms.openai import OpenAI
@@ -35,7 +36,7 @@ api_key = settings.get_secret("anthropic_api_key")
 # ============================================================================
 
 
-def create_product_review_workflow(llm: OpenAI) -> AgentWorkflow:
+def create_product_review_workflow(llm: OpenAI, user_id: str = "user_123") -> AgentWorkflow:
     """
     Create a multi-agent product review analysis workflow with specialized agents.
     
@@ -43,6 +44,10 @@ def create_product_review_workflow(llm: OpenAI) -> AgentWorkflow:
     - Specific tools for their domain
     - A system prompt defining their role
     - Ability to hand off to other agents
+    
+    Args:
+        llm: Language model instance
+        user_id: User ID for data access (injected into agent prompts)
     """
     
     # ========================================================================
@@ -79,19 +84,19 @@ def create_product_review_workflow(llm: OpenAI) -> AgentWorkflow:
     coordinator_agent = FunctionAgent(
         name="coordinator",
         description="First point of contact. Analyzes query intent and routes to appropriate specialist.",
-        system_prompt="""You are an intelligent coordinator for product review analysis. Your role is to:
-1. Analyze the user's query to understand their intent
-2. Determine if the query requires data analysis or is a general question
-3. Route to the appropriate specialist:
-   - General Assistant: for simple questions (time, date, general info), greetings, non-data queries
-   - Data Discovery Agent: for queries about product reviews, gaps, sentiment, trends, or any data analysis
+        system_prompt=f"""You are a coordinator that routes queries to specialists. 
 
-IMPORTANT: Use your judgment to determine query type. Do NOT use rule-based text matching.
-- If the query asks about time, date, or general knowledge → General Assistant
-- If the query asks about reviews, gaps, sentiment, trends, or requires data → Data Discovery Agent
+Working with user_id: {user_id}
 
-When handing off, explain which specialist will help them.
-Be concise and helpful.""",
+Route immediately without explanation:
+- General Assistant: time, date, general questions, greetings
+- Data Discovery Agent: reviews, gaps, sentiment, trends, any data analysis, etc..
+
+CRITICAL RULES:
+- NEVER explain handoffs or say "I'll route this to..."
+- NEVER ask for data location - tools handle data access
+- Just hand off silently - the user sees agent transitions automatically
+- If unclear which specialist, pick the most likely one and hand off""",
         tools=[get_user_datasets_tool, get_current_time_tool],
         llm=llm,
     )
@@ -102,14 +107,9 @@ Be concise and helpful.""",
     general_assistant_agent = FunctionAgent(
         name="general_assistant",
         description="Handles general questions, time queries, and non-data questions",
-        system_prompt="""You are a helpful general assistant. You handle:
-1. Time and date queries
-2. General questions that don't require data analysis
-3. Greetings and casual conversation
-4. Questions about how the system works
+        system_prompt="""Answer time, date, general questions, and greetings directly.
 
-Be friendly, concise, and helpful.
-You do NOT need to hand off to other agents - you can answer directly.""",
+Be concise and helpful. No handoffs needed.""",
         tools=[get_current_time_tool, format_date_tool],
         llm=llm,
     )
@@ -120,19 +120,23 @@ You do NOT need to hand off to other agents - you can answer directly.""",
     data_discovery_agent = FunctionAgent(
         name="data_discovery",
         description="Discovers available datasets, retrieves EDA metadata, determines optimal data sources",
-        system_prompt="""You are a data discovery specialist. Your role is to:
-1. Discover all available datasets for the user
-2. Analyze EDA metadata to understand data structure
-3. Determine which datasets and tables are relevant for the query
-4. Route to appropriate analysis agents:
-   - Gap Analysis Agent: for product gaps, unmet needs, feature requests
-   - Sentiment Analysis Agent: for sentiment patterns, positive/negative trends
-   - Trend Analysis Agent: for temporal trends, patterns over time
-   - Clustering Agent: for grouping similar reviews, identifying themes
+        system_prompt="""Discover datasets and route to the right analysis agent.
 
-IMPORTANT: When calling tools that require user_id, get it from workflow context/initial_state.
-Always check available datasets first, then analyze EDA metadata to understand the data structure.
-Based on the query, determine which analysis agents should be involved.""",
+Workflow:
+1. Get user_id from context/initial_state
+2. Call get_user_datasets to see available data
+3. Call get_table_eda if needed for structure
+4. Hand off to specialist:
+   - Gap Analysis: product gaps, feature requests
+   - Sentiment Analysis: sentiment patterns
+   - Trend Analysis: trends over time
+   - Clustering: review themes
+
+CRITICAL RULES:
+- NEVER ask user for data location or user_id - get from tools/context
+- NEVER explain "I'll route to..." - just hand off
+- Use tools proactively, don't ask permission
+- Hand off immediately after discovery""",
         tools=[get_user_datasets_tool, get_table_eda_tool, query_user_reviews_tool],
         llm=llm,
     )
@@ -143,15 +147,20 @@ Based on the query, determine which analysis agents should be involved.""",
     gap_analysis_agent = FunctionAgent(
         name="gap_analysis",
         description="Specialist in identifying product gaps, unmet needs, and feature requests",
-        system_prompt="""You are a product gap analysis specialist. You help identify:
-1. Product gaps and unmet customer needs
-2. Feature requests and improvement opportunities
-3. Common pain points across reviews
-4. Areas where competitors might have advantages
+        system_prompt="""Analyze product gaps and unmet needs.
 
-Use semantic search to find relevant reviews, extract keywords, and detect patterns.
-After analysis, hand off to Visualization Agent for charts, then to Report Writer for final formatting.
-Be thorough and evidence-based in your analysis.""",
+Use tools to find patterns:
+- detect_gaps_tool for gap detection
+- semantic_search_reviews for relevant reviews
+- extract_keywords for themes
+- query_user_reviews_table for data
+
+After analysis, hand off to Visualization for charts.
+
+CRITICAL: 
+- Never say "I'll hand off" - just do it
+- Never mention user_id in your response
+- Focus on findings only""",
         tools=[detect_gaps_tool, semantic_search_tool, extract_keywords_tool, query_user_reviews_tool],
         llm=llm,
     )
@@ -162,16 +171,18 @@ Be thorough and evidence-based in your analysis.""",
     sentiment_analysis_agent = FunctionAgent(
         name="sentiment_analysis",
         description="Specialist in analyzing sentiment patterns and positive/negative trends",
-        system_prompt="""You are a sentiment analysis specialist. You analyze:
-1. Overall sentiment distribution (positive, neutral, negative)
-2. Sentiment by source/platform
-3. Sentiment by rating
-4. Sentiment trends over time
-5. Key positive and negative themes
+        system_prompt="""Analyze sentiment patterns.
 
-Use sentiment analysis tools and review statistics.
-After analysis, hand off to Visualization Agent for charts, then to Report Writer.
-Provide actionable insights about sentiment patterns.""",
+Use tools:
+- analyze_sentiment_patterns for distribution
+- get_review_statistics for stats
+- query_user_reviews_table for data
+
+Then hand off to Visualization.
+
+CRITICAL: 
+- Never mention user_id in your response
+- Hand off immediately after analysis""",
         tools=[analyze_sentiment_tool, get_review_stats_tool, query_user_reviews_tool],
         llm=llm,
     )
@@ -182,15 +193,18 @@ Provide actionable insights about sentiment patterns.""",
     trend_analysis_agent = FunctionAgent(
         name="trend_analysis",
         description="Specialist in detecting temporal trends and patterns over time",
-        system_prompt="""You are a trend analysis specialist. You detect:
-1. Temporal trends in ratings, sentiment, or review volume
-2. Patterns over time (daily, weekly, monthly)
-3. Seasonal variations
-4. Trend direction (improving, declining, stable)
+        system_prompt="""Detect trends over time.
 
-Use trend detection tools and time-series analysis.
-After analysis, hand off to Visualization Agent for line charts showing trends.
-Provide insights about what trends mean for the product.""",
+Use tools:
+- detect_trends for temporal patterns
+- query_user_reviews_table for data
+- get_review_statistics for stats
+
+After analysis, hand off to Visualization for line charts.
+
+CRITICAL: 
+- Never mention user_id in your response
+- Hand off immediately after analysis""",
         tools=[detect_trends_tool, query_user_reviews_tool, get_review_stats_tool],
         llm=llm,
     )
@@ -201,15 +215,18 @@ Provide insights about what trends mean for the product.""",
     clustering_agent = FunctionAgent(
         name="clustering",
         description="Specialist in grouping similar reviews and identifying themes",
-        system_prompt="""You are a review clustering specialist. You:
-1. Group similar reviews into clusters
-2. Identify common themes and topics
-3. Extract representative reviews for each cluster
-4. Analyze keyword patterns within clusters
+        system_prompt="""Group reviews into themes.
 
-Use clustering tools and keyword extraction.
-After analysis, hand off to Visualization Agent for visualizations, then to Report Writer.
-Help users understand the main themes in their review data.""",
+Use tools:
+- cluster_reviews for grouping
+- extract_keywords for patterns
+- semantic_search_reviews for examples
+
+After analysis, hand off to Visualization.
+
+CRITICAL: 
+- Never mention user_id in your response
+- Hand off immediately after analysis""",
         tools=[cluster_reviews_tool, extract_keywords_tool, semantic_search_tool],
         llm=llm,
     )
@@ -220,28 +237,25 @@ Help users understand the main themes in their review data.""",
     visualization_agent = FunctionAgent(
         name="visualization",
         description="Specialist in generating charts, graphs, and visualizations",
-        system_prompt="""You are a data visualization specialist. You create:
-1. Bar charts for categorical comparisons
-2. Line charts for trends over time
-3. Pie charts for distributions
-4. Heatmaps for correlation analysis
+        system_prompt="""Generate charts from analysis data.
 
-Choose the appropriate chart type based on the data and analysis needs.
-Generate PNG files and return the image paths.
+Chart types:
+- Bar: categorical comparisons
+- Line: trends over time
+- Pie: distributions
+- Heatmap: correlations
 
-IMPORTANT: 
-- When calling visualization tools, you MUST include the user_id parameter (from workflow context/initial_state)
-- Visualization tools can automatically access data from previous analysis agents via context_key parameter
-- Use context_key to reference stored data (this avoids passing large datasets through tool calls):
-  * "gap_analysis_data" for gap analysis bar charts
-  * "trend_data" or "sentiment_trend_data" for trend line charts  
-  * "sentiment_distribution_data" for sentiment pie charts
-  * "cluster_data" for cluster size bar/pie charts
-- Example: generate_line_chart(context_key="trend_data", title="Rating Trends", user_id=user_id, x_label="Period", y_label="Average Rating")
-- You can also pass data directly, but using context_key is preferred for large datasets and avoids token costs
+Get user_id from context/initial_state.
+Use context_key for data from previous agents:
+- "gap_analysis_data" → bar charts
+- "trend_data" → line charts
+- "sentiment_distribution_data" → pie charts
+- "cluster_data" → cluster charts
 
-After creating visualizations, hand off to Report Writer to include them in the final report.
-Always create clear, informative visualizations with proper labels and titles.""",
+CRITICAL: 
+- After generating charts, IMMEDIATELY hand off to Report Writer
+- Do NOT provide final answers or summaries yourself
+- Never mention user_id in your response""",
         tools=[
             generate_bar_chart_tool,
             generate_line_chart_tool,
@@ -256,17 +270,20 @@ Always create clear, informative visualizations with proper labels and titles.""
     # ========================================================================
     report_writer_agent = FunctionAgent(
         name="report_writer",
-        description="Formats comprehensive markdown reports with embedded visualizations",
-        system_prompt="""You are a report writing specialist. You create:
-1. Well-structured markdown reports
-2. Embed visualization images using markdown image syntax: ![Alt Text](image_path)
-3. Include executive summaries
-4. Format findings with proper headings, lists, and citations
-5. Make reports actionable and easy to read
+        description="FINAL agent that delivers user-facing responses. Formats analysis results into clear, actionable reports.",
+        system_prompt="""You are the FINAL agent that delivers results to the user.
 
-You are the final agent - format all analysis results into a comprehensive report.
-Include visualizations where appropriate using markdown image syntax.
-Structure the report with clear sections: Summary, Findings, Visualizations, Recommendations.""",
+Format analysis into a clear report with:
+- Key Findings (bullet points)
+- Visualizations (list chart paths)
+- Brief recommendations
+
+Keep it concise and actionable.
+
+CRITICAL: 
+- You are the ONLY agent that responds to the user
+- Never mention user_id
+- No handoffs - you are the end of the chain""",
         tools=[],  # No tools - just formats output
         llm=llm,
     )
@@ -359,10 +376,20 @@ class StreamingProductReviewWorkflow(Workflow):
         
         # Stream events from the agent workflow
         async for event in handler.stream_events():
-            # Format and display different event types
-            if hasattr(event, 'agent_name'):
-                current_agent = event.agent_name
-                print(f"\n🤖 Agent: {event.agent_name.upper()}")
+            # Check for agent handoff using either field
+            new_agent = getattr(event, "current_agent_name", None) or getattr(event, "agent_name", None)
+            # if isinstance(event, AgentStream):
+            #     print(f"💭 * {event.raw.get('delta', {}).get('thinking')}")
+            #     print(f"💭 ** {event.thinking_delta}")
+
+            if new_agent:
+                # Detect and display agent handoff/transition
+                if current_agent and current_agent != new_agent:
+                    print(f"\n🔀 Handoff: {current_agent.upper()} → {new_agent.upper()}")
+                elif not current_agent:
+                    print(f"\n🤖 Starting Agent: {new_agent.upper()}")
+                
+                current_agent = new_agent
             
             if hasattr(event, 'tool_call'):
                 tool_call = event.tool_call
@@ -392,7 +419,14 @@ class StreamingProductReviewWorkflow(Workflow):
                 if hasattr(msg, 'content') and msg.content and not response_started:
                     # Fallback if streaming doesn't work
                     print(f"\n   💬 Response: {msg.content}")
-        
+            
+            # Handle thinking/reasoning output from Claude
+            if hasattr(event, 'raw') and isinstance(event.raw, dict):
+                raw_delta = event.raw.get('delta')
+                if raw_delta and hasattr(raw_delta, 'type') and raw_delta.type == 'thinking_delta':
+                    if hasattr(raw_delta, 'thinking'):
+                        print(f"{raw_delta.thinking}", end='', flush=True)
+
         if response_started:
             print()  # New line after streaming
         
@@ -432,8 +466,8 @@ async def create_and_run_workflow(
             reasoning_effort="low"
         )
     
-    # Create the agent workflow
-    agent_workflow = create_product_review_workflow(llm)
+    # Create the agent workflow with user_id injected into prompts
+    agent_workflow = create_product_review_workflow(llm, user_id=user_id)
     
     # Wrap it in our streaming workflow
     workflow = StreamingProductReviewWorkflow(
@@ -461,10 +495,10 @@ async def main():
     from llama_index.llms.anthropic import Anthropic
 
     # Get Anthropic API key from settings
-    api_key = settings.get_secret("openai_api_key")
-    # Initialize LLM
-    llm = OpenAI(model="gpt-5-mini", temperature=0.05, streaming=True, api_key=api_key, reasoning_effort="low", max_tokens=10000)
-    # llm = Anthropic(model="claude-haiku-4-5", temperature=0.05, api_key=api_key, thinking_dict={'type': 'enabled', 'budget_tokens': 4096}, max_tokens=10000)
+    # api_key = settings.get_secret("openai_api_key")
+    # # Initialize LLM
+    # llm = OpenAI(model="gpt-5", temperature=0.05, streaming=True, api_key=api_key, reasoning_effort="high", max_tokens=10000)
+    llm = Anthropic(model="claude-sonnet-4-5", temperature=0.05, api_key=api_key, thinking_dict={'type': 'enabled', 'budget_tokens': 4096}, max_tokens=10000)
     
     print("\n" + "="*80)
     print("LLAMAINDEX MULTI-AGENT PRODUCT REVIEW ANALYSIS SYSTEM")
@@ -477,13 +511,14 @@ async def main():
     print("  ✓ Context management across agents")
     print("="*80 + "\n")
     
-    # Create the agent workflow
-    agent_workflow = create_product_review_workflow(llm)
+    # Create the agent workflow with user_id injected into prompts
+    test_user_id = "user_123"
+    agent_workflow = create_product_review_workflow(llm, user_id=test_user_id)
     
     # Wrap it in our streaming workflow for better visibility
     workflow = StreamingProductReviewWorkflow(
         agent_workflow=agent_workflow,
-        user_id="test-user-1",
+        user_id=test_user_id,
         timeout=300,
         verbose=True
     )

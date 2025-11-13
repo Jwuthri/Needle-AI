@@ -728,6 +728,370 @@ async def clear_session(
         )
 
 
+@router.post("/analyze")
+async def analyze_reviews(
+    request: ChatRequest,
+    current_user: Optional[ClerkUser] = Depends(get_current_user),
+    _rate_limit_check = Depends(check_rate_limit),
+    db = Depends(get_db)
+):
+    """
+    Analyze product reviews using the Product Review Analysis Workflow.
+    
+    This endpoint uses the advanced multi-agent workflow with:
+    - Intelligent query routing via Coordinator Agent
+    - Adaptive planning with ReAct pattern via Planner Agent
+    - Parallel agent execution via Orchestrator
+    - Comprehensive execution tracking via Chat Message Steps
+    - Conversational context management for follow-up queries
+    
+    Authentication & Authorization:
+    - Requires valid Clerk authentication token
+    - Verifies user owns the session
+    - Checks user has access to requested datasets
+    - Rate limiting applied per client IP
+    
+    Returns Server-Sent Events (SSE) stream with:
+    - agent_step_start: When an agent begins execution
+    - agent_step_complete: When an agent completes with results
+    - tool_call: When a tool is invoked
+    - tool_call_complete: When a tool call finishes
+    - content: Streaming response text chunks
+    - complete: Final response with metadata
+    - error: If something goes wrong
+    
+    Requirements: 7.1, 7.5, 7.6, 13.1, 13.2, 13.3
+    """
+    try:
+        from app.database.repositories.chat_session import ChatSessionRepository
+        from app.database.repositories.chat_message import ChatMessageRepository
+        from app.database.models.chat_message import MessageRoleEnum
+        from app.optimal_workflow.product_review_workflow import ProductReviewAnalysisWorkflow
+        from llama_index.core.workflow import StartEvent
+        import uuid
+        
+        user_id = current_user.id if current_user else None
+        
+        # Verify user is authenticated for this endpoint
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required for review analysis"
+            )
+        
+        # Ensure session exists in database
+        session_id = request.session_id or str(uuid.uuid4())
+        db_session = await ChatSessionRepository.get_by_id(db, session_id)
+        
+        if db_session:
+            # Verify user owns the session
+            if db_session.user_id != user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You don't have access to this session"
+                )
+            logger.info(f"Using existing session {session_id}")
+        else:
+            # Create new session for this user
+            db_session = await ChatSessionRepository.create(
+                db, 
+                user_id=user_id, 
+                id=session_id,
+                extra_metadata={"company_id": request.company_id} if request.company_id else {}
+            )
+            await db.commit()
+            logger.info(f"Created database session {session_id} for user {user_id}")
+        
+        # Verify user has access to datasets if company_id is specified
+        if request.company_id:
+            try:
+                from app.database.repositories.user_dataset import UserDatasetRepository
+                
+                # Check if user has access to datasets for this company
+                user_datasets = await UserDatasetRepository.get_by_user_id(db, user_id)
+                
+                # Verify at least one dataset exists for this user
+                if not user_datasets:
+                    logger.warning(f"User {user_id} has no datasets available")
+                    # Don't block - workflow will handle gracefully
+                else:
+                    logger.info(f"User {user_id} has access to {len(user_datasets)} dataset(s)")
+                    
+            except Exception as dataset_check_error:
+                logger.warning(f"Could not verify dataset access: {dataset_check_error}")
+                # Don't block - workflow will handle gracefully
+        
+        # Save user message to database
+        user_message = await ChatMessageRepository.create(
+            db=db,
+            session_id=session_id,
+            content=request.message,
+            role=MessageRoleEnum.USER
+        )
+        await db.commit()
+        logger.info(f"Saved user message {user_message.id} to database")
+        
+        # Create assistant message BEFORE starting the workflow
+        assistant_message = await ChatMessageRepository.create(
+            db=db,
+            session_id=session_id,
+            content="",
+            role=MessageRoleEnum.ASSISTANT
+        )
+        await db.commit()
+        assistant_message_id = assistant_message.id
+        logger.info(f"Created assistant message {assistant_message_id} for workflow tracking")
+        
+        # Stream processing function
+        async def event_stream():
+            from app.database.session import get_async_session
+            from datetime import datetime, date
+            import asyncio
+            
+            def make_json_serializable(obj):
+                """Recursively convert any object to be JSON serializable."""
+                if obj is None:
+                    return None
+                elif isinstance(obj, (datetime, date)):
+                    return obj.isoformat()
+                elif hasattr(obj, "model_dump"):
+                    # Pydantic model
+                    return obj.model_dump(mode='json')
+                elif isinstance(obj, dict):
+                    return {k: make_json_serializable(v) for k, v in obj.items()}
+                elif isinstance(obj, (list, tuple)):
+                    return [make_json_serializable(item) for item in obj]
+                elif isinstance(obj, (str, int, float, bool)):
+                    return obj
+                else:
+                    # For any other type, try str() as fallback
+                    return str(obj)
+            
+            accumulated_content = ""
+            update_count = 0
+            
+            try:
+                # Get conversation history for context
+                conversation_history = []
+                try:
+                    async with get_async_session() as history_db:
+                        from app.database.repositories.chat_message import ChatMessageRepository
+                        messages = await ChatMessageRepository.get_by_session_id(
+                            history_db,
+                            session_id,
+                            limit=10
+                        )
+                        conversation_history = [
+                            {
+                                "role": msg.role.value,
+                                "content": msg.content,
+                                "timestamp": msg.created_at.isoformat() if msg.created_at else None
+                            }
+                            for msg in messages
+                        ]
+                except Exception as history_error:
+                    logger.warning(f"Could not load conversation history: {history_error}")
+                
+                # Create event queue for streaming
+                event_queue = asyncio.Queue()
+                
+                def stream_callback(event: dict):
+                    """Callback to receive events from workflow."""
+                    try:
+                        event_queue.put_nowait(event)
+                    except Exception as e:
+                        logger.error(f"Failed to queue event: {e}")
+                
+                # Initialize workflow with streaming callback
+                workflow = ProductReviewAnalysisWorkflow(
+                    user_id=user_id,
+                    session_id=session_id,
+                    assistant_message_id=assistant_message_id,
+                    stream_callback=stream_callback,
+                    timeout=300.0,  # 5 minute timeout
+                    verbose=True
+                )
+                
+                # Start workflow in background task
+                workflow_task = asyncio.create_task(
+                    workflow.run(
+                        query=request.message,
+                        conversation_history=conversation_history
+                    )
+                )
+                
+                # Stream events as they arrive
+                while True:
+                    try:
+                        # Wait for event with timeout
+                        event = await asyncio.wait_for(event_queue.get(), timeout=1.0)
+                        update_count += 1
+                        
+                        if event["type"] == "content":
+                            accumulated_content += event["data"]["content"]
+                            logger.debug(f"Streaming content update #{update_count}: {len(event['data']['content'])} chars")
+                        
+                        serializable_event = make_json_serializable(event)
+                        sse_data = f"data: {json.dumps(serializable_event)}\n\n"
+                        yield sse_data
+                        
+                        if event["type"] == "content":
+                            await asyncio.sleep(0.001)
+                        
+                        # Check if workflow completed
+                        if event["type"] == "complete":
+                            logger.info(f"Workflow completed: {update_count} updates sent")
+                            break
+                            
+                    except asyncio.TimeoutError:
+                        # Check if workflow task is done
+                        if workflow_task.done():
+                            # Get result or exception
+                            try:
+                                result = workflow_task.result()
+                                logger.info(f"Workflow finished successfully")
+                                break
+                            except Exception as workflow_error:
+                                logger.error(f"Workflow failed: {workflow_error}", exc_info=True)
+                                error_event = {
+                                    "type": "error",
+                                    "data": {"error": str(workflow_error)}
+                                }
+                                yield f"data: {json.dumps(error_event)}\n\n"
+                                break
+                        # Continue waiting for events
+                        continue
+                
+                logger.info(f"Stream completed: {update_count} updates sent, {len(accumulated_content)} chars total")
+                
+            except Exception as e:
+                logger.error(f"Stream error: {e}", exc_info=True)
+                error_event = {
+                    "type": "error",
+                    "data": {"error": str(e)}
+                }
+                yield f"data: {json.dumps(error_event)}\n\n"
+        
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"  # Disable nginx buffering
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Chat analyze error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Analysis failed: {str(e)}"
+        )
+
+
+@router.get("/steps/{message_id}")
+async def get_message_steps(
+    message_id: str,
+    current_user: Optional[ClerkUser] = Depends(get_current_user),
+    db = Depends(get_db)
+) -> dict:
+    """
+    Get all execution steps for a specific chat message.
+    
+    Returns detailed information about each agent step including:
+    - Agent name and execution order
+    - Thoughts (reasoning traces)
+    - Actions (tool calls, structured outputs, predictions)
+    - Results and timestamps
+    
+    This enables the frontend to visualize the workflow execution process.
+    
+    Requirements: 4.6
+    """
+    try:
+        from app.database.repositories.chat_message import ChatMessageRepository
+        from app.database.repositories.chat_message_step import ChatMessageStepRepository
+        
+        user_id = current_user.id if current_user else None
+        
+        # Get the message to verify ownership
+        message = await ChatMessageRepository.get_by_id(db, message_id)
+        if not message:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Message {message_id} not found"
+            )
+        
+        # Get session to check ownership
+        from app.database.repositories.chat_session import ChatSessionRepository
+        session = await ChatSessionRepository.get_by_id(db, message.session_id)
+        
+        if not session:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Session not found for message {message_id}"
+            )
+        
+        # Check ownership
+        if user_id and session.user_id != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You don't have access to this message"
+            )
+        
+        # Get all steps for this message in chronological order
+        steps = await ChatMessageStepRepository.get_by_message_id(
+            db,
+            message_id,
+            order_by_step=True
+        )
+        
+        # Format steps for response
+        formatted_steps = []
+        for step in steps:
+            step_data = {
+                "step_id": str(step.id),
+                "agent_name": step.agent_name,
+                "step_order": step.step_order,
+                "thought": step.thought,
+                "created_at": step.created_at.isoformat() if step.created_at else None
+            }
+            
+            # Add content based on what's available
+            if step.tool_call:
+                step_data["type"] = "tool_call"
+                step_data["content"] = step.tool_call
+            elif step.structured_output:
+                step_data["type"] = "structured_output"
+                step_data["content"] = step.structured_output
+            elif step.prediction:
+                step_data["type"] = "prediction"
+                step_data["content"] = step.prediction
+            else:
+                step_data["type"] = "thought_only"
+                step_data["content"] = None
+            
+            formatted_steps.append(step_data)
+        
+        logger.info(f"Retrieved {len(formatted_steps)} steps for message {message_id}")
+        
+        return {
+            "message_id": message_id,
+            "step_count": len(formatted_steps),
+            "steps": formatted_steps
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving message steps: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve message steps: {str(e)}"
+        )
+
+
 @router.post("/feedback", response_model=FeedbackResponse)
 async def submit_feedback(
     feedback: ChatFeedback,

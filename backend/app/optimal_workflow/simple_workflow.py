@@ -38,6 +38,26 @@ async def run_simple_workflow(
     """
     logger.info(f"🚀 Starting Simple Workflow (gpt-5-nano) for query: {query[:100]}")
     
+    # Track workflow start in database
+    if assistant_message_id:
+        try:
+            from app.database.session import get_async_session
+            from app.database.repositories.chat_message_step import ChatMessageStepRepository
+            
+            async with get_async_session() as db:
+                await ChatMessageStepRepository.create(
+                    db=db,
+                    message_id=assistant_message_id,
+                    agent_name="SimpleWorkflow",
+                    step_order=0,
+                    thought="Query classified as simple - generating direct response using gpt-5-nano",
+                    structured_output={"workflow_type": "simple", "model": "gpt-5-nano"}
+                )
+                await db.commit()
+                logger.info(f"[WORKFLOW DB] ✅ Tracked simple workflow start")
+        except Exception as e:
+            logger.error(f"[WORKFLOW DB] Failed to track workflow start: {e}")
+    
     if stream_callback:
         stream_callback({
             "type": "step_start",
@@ -107,14 +127,31 @@ async def run_simple_workflow(
             try:
                 from app.database.session import get_async_session
                 from app.database.repositories.chat_message import ChatMessageRepository
+                from app.database.repositories.chat_message_step import ChatMessageStepRepository
                 
                 async with get_async_session() as db:
+                    # Update message content
                     await ChatMessageRepository.update(
                         db=db,
                         message_id=assistant_message_id,
                         content=accumulated_answer,
                         completed_at=datetime.utcnow()
                     )
+                    
+                    # Track completion step
+                    await ChatMessageStepRepository.create(
+                        db=db,
+                        message_id=assistant_message_id,
+                        agent_name="SimpleWorkflow",
+                        step_order=1,
+                        prediction=accumulated_answer[:500],  # Store first 500 chars
+                        structured_output={
+                            "status": "completed",
+                            "response_length": len(accumulated_answer),
+                            "model": "gpt-5-nano"
+                        }
+                    )
+                    
                     await db.commit()
                     logger.info(f"💾 Saved simple workflow response to DB (message_id={assistant_message_id})")
             except Exception as db_error:

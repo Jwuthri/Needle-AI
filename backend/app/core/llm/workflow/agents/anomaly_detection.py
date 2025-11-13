@@ -640,3 +640,289 @@ Only include topics with significant emergence. Respond with ONLY the JSON array
         except Exception as e:
             logger.error(f"Error identifying emerging topics: {e}")
             return []
+
+    
+    async def _detect_source_anomalies(
+        self,
+        reviews: List[Dict[str, Any]],
+        context: ExecutionContext
+    ) -> List[Insight]:
+        """
+        Detect source-specific anomalies (platform-specific issues).
+        
+        Identifies issues that are specific to certain review sources
+        (e.g., App Store, Google Play, Reddit, Twitter).
+        
+        Args:
+            reviews: List of reviews
+            context: Execution context
+            
+        Returns:
+            List of Insight objects for source-specific anomalies
+        """
+        logger.info("Detecting source-specific anomalies")
+        
+        insights = []
+        
+        # Group reviews by source
+        source_groups = defaultdict(list)
+        for review in reviews:
+            source = review.get("source", "unknown")
+            if source and source != "unknown":
+                source_groups[source].append(review)
+        
+        if len(source_groups) < 2:
+            logger.info("Not enough sources for source-specific anomaly detection")
+            return insights
+        
+        # Calculate statistics for each source
+        source_stats = {}
+        for source, source_reviews in source_groups.items():
+            if len(source_reviews) < 3:  # Skip sources with too few reviews
+                continue
+            
+            ratings = [r.get("rating", 0) for r in source_reviews if r.get("rating")]
+            low_ratings = [r for r in ratings if r <= 2]
+            
+            source_stats[source] = {
+                "review_count": len(source_reviews),
+                "avg_rating": sum(ratings) / len(ratings) if ratings else 0,
+                "low_rating_count": len(low_ratings),
+                "low_rating_pct": (len(low_ratings) / len(ratings) * 100) if ratings else 0,
+                "reviews": source_reviews
+            }
+        
+        if len(source_stats) < 2:
+            logger.info("Not enough sources with sufficient reviews")
+            return insights
+        
+        # Calculate overall baseline
+        all_ratings = [r.get("rating", 0) for r in reviews if r.get("rating")]
+        overall_avg = sum(all_ratings) / len(all_ratings) if all_ratings else 0
+        overall_low_pct = (sum(1 for r in all_ratings if r <= 2) / len(all_ratings) * 100) if all_ratings else 0
+        
+        # Detect sources with significantly worse performance
+        for source, stats in source_stats.items():
+            # Check if this source has significantly more low ratings
+            if stats["low_rating_pct"] >= overall_low_pct * 1.5 and stats["low_rating_pct"] >= 30:
+                diff_pct = stats["low_rating_pct"] - overall_low_pct
+                
+                # Use LLM to analyze source-specific issues
+                source_issues = await self._analyze_source_issues(
+                    source=source,
+                    source_reviews=stats["reviews"],
+                    context=context
+                )
+                
+                insight_text = (
+                    f"PLATFORM ISSUE: {source} shows {diff_pct:.1f}% more low ratings than average "
+                    f"({stats['low_rating_pct']:.1f}% vs {overall_low_pct:.1f}% overall)"
+                )
+                
+                if source_issues:
+                    insight_text += f". {source_issues}"
+                
+                severity_score = min(0.88, 0.6 + (diff_pct / 100))
+                
+                # Create comparison data for visualization
+                comparison_data = {
+                    "x": [s for s in source_stats.keys()],
+                    "y": [source_stats[s]["low_rating_pct"] for s in source_stats.keys()],
+                    "chart_type": "bar",
+                    "title": "Low Rating % by Source",
+                    "x_label": "Source",
+                    "y_label": "Low Rating %"
+                }
+                
+                insight = Insight(
+                    source_agent="anomaly_detection",
+                    insight_text=insight_text,
+                    severity_score=severity_score,
+                    confidence_score=0.82,
+                    supporting_reviews=[r.get("id", "") for r in stats["reviews"]],
+                    visualization_hint="bar_chart",
+                    visualization_data=comparison_data,
+                    metadata={
+                        "anomaly_type": "source_specific",
+                        "source": source,
+                        "source_low_rating_pct": stats["low_rating_pct"],
+                        "overall_low_rating_pct": overall_low_pct,
+                        "difference": diff_pct,
+                        "source_review_count": stats["review_count"],
+                        "recommended_action": f"Investigate {source}-specific issues or technical problems"
+                    }
+                )
+                
+                insights.append(insight)
+                logger.info(f"Detected source anomaly: {source} ({diff_pct:.1f}% higher low ratings)")
+            
+            # Check if this source has significantly lower average rating
+            elif stats["avg_rating"] < overall_avg - 0.5 and stats["review_count"] >= 5:
+                diff = overall_avg - stats["avg_rating"]
+                
+                insight_text = (
+                    f"{source} has significantly lower average rating "
+                    f"({stats['avg_rating']:.2f} vs {overall_avg:.2f} overall, {diff:.2f} point difference)"
+                )
+                
+                severity_score = min(0.85, 0.5 + (diff / 5.0))
+                
+                insight = Insight(
+                    source_agent="anomaly_detection",
+                    insight_text=insight_text,
+                    severity_score=severity_score,
+                    confidence_score=0.80,
+                    supporting_reviews=[r.get("id", "") for r in stats["reviews"]],
+                    visualization_hint="bar_chart",
+                    visualization_data={
+                        "x": [s for s in source_stats.keys()],
+                        "y": [source_stats[s]["avg_rating"] for s in source_stats.keys()],
+                        "chart_type": "bar",
+                        "title": "Average Rating by Source",
+                        "x_label": "Source",
+                        "y_label": "Average Rating"
+                    },
+                    metadata={
+                        "anomaly_type": "source_rating_difference",
+                        "source": source,
+                        "source_avg_rating": stats["avg_rating"],
+                        "overall_avg_rating": overall_avg,
+                        "difference": diff,
+                        "recommended_action": f"Review {source} user experience and platform-specific features"
+                    }
+                )
+                
+                insights.append(insight)
+                logger.info(f"Detected source rating difference: {source} ({diff:.2f} points lower)")
+        
+        return insights
+    
+    async def _analyze_source_issues(
+        self,
+        source: str,
+        source_reviews: List[Dict[str, Any]],
+        context: ExecutionContext
+    ) -> str:
+        """
+        Use LLM to analyze source-specific issues.
+        
+        Args:
+            source: Source name
+            source_reviews: Reviews from this source
+            context: Execution context
+            
+        Returns:
+            Brief description of source-specific issues
+        """
+        try:
+            # Get low-rating reviews from this source
+            low_rating_reviews = [r for r in source_reviews if r.get("rating", 0) <= 2]
+            
+            if not low_rating_reviews:
+                return ""
+            
+            review_texts = [r.get("text", "")[:200] for r in low_rating_reviews[:10]]
+            
+            system_prompt = """You are an expert at identifying platform-specific issues.
+Provide a concise summary of the main issue affecting this platform."""
+            
+            user_prompt = f"""Reviews from {source} have significantly more low ratings than other sources.
+
+Sample low-rating reviews from {source}:
+{chr(10).join(f"- {text}" for text in review_texts)}
+
+Identify the main platform-specific issue in ONE sentence (max 15 words).
+Focus on technical or UX problems specific to {source}."""
+            
+            issue_summary = await self.llm_client.generate_completion(
+                prompt=user_prompt,
+                system_message=system_prompt,
+                temperature=0.2,
+                max_tokens=40
+            )
+            
+            return issue_summary.strip()
+            
+        except Exception as e:
+            logger.error(f"Error analyzing source issues: {e}")
+            return ""
+    
+    def _get_review_date(self, review: Dict[str, Any]) -> datetime:
+        """
+        Extract date from review.
+        
+        Args:
+            review: Review dictionary
+            
+        Returns:
+            datetime object
+        """
+        date_str = review.get("date") or review.get("created_at") or review.get("timestamp")
+        try:
+            if isinstance(date_str, str):
+                # Try parsing common date formats
+                for fmt in ["%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"]:
+                    try:
+                        return datetime.strptime(date_str.split(".")[0], fmt)
+                    except ValueError:
+                        continue
+                return datetime.fromisoformat(str(date_str).split(".")[0])
+            return datetime.fromisoformat(str(date_str).split(".")[0])
+        except:
+            return datetime.min
+    
+    def _group_reviews_by_time(
+        self,
+        reviews: List[Dict[str, Any]],
+        time_window: str
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Group reviews by time periods.
+        
+        Args:
+            reviews: Sorted list of reviews with dates
+            time_window: Time window (daily, weekly)
+            
+        Returns:
+            Dictionary mapping period names to review lists
+        """
+        groups = defaultdict(list)
+        
+        for review in reviews:
+            try:
+                date_obj = self._get_review_date(review)
+                
+                if time_window == "daily":
+                    period_key = date_obj.strftime("%Y-%m-%d")
+                elif time_window == "weekly":
+                    period_key = f"Week {date_obj.isocalendar()[1]}, {date_obj.year}"
+                else:
+                    # Default to weekly
+                    period_key = f"Week {date_obj.isocalendar()[1]}, {date_obj.year}"
+                
+                groups[period_key].append(review)
+            except:
+                continue
+        
+        return dict(groups)
+    
+    async def _emit_event(
+        self,
+        event_type: str,
+        event_data: Dict[str, Any]
+    ) -> None:
+        """
+        Emit a streaming event if callback is configured.
+        
+        Args:
+            event_type: Type of event
+            event_data: Event data payload
+        """
+        if self.stream_callback:
+            try:
+                await self.stream_callback({
+                    "event_type": event_type,
+                    "data": event_data
+                })
+            except Exception as e:
+                logger.error(f"Error emitting event {event_type}: {e}")

@@ -174,11 +174,31 @@ class ProductGapWorkflow(Workflow):
         else:
             logger.warning(f"Invalid event format from agent: {event}")
 
-    async def _track_step_in_db(self, agent_name: str, step_order: int, content: Any, is_structured: bool):
+    async def _track_step_in_db(
+        self,
+        agent_name: str,
+        step_order: int,
+        content: Any = None,
+        is_structured: bool = False,
+        thought: Optional[str] = None,
+        tool_call: Optional[Dict[str, Any]] = None
+    ):
         """
         Track workflow step in database immediately.
         
-        This stores the step execution details in the database for persistence and auditing.
+        This method ensures comprehensive tracking of all agent actions:
+        - Thoughts (reasoning before action)
+        - Tool calls (with parameters and results)
+        - Structured outputs (Pydantic models, dicts)
+        - Text predictions (LLM responses)
+        
+        Args:
+            agent_name: Name of the agent executing the step
+            step_order: Order of the step in the workflow
+            content: Content to store (structured output or prediction)
+            is_structured: Whether content is structured (JSON) or text
+            thought: Optional reasoning trace from the agent
+            tool_call: Optional tool call information (name, parameters, result)
         
         Returns:
             The created ChatMessageStep object, or None if tracking failed
@@ -194,24 +214,31 @@ class ProductGapWorkflow(Workflow):
             async with get_async_session() as db:
                 logger.info(f"[WORKFLOW DB] Saving step: {agent_name} (order: {step_order})")
                 
-                if is_structured:
-                    step = await ChatMessageStepRepository.create(
-                        db=db,
-                        message_id=self.assistant_message_id,
-                        agent_name=agent_name,
-                        step_order=step_order,
-                        structured_output=content
-                    )
-                else:
-                    step = await ChatMessageStepRepository.create(
-                        db=db,
-                        message_id=self.assistant_message_id,
-                        agent_name=agent_name,
-                        step_order=step_order,
-                        prediction=content if isinstance(content, str) else str(content)
-                    )
+                # Prepare step data
+                step_data = {
+                    "message_id": self.assistant_message_id,
+                    "agent_name": agent_name,
+                    "step_order": step_order,
+                    "thought": thought
+                }
+                
+                # Add content based on type
+                if tool_call:
+                    step_data["tool_call"] = tool_call
+                elif is_structured and content is not None:
+                    # Ensure content is JSON-serializable
+                    if hasattr(content, 'dict'):
+                        step_data["structured_output"] = content.dict()
+                    elif isinstance(content, dict):
+                        step_data["structured_output"] = content
+                    else:
+                        step_data["structured_output"] = {"data": str(content)}
+                elif content is not None:
+                    step_data["prediction"] = content if isinstance(content, str) else str(content)
+                
+                step = await ChatMessageStepRepository.create(db=db, **step_data)
                 await db.commit()
-                logger.info(f"[WORKFLOW DB] ✅ Saved step: {agent_name}")
+                logger.info(f"[WORKFLOW DB] ✅ Saved step: {agent_name} (id: {step.id})")
                 return step
         except Exception as e:
             logger.error(f"[WORKFLOW DB] Failed to save step {agent_name}: {e}", exc_info=True)
