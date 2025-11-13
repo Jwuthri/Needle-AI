@@ -497,3 +497,170 @@ class TestChatAPISecurity:
         # Should either return 404 (session not found) or 403 (forbidden)
         # depending on implementation
         assert response.status_code in [404, 403]
+
+
+class TestProductReviewAnalysisWorkflowAPI:
+    """Tests for Product Review Analysis Workflow API endpoints."""
+
+    def test_analyze_endpoint_requires_authentication(self, client: TestClient):
+        """Test that analyze endpoint requires authentication."""
+        response = client.post(
+            "/api/v1/chat/analyze",
+            json={
+                "message": "What are my main product gaps?",
+                "session_id": None
+            }
+        )
+        
+        # Should require authentication
+        assert response.status_code == 401
+
+    def test_analyze_endpoint_with_auth(self, client: TestClient, auth_headers: dict):
+        """Test analyze endpoint with authentication."""
+        with patch('app.optimal_workflow.product_review_workflow.ProductReviewAnalysisWorkflow') as mock_workflow:
+            # Mock workflow execution
+            mock_instance = mock_workflow.return_value
+            
+            async def mock_run(*args, **kwargs):
+                return "Analysis complete"
+            
+            mock_instance.run = mock_run
+            
+            response = client.post(
+                "/api/v1/chat/analyze",
+                headers=auth_headers,
+                json={
+                    "message": "What are my main product gaps?",
+                    "session_id": None
+                }
+            )
+            
+            # Should return streaming response
+            assert response.status_code == 200
+            assert response.headers["content-type"] == "text/event-stream"
+
+    def test_analyze_endpoint_validates_session_ownership(self, client: TestClient, auth_headers: dict):
+        """Test that analyze endpoint validates session ownership."""
+        with patch('app.database.repositories.chat_session.ChatSessionRepository') as mock_repo:
+            # Mock session belonging to different user
+            mock_session = type('obj', (object,), {
+                'id': 'test-session',
+                'user_id': 'different-user-id'
+            })
+            mock_repo.get_by_id.return_value = mock_session
+            
+            response = client.post(
+                "/api/v1/chat/analyze",
+                headers=auth_headers,
+                json={
+                    "message": "What are my main product gaps?",
+                    "session_id": "test-session"
+                }
+            )
+            
+            # Should return forbidden
+            assert response.status_code == 403
+
+    def test_get_message_steps_endpoint(self, client: TestClient, auth_headers: dict):
+        """Test getting message steps."""
+        message_id = "test-message-123"
+        
+        with patch('app.database.repositories.chat_message.ChatMessageRepository') as mock_msg_repo, \
+             patch('app.database.repositories.chat_session.ChatSessionRepository') as mock_session_repo, \
+             patch('app.database.repositories.chat_message_step.ChatMessageStepRepository') as mock_step_repo:
+            
+            # Mock message
+            mock_message = type('obj', (object,), {
+                'id': message_id,
+                'session_id': 'test-session'
+            })
+            mock_msg_repo.get_by_id.return_value = mock_message
+            
+            # Mock session
+            mock_session = type('obj', (object,), {
+                'id': 'test-session',
+                'user_id': 'test-user-id'
+            })
+            mock_session_repo.get_by_id.return_value = mock_session
+            
+            # Mock steps
+            from datetime import datetime
+            mock_steps = [
+                type('obj', (object,), {
+                    'id': 'step-1',
+                    'agent_name': 'Coordinator',
+                    'step_order': 1,
+                    'thought': 'Analyzing query complexity',
+                    'tool_call': None,
+                    'structured_output': {'complexity': 'complex'},
+                    'prediction': None,
+                    'created_at': datetime.utcnow()
+                }),
+                type('obj', (object,), {
+                    'id': 'step-2',
+                    'agent_name': 'Planner',
+                    'step_order': 2,
+                    'thought': 'Determining next action',
+                    'tool_call': None,
+                    'structured_output': {'action': 'data_retrieval'},
+                    'prediction': None,
+                    'created_at': datetime.utcnow()
+                })
+            ]
+            mock_step_repo.get_by_message_id.return_value = mock_steps
+            
+            response = client.get(
+                f"/api/v1/chat/steps/{message_id}",
+                headers=auth_headers
+            )
+            
+            assert response.status_code == 200
+            data = response.json()
+            
+            assert data["message_id"] == message_id
+            assert data["step_count"] == 2
+            assert len(data["steps"]) == 2
+            assert data["steps"][0]["agent_name"] == "Coordinator"
+            assert data["steps"][0]["thought"] == "Analyzing query complexity"
+            assert data["steps"][1]["agent_name"] == "Planner"
+
+    def test_get_message_steps_not_found(self, client: TestClient, auth_headers: dict):
+        """Test getting steps for non-existent message."""
+        with patch('app.database.repositories.chat_message.ChatMessageRepository') as mock_repo:
+            mock_repo.get_by_id.return_value = None
+            
+            response = client.get(
+                "/api/v1/chat/steps/nonexistent-message",
+                headers=auth_headers
+            )
+            
+            assert response.status_code == 404
+
+    def test_get_message_steps_validates_ownership(self, client: TestClient, auth_headers: dict):
+        """Test that steps endpoint validates message ownership."""
+        message_id = "test-message-123"
+        
+        with patch('app.database.repositories.chat_message.ChatMessageRepository') as mock_msg_repo, \
+             patch('app.database.repositories.chat_session.ChatSessionRepository') as mock_session_repo:
+            
+            # Mock message
+            mock_message = type('obj', (object,), {
+                'id': message_id,
+                'session_id': 'test-session'
+            })
+            mock_msg_repo.get_by_id.return_value = mock_message
+            
+            # Mock session belonging to different user
+            mock_session = type('obj', (object,), {
+                'id': 'test-session',
+                'user_id': 'different-user-id'
+            })
+            mock_session_repo.get_by_id.return_value = mock_session
+            
+            response = client.get(
+                f"/api/v1/chat/steps/{message_id}",
+                headers=auth_headers
+            )
+            
+            # Should return forbidden
+            assert response.status_code == 403

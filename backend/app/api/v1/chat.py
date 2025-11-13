@@ -876,7 +876,7 @@ async def analyze_reviews(
                 try:
                     async with get_async_session() as history_db:
                         from app.database.repositories.chat_message import ChatMessageRepository
-                        messages = await ChatMessageRepository.get_by_session_id(
+                        messages = await ChatMessageRepository.get_session_messages(
                             history_db,
                             session_id,
                             limit=10
