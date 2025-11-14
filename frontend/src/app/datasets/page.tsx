@@ -20,6 +20,22 @@ export default function DatasetsPage() {
   const [dragActive, setDragActive] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // Extract friendly table name from __user_{user_id}_{name} format
+  const getFriendlyTableName = (tableName: string): string => {
+    // Format: __user_user_33gdey7n9vlwazkubrgds1yy4ls_total_war_units
+    // We want: total_war_units
+    if (tableName.startsWith('__user_user_')) {
+      // Remove the __user_user_ prefix and the user ID
+      const withoutPrefix = tableName.substring(12) // Remove '__user_user_'
+      // Find the next underscore after the user ID
+      const nextUnderscore = withoutPrefix.indexOf('_')
+      if (nextUnderscore !== -1) {
+        return withoutPrefix.substring(nextUnderscore + 1)
+      }
+    }
+    return tableName
+  }
+
   useEffect(() => {
     if (isLoaded && !isSignedIn) {
       router.push('/sign-in')
@@ -62,12 +78,20 @@ export default function DatasetsPage() {
       const nameToUse = tableName.trim() || undefined
       const response: UserDatasetUploadResponse = await api.uploadUserDataset(file, nameToUse)
 
-      setUploadSuccess(`Successfully uploaded ${response.row_count} rows${nameToUse ? '' : ` as "${response.table_name}"`}!`)
+      setUploadSuccess(`Successfully uploaded ${response.row_count} rows${nameToUse ? '' : ` as "${getFriendlyTableName(response.table_name)}"`}!`)
       setTableName('')
       
-      // Refresh datasets list
-      const datasetsResponse = await api.listUserDatasets(50, 0)
-      setDatasets(datasetsResponse.datasets || [])
+      // Refresh datasets list with a fresh token (upload may have taken time)
+      try {
+        const freshToken = await getToken()
+        const freshApi = createApiClient(freshToken)
+        const datasetsResponse = await freshApi.listUserDatasets(50, 0)
+        setDatasets(datasetsResponse.datasets || [])
+      } catch (refreshError) {
+        console.error('Failed to refresh datasets list:', refreshError)
+        // Don't show error to user since upload was successful
+        // User can refresh page to see the new dataset
+      }
 
       // Clear success message after 5 seconds
       setTimeout(() => setUploadSuccess(null), 5000)
@@ -238,62 +262,67 @@ export default function DatasetsPage() {
             <h2 className="text-xl font-bold text-white mb-6">Your Datasets</h2>
 
             <div className="space-y-4">
-              {datasets.map((dataset) => (
-                <motion.div
-                  key={dataset.id}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  onClick={() => router.push(`/datasets/${dataset.id}`)}
-                  className="p-4 bg-gray-800/50 border border-gray-700/50 rounded-xl hover:border-emerald-500/30 transition-colors cursor-pointer"
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-start space-x-3">
-                      <Database className="w-5 h-5 text-emerald-400 mt-1 flex-shrink-0" />
-                      <div>
-                        <h3 className="text-white font-semibold">{dataset.table_name}</h3>
-                        <p className="text-white/60 text-sm mt-1">
-                          {dataset.origin} • {dataset.row_count.toLocaleString()} rows
-                        </p>
-                        {dataset.description && (
-                          <p className="text-white/40 text-sm mt-2">{dataset.description}</p>
-                        )}
+              {datasets.map((dataset) => {
+                const friendlyName = getFriendlyTableName(dataset.table_name)
+                const fieldMetadata = dataset.field_metadata || []
+                
+                return (
+                  <motion.div
+                    key={dataset.id}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    onClick={() => router.push(`/datasets/${dataset.id}`)}
+                    className="p-4 bg-gray-800/50 border border-gray-700/50 rounded-xl hover:border-emerald-500/30 transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-start space-x-3">
+                        <Database className="w-5 h-5 text-emerald-400 mt-1 flex-shrink-0" />
+                        <div>
+                          <h3 className="text-white font-semibold">{friendlyName}</h3>
+                          <p className="text-white/60 text-sm mt-1">
+                            {dataset.origin} • {dataset.row_count.toLocaleString()} rows
+                          </p>
+                          {dataset.description && (
+                            <p className="text-white/40 text-sm mt-2 line-clamp-2">{dataset.description}</p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-white/40 text-xs">
+                        {dataset.created_at
+                          ? new Date(dataset.created_at).toLocaleDateString()
+                          : 'Unknown'}
                       </div>
                     </div>
-                    <div className="text-white/40 text-xs">
-                      {dataset.created_at
-                        ? new Date(dataset.created_at).toLocaleDateString()
-                        : 'Unknown'}
-                    </div>
-                  </div>
 
-                  {/* Field Metadata Preview */}
-                  {dataset.meta?.field_metadata && dataset.meta.field_metadata.length > 0 && (
-                    <div className="mt-4 pt-4 border-t border-gray-700/50">
-                      <div className="flex items-center space-x-2 mb-2">
-                        <Info className="w-4 h-4 text-emerald-400" />
-                        <span className="text-white/60 text-sm font-medium">
-                          {dataset.meta.field_metadata.length} fields analyzed
-                        </span>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {dataset.meta.field_metadata.slice(0, 5).map((field, idx) => (
-                          <span
-                            key={idx}
-                            className="px-2 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded text-xs text-emerald-400"
-                          >
-                            {field.field_name} ({field.data_type})
+                    {/* Field Metadata Preview */}
+                    {fieldMetadata.length > 0 && (
+                      <div className="mt-4 pt-4 border-t border-gray-700/50">
+                        <div className="flex items-center space-x-2 mb-2">
+                          <Info className="w-4 h-4 text-emerald-400" />
+                          <span className="text-white/60 text-sm font-medium">
+                            {fieldMetadata.length} fields analyzed
                           </span>
-                        ))}
-                        {dataset.meta.field_metadata.length > 5 && (
-                          <span className="px-2 py-1 bg-gray-700/50 rounded text-xs text-white/40">
-                            +{dataset.meta.field_metadata.length - 5} more
-                          </span>
-                        )}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {fieldMetadata.slice(0, 5).map((field, idx) => (
+                            <span
+                              key={idx}
+                              className="px-2 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded text-xs text-emerald-400"
+                            >
+                              {field.field_name} ({field.data_type})
+                            </span>
+                          ))}
+                          {fieldMetadata.length > 5 && (
+                            <span className="px-2 py-1 bg-gray-700/50 rounded text-xs text-white/40">
+                              +{fieldMetadata.length - 5} more
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </motion.div>
-              ))}
+                    )}
+                  </motion.div>
+                )
+              })}
             </div>
           </motion.div>
         ) : (

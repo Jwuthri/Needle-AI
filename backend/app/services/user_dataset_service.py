@@ -343,14 +343,14 @@ Generate ONLY the name, nothing else. No quotes, no explanation, just the name."
             else:
                 table_name = table_name.strip()
 
-            # Check if table name already exists for this user
-            existing = await UserDatasetRepository.get_by_table_name(self.db, user_id, table_name)
-            if existing:
-                raise ValueError(f"Dataset name '{table_name}' already exists. Please choose a different name.")
-
             # Generate dynamic table name
             dynamic_table_name = generate_dynamic_table_name(user_id, table_name)
             logger.info(f"{self._log_prefix(user_id, table_name)} | Dynamic table name: {dynamic_table_name}")
+
+            # Check if table name already exists for this user
+            existing = await UserDatasetRepository.get_by_table_name(self.db, dynamic_table_name, user_id)
+            if existing:
+                raise ValueError(f"Dataset name '{table_name}' already exists. Please choose a different name.")
 
             # Create dynamic table
             await create_dynamic_table(self.db, dynamic_table_name, df, if_exists='fail')
@@ -365,11 +365,14 @@ Generate ONLY the name, nothing else. No quotes, no explanation, just the name."
             )
             await self.db.commit()
 
-            logger.info(f"{self._log_prefix(user_id, table_name)} | Inserted {rows_inserted} rows")
+            logger.info(f"{self._log_prefix(user_id, dynamic_table_name)} | Inserted {rows_inserted} rows")
 
             # Compute column statistics
             column_stats = self.compute_column_stats(df)
-            logger.info(f"{self._log_prefix(user_id, table_name)} | Computed stats for {len(column_stats)} columns")
+            logger.info(f"{self._log_prefix(user_id, dynamic_table_name)} | Computed stats for {len(column_stats)} columns")
+
+            # Prepare sample data (first 5 rows)
+            sample_data = df.head(5).to_dict(orient='records')
 
             # Generate EDA using LLM
             model_name = self._get_llm_model_name()
@@ -377,35 +380,41 @@ Generate ONLY the name, nothing else. No quotes, no explanation, just the name."
                 table_name=dynamic_table_name,
                 column_stats=column_stats,
                 row_count=row_count,
-                model=model_name
+                sample_data=sample_data,
+                model=model_name,
+                db=self.db,
+                user_id=user_id
             )
 
-            # Convert field metadata to dict for storage
-            field_metadata_dict = [fm.model_dump() for fm in eda_response.field_metadata]
-
-            # Create user dataset record
+            # Create user dataset record with all EDA data - store dynamic_table_name as table_name
             user_dataset = await self.repository.create(
                 db=self.db,
                 user_id=user_id,
                 origin=filename,
-                table_name=table_name,
+                table_name=dynamic_table_name,  # Store the full dynamic table name
                 row_count=row_count,
-                description=eda_response.summary,
-                meta={"field_metadata": field_metadata_dict}
+                description=eda_response["summary"],
+                field_metadata=eda_response["field_metadata"],
+                column_stats=eda_response["column_stats"],
+                sample_data=eda_response["sample_data"],
+                vector_store_columns=eda_response["vector_store_columns"],
+                meta={}
             )
             await self.db.commit()
 
-            logger.info(f"{self._log_prefix(user_id, table_name)} | Created user dataset record: {user_dataset.id}")
+            logger.info(f"{self._log_prefix(user_id, dynamic_table_name)} | Created user dataset record: {user_dataset.id}")
 
             return {
                 "success": True,
                 "dataset_id": user_dataset.id,
-                "table_name": table_name,
-                "dynamic_table_name": dynamic_table_name,
+                "table_name": dynamic_table_name,
                 "row_count": row_count,
                 "column_count": len(df.columns),
-                "description": eda_response.summary,
-                "field_metadata": field_metadata_dict
+                "description": eda_response["summary"],
+                "field_metadata": eda_response["field_metadata"],
+                "column_stats": eda_response["column_stats"],
+                "sample_data": eda_response["sample_data"],
+                "vector_store_columns": eda_response["vector_store_columns"]
             }
 
         except Exception as e:
@@ -454,16 +463,17 @@ Generate ONLY the name, nothing else. No quotes, no explanation, just the name."
         if not dataset or dataset.user_id != user_id:
             return None
 
-        dynamic_table_name = generate_dynamic_table_name(user_id, dataset.table_name)
-
         return {
             "id": dataset.id,
             "user_id": dataset.user_id,
             "origin": dataset.origin,
             "table_name": dataset.table_name,
-            "dynamic_table_name": dynamic_table_name,
             "description": dataset.description,
             "row_count": dataset.row_count,
+            "field_metadata": dataset.field_metadata,
+            "column_stats": dataset.column_stats,
+            "sample_data": dataset.sample_data,
+            "vector_store_columns": dataset.vector_store_columns,
             "meta": dataset.meta,
             "created_at": dataset.created_at.isoformat() if dataset.created_at else None,
             "updated_at": dataset.updated_at.isoformat() if dataset.updated_at else None,
@@ -492,30 +502,30 @@ Generate ONLY the name, nothing else. No quotes, no explanation, just the name."
         if not dataset or dataset.user_id != user_id:
             return None
         
-        dynamic_table_name = generate_dynamic_table_name(user_id, dataset.table_name)
+        table_name = dataset.table_name
         
-        # Query data from dynamic table
+        # Query data from table
         from sqlalchemy import text
         from sqlalchemy.exc import ProgrammingError
         
         try:
             # Get total count
-            count_query = text(f'SELECT COUNT(*) FROM "{dynamic_table_name}"')
+            count_query = text(f'SELECT COUNT(*) FROM "{table_name}"')
             count_result = await self.db.execute(count_query)
             total_rows = count_result.scalar()
             
             # Get paginated data
-            data_query = text(f'SELECT * FROM "{dynamic_table_name}" LIMIT :limit OFFSET :offset')
+            data_query = text(f'SELECT * FROM "{table_name}" LIMIT :limit OFFSET :offset')
             data_result = await self.db.execute(
                 data_query,
                 {"limit": limit, "offset": offset}
             )
         except ProgrammingError as e:
-            # Table might not exist (e.g., if it was created before the fix)
+            # Table might not exist
             error_msg = str(e)
             if "does not exist" in error_msg.lower():
-                logger.error(f"Table {dynamic_table_name} does not exist. Dataset may have been created with old naming convention.")
-                raise ValueError(f"Table for dataset '{dataset.table_name}' does not exist. Please re-upload the dataset.")
+                logger.error(f"Table {table_name} does not exist.")
+                raise ValueError(f"Table '{table_name}' does not exist. Please re-upload the dataset.")
             raise
         
         # Convert rows to dicts
@@ -564,9 +574,12 @@ Generate ONLY the name, nothing else. No quotes, no explanation, just the name."
                 "user_id": ds.user_id,
                 "origin": ds.origin,
                 "table_name": ds.table_name,
-                "dynamic_table_name": generate_dynamic_table_name(ds.user_id, ds.table_name),
                 "description": ds.description,
                 "row_count": ds.row_count,
+                "field_metadata": ds.field_metadata,
+                "column_stats": ds.column_stats,
+                "sample_data": ds.sample_data,
+                "vector_store_columns": ds.vector_store_columns,
                 "meta": ds.meta,
                 "created_at": ds.created_at.isoformat() if ds.created_at else None,
                 "updated_at": ds.updated_at.isoformat() if ds.updated_at else None,
@@ -574,3 +587,86 @@ Generate ONLY the name, nothing else. No quotes, no explanation, just the name."
             for ds in datasets
         ]
 
+    async def get_dataset_data_from_sql(self, sql_query: str) -> pd.DataFrame:
+        """
+        Execute a SQL query and return the results as a pandas DataFrame.
+        
+        Args:
+            sql_query: SQL query to execute
+            
+        Returns:
+            Pandas DataFrame with query results
+            
+        Raises:
+            ValueError: If query execution fails
+        """
+        logger.info(f"{self._log_prefix()} | Executing SQL query")
+        
+        try:
+            df = pd.read_sql(sql_query, self.db.connection())
+            logger.info(f"{self._log_prefix()} | Query returned {len(df)} rows")
+            return df
+        except Exception as e:
+            logger.error(f"{self._log_prefix()} | SQL query failed: {e}", exc_info=True)
+            raise ValueError(f"Failed to execute SQL query: {str(e)}")
+
+    async def get_dataset_data_from_semantic_search(self, query: str, dataset_name: str, top_n: int = -1) -> pd.DataFrame:
+        """
+        Perform semantic search on a dataset and return the results as a pandas DataFrame.
+        
+        Args:
+            query: Search query text
+            dataset_name: Name of the dataset to search on
+            top_n: Maximum number of results to return (default: -1 for all results)
+            
+        Returns:
+            Pandas DataFrame with search results
+        """
+        try:
+            from app.services.embedding_service import get_embedding_service
+            # Generate embedding for the query
+            embedding_service = get_embedding_service()
+            embedding_vector = await embedding_service.generate_embedding(query)
+            
+            # Convert embedding to string format for PostgreSQL
+            embedding_str = "[" + ",".join(str(x) for x in embedding_vector) + "]"
+            top_n_str = "" if top_n == -1 else f"LIMIT {top_n};"
+            sql_query = f"""
+            SELECT
+                *,
+                1 - (__embedding__ <=> '{embedding_str}'::vector) AS __similarity_score__
+            FROM {dataset_name}
+            ORDER BY __similarity_score__
+            {top_n_str}
+            """
+            return await self.get_dataset_data_from_sql(sql_query)
+        except Exception as e:
+            logger.error(f"Failed to get dataset data from semantic search: {e}", exc_info=True)
+            raise ValueError(f"Failed to get dataset data from semantic search: {str(e)}")
+    
+    async def get_dataset_data_from_semantic_search_from_sql(self, sql_query: str, query: str, dataset_name: str, top_n: int = -1) -> pd.DataFrame:
+        """
+        Perform semantic search on a dataset using a SQL query and return the results as a pandas DataFrame.
+        
+        Args:
+            sql_query: SQL query to execute (set the embedding vector as [PLACEHOLDER_QUERY_VECTOR])
+            query: Search query text
+            dataset_name: Name of the dataset to search on
+            top_n: Maximum number of results to return (default: -1 for all results)
+            
+        Returns:
+            Pandas DataFrame with search results
+        """
+        try:
+            from app.services.embedding_service import get_embedding_service
+            # Generate embedding for the query
+            embedding_service = get_embedding_service()
+            embedding_vector = await embedding_service.generate_embedding(query)
+            
+            # Convert embedding to string format for PostgreSQL
+            embedding_str = "[" + ",".join(str(x) for x in embedding_vector) + "]"
+            sql_query = sql_query.replace("[PLACEHOLDER_QUERY_VECTOR]", embedding_str)
+            return await self.get_dataset_data_from_sql(sql_query)
+        except Exception as e:
+            logger.error(f"Failed to get dataset data from semantic search: {e}", exc_info=True)
+            raise ValueError(f"Failed to get dataset data from semantic search: {str(e)}")

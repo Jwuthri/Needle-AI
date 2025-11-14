@@ -29,11 +29,20 @@ class FieldMetadata(BaseModel):
     top_values: List[str] | None = Field(default=None, description="Top 5-10 most common values with counts")
 
 
+class VectorStoreColumns(BaseModel):
+    """Metadata for vector store columns."""
+
+    main_column: str = Field(description="Primary column to use for text embedding")
+    alternative_columns: List[str] = Field(description="Alternative columns that could be concatenated with main column for richer semantic search")
+    description: str = Field(description="Explanation of why these columns are suitable for vector search")
+
+
 class TableEDAResponse(BaseModel):
     """LLM response for table EDA."""
 
-    summary: str = Field(description="A concise summary of the table data (2-3 sentences)")
+    summary: str = Field(description="A comprehensive summary describing what the table contains (keep it under 100 words), its purpose, relationships between fields, data structure, and any notable patterns or characteristics (MUST BE IN MARKDOWN FORMAT, with emot and add color around the column name object)")
     field_metadata: List[FieldMetadata] = Field(description="Detailed metadata for each field including description and purpose")
+    vector_store_columns: Optional[VectorStoreColumns] = Field(default=None, description="Columns suitable for vector store indexing (if applicable)")
 
 
 class EDAGenerator:
@@ -48,10 +57,11 @@ class EDAGenerator:
         table_name: str,
         column_stats: Dict[str, Dict[str, Any]],
         row_count: int,
+        sample_data: List[Dict[str, Any]],
         model: str = None,
         db: Optional[AsyncSession] = None,
         user_id: Optional[str] = None
-    ) -> TableEDAResponse:
+    ) -> Dict[str, Any]:
         """
         Use LLM to generate summary and field metadata from column statistics.
 
@@ -59,10 +69,13 @@ class EDAGenerator:
             table_name: Name of the table
             column_stats: Column statistics
             row_count: Total row count
+            sample_data: First 5 rows of the table
             model: Optional model name override
+            db: Database session for logging
+            user_id: User ID for logging
 
         Returns:
-            TableEDAResponse with summary and field metadata
+            Dict with summary, field_metadata, column_stats, sample_data, and vector_store_columns
         """
         logger.info(f"{self._log_prefix(table_name)} | Generating LLM insights")
 
@@ -80,21 +93,40 @@ class EDAGenerator:
                 elif key != 'dtype':
                     stats_summary += f"  - {key}: {value}\n"
 
+        # Format sample data for LLM
+        sample_str = "\n\nSample Data (first 5 rows):\n"
+        for i, row in enumerate(sample_data[:5], 1):
+            sample_str += f"\nRow {i}: {row}\n"
+
         prompt = f"""Analyze this database table and provide:
 
-1. A concise summary (2-3 sentences) describing what this table contains and its purpose
+1. A comprehensive summary (3-5 sentences) describing:
+   - What this table contains and its purpose
+   - The context (e.g., e-commerce, customer service, analytics)
+   - Relationships between fields and how they work together
+   - The data structure (e.g., list of JSON objects, relational records)
+   - Any notable patterns, characteristics, or data quality observations
+   
+   IMPORTANT for summary formatting:
+   - Use markdown formatting (bold, italic, code blocks)
+   - Wrap column/field names in backticks like `column_name` for green highlighting
+   - Use **bold** for important concepts
+   - Use emojis sparingly for visual interest (e.g., 📊 for data, ⚠️ for warnings)
+   - DO NOT use HTML tags or <object> tags - use markdown only
+   - Never mention the table name in the summary
 
 2. For EACH field, provide:
-
    - field_name: The exact column name
-
    - data_type: Simplified type (int, text, timestamp, float, boolean)
-
    - description: A detailed description (1-2 sentences) explaining what this field represents, its purpose, and any important patterns or characteristics
-
    - unique_value_count: Number of unique values (if available)
-
    - top_values: List of top 5-10 most common values formatted as "value(count)" (if applicable)
+
+3. Identify columns suitable for vector store indexing:
+   - main_column: The primary text column that would benefit most from semantic search (e.g., message content, descriptions, reviews)
+   - alternative_columns: Other text columns that could be concatenated for richer search (e.g., subject, title, tags)
+   - description: Explain why these columns are good candidates for vector search
+   - If no text columns are suitable for vector search, set vector_store_columns to null
 
 Table: {table_name}
 
@@ -102,9 +134,9 @@ Total Rows: {row_count}
 
 {stats_summary}
 
-Be specific and actionable. Focus on helping someone understand what each field means and how to use it in queries.
+{sample_str}
 
-For example, if a field is "conversation_id", explain that it's a UUID that groups messages in the same conversation thread."""
+Be specific and actionable. Focus on helping someone understand what each field means, how fields relate to each other, and how to use the data effectively."""
 
         # Get LLM instance and create structured LLM
         llm = get_llm(model=model)
@@ -147,7 +179,17 @@ For example, if a field is "conversation_id", explain that it's a UUID that grou
                     logger.warning(f"{self._log_prefix(table_name)} | Failed to complete LLM call log: {e}")
 
             logger.info(f"{self._log_prefix(table_name)} | Generated metadata for {len(eda_response.field_metadata)} fields")
-            return eda_response
+            
+            # Build complete response with all fields
+            complete_response = {
+                "summary": eda_response.summary,
+                "field_metadata": [field.model_dump() for field in eda_response.field_metadata],
+                "column_stats": column_stats,
+                "sample_data": sample_data[:5],  # Ensure only 5 rows
+                "vector_store_columns": eda_response.vector_store_columns.model_dump() if eda_response.vector_store_columns else None
+            }
+            
+            return complete_response
         except Exception as e:
             # Log failure
             if log_id and db:

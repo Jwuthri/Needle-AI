@@ -24,10 +24,16 @@ class UserDataset(Base):
     origin = Column(String(500), nullable=False)  # File path or URL
     description = Column(Text, nullable=True)  # LLM-generated summary
     row_count = Column(Integer, nullable=False, default=0)
-    table_name = Column(String(255), nullable=False)  # User-provided table name
+    table_name = Column(String(255), nullable=False)  # Actual table name in database (format: __user_{user_id}_{name})
     
-    # Field metadata from EDA (stored as JSON)
-    meta = Column(JSON, nullable=True)  # List[FieldMetadata] as JSON
+    # EDA results (stored as JSON)
+    field_metadata = Column(JSON, nullable=True)  # List[FieldMetadata] as JSON
+    column_stats = Column(JSON, nullable=True)  # Column statistics
+    sample_data = Column(JSON, nullable=True)  # First 5 rows
+    vector_store_columns = Column(JSON, nullable=True)  # Columns suitable for vector indexing
+    
+    # Legacy/additional metadata
+    meta = Column(JSON, nullable=True)  # Additional metadata
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
