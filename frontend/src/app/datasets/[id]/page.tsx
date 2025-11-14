@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Database, Table as TableIcon, FileText, Loader2, Settings } from 'lucide-react'
+import { ArrowLeft, Database, Table as TableIcon, FileText, Loader2, Settings, Trash2 } from 'lucide-react'
 import { useAuth } from '@clerk/nextjs'
 import { createApiClient } from '@/lib/api'
 import type { UserDataset, FieldMetadata } from '@/types/user-dataset'
@@ -27,6 +27,8 @@ export default function DatasetDetailPage() {
   const [dataLoading, setDataLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<TabType>('table')
   const [totalRows, setTotalRows] = useState(0)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     if (isLoaded && !isSignedIn) {
@@ -118,6 +120,25 @@ export default function DatasetDetailPage() {
     }))
   }, [columns])
 
+  const handleDelete = async () => {
+    if (!datasetId) return
+    
+    setDeleting(true)
+    try {
+      const token = await getToken()
+      const api = createApiClient(token)
+      await api.deleteUserDataset(datasetId)
+      
+      // Redirect to datasets list after successful deletion
+      router.push('/datasets')
+    } catch (error: any) {
+      console.error('Failed to delete dataset:', error)
+      alert(`Failed to delete dataset: ${error.message || 'Unknown error'}`)
+      setDeleting(false)
+      setShowDeleteConfirm(false)
+    }
+  }
+
   if (!isLoaded || !isSignedIn || loading) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-950">
@@ -206,9 +227,18 @@ export default function DatasetDetailPage() {
             <ArrowLeft className="w-4 h-4" />
             <span>Back to Datasets</span>
           </button>
-          <div className="flex items-center space-x-3 mb-2">
-            <Database className="w-8 h-8 text-emerald-400" />
-            <h1 className="text-3xl font-bold text-white">{friendlyTableName}</h1>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center space-x-3">
+              <Database className="w-8 h-8 text-emerald-400" />
+              <h1 className="text-3xl font-bold text-white">{friendlyTableName}</h1>
+            </div>
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="flex items-center space-x-2 px-4 py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/30 text-red-400 rounded-xl transition-colors"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>Delete Dataset</span>
+            </button>
           </div>
           <p className="text-white/60">
             {dataset.origin} • {dataset.row_count.toLocaleString()} rows
@@ -470,6 +500,66 @@ export default function DatasetDetailPage() {
           </motion.div>
         )}
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-gray-900 border border-gray-800 rounded-xl p-6 max-w-md w-full"
+          >
+            <div className="flex items-start space-x-4 mb-4">
+              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+                <Trash2 className="w-6 h-6 text-red-400" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-xl font-bold text-white mb-2">Delete Dataset</h3>
+                <p className="text-white/80">
+                  Are you sure you want to delete <span className="font-semibold text-emerald-400">{friendlyTableName}</span>?
+                </p>
+                <p className="text-white/60 text-sm mt-2">
+                  This will permanently delete:
+                </p>
+                <ul className="text-white/60 text-sm mt-2 space-y-1 list-disc list-inside">
+                  <li>The dataset record and metadata</li>
+                  <li>All {dataset.row_count.toLocaleString()} rows of data</li>
+                  <li>The database table <code className="text-xs bg-gray-800 px-1 py-0.5 rounded">{dataset.table_name}</code></li>
+                </ul>
+                <p className="text-red-400 text-sm mt-3 font-medium">
+                  ⚠️ This action cannot be undone.
+                </p>
+              </div>
+            </div>
+            <div className="flex space-x-3 mt-6">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deleting}
+                className="flex-1 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="flex-1 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+              >
+                {deleting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>Delete</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   )
 }

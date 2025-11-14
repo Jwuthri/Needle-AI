@@ -321,6 +321,12 @@ class ApiClient {
     const url = queryString ? `/user-datasets/${datasetId}/data?${queryString}` : `/user-datasets/${datasetId}/data`
     return this.request(url)
   }
+
+  async deleteUserDataset(datasetId: string): Promise<{ message: string; dataset_id: string }> {
+    return this.request(`/user-datasets/${datasetId}`, {
+      method: 'DELETE',
+    })
+  }
 }
 
 // Default unauthenticated client (for public endpoints)

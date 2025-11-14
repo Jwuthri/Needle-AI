@@ -258,6 +258,125 @@ Generate ONLY the name, nothing else. No quotes, no explanation, just the name."
 
         return stats
 
+    async def _add_embeddings_to_table(
+        self,
+        df: pd.DataFrame,
+        dynamic_table_name: str,
+        vector_store_columns: Dict[str, Any],
+        user_id: str
+    ) -> None:
+        """
+        Add __embedding__ column to the dynamic table with generated embeddings.
+
+        Args:
+            df: Original DataFrame with the data
+            dynamic_table_name: Name of the dynamic table
+            vector_store_columns: Dict with main_column and alternative_columns
+            user_id: User ID for logging
+        """
+        from app.services.embedding_service import get_embedding_service
+        
+        main_column = vector_store_columns.get("main_column")
+        alternative_columns = vector_store_columns.get("alternative_columns", [])
+        
+        if not main_column:
+            logger.warning(f"{self._log_prefix(user_id, dynamic_table_name)} | No main_column specified for embeddings")
+            return
+        
+        logger.info(f"{self._log_prefix(user_id, dynamic_table_name)} | Generating embeddings from main_column: {main_column}, alternatives: {alternative_columns}")
+        
+        # Build text for embedding from main column and alternatives
+        texts_to_embed = []
+        for _, row in df.iterrows():
+            text_parts = []
+            
+            # Add main column
+            if main_column in row and pd.notna(row[main_column]):
+                text_parts.append(str(row[main_column]))
+            
+            # Add alternative columns
+            for alt_col in alternative_columns:
+                if alt_col in row and pd.notna(row[alt_col]):
+                    text_parts.append(str(row[alt_col]))
+            
+            # Combine all parts
+            combined_text = " | ".join(text_parts) if text_parts else ""
+            texts_to_embed.append(combined_text)
+        
+        # Generate embeddings in batches
+        embedding_service = get_embedding_service()
+        embeddings = await embedding_service.generate_embeddings_batch(texts_to_embed, batch_size=2000)
+        
+        logger.info(f"{self._log_prefix(user_id, dynamic_table_name)} | Generated {len(embeddings)} embeddings")
+        
+        # Add __embedding__ column to the table
+        # First, check if column exists and add it if not
+        try:
+            # Check if __embedding__ column exists
+            check_query = text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = :table_name 
+                AND column_name = '__embedding__'
+            """)
+            result = await self.db.execute(check_query, {"table_name": dynamic_table_name})
+            column_exists = result.fetchone() is not None
+            
+            if not column_exists:
+                # Add the vector column
+                embedding_dim = embedding_service.get_dimensions()
+                alter_query = text(f'ALTER TABLE "{dynamic_table_name}" ADD COLUMN __embedding__ vector({embedding_dim})')
+                await self.db.execute(alter_query)
+                await self.db.commit()
+                logger.info(f"{self._log_prefix(user_id, dynamic_table_name)} | Added __embedding__ column")
+            
+            # Update each row with its embedding
+            # Get the primary key or row identifier
+            # First, get all rows with their IDs
+            select_query = text(f'SELECT * FROM "{dynamic_table_name}"')
+            result = await self.db.execute(select_query)
+            rows = result.fetchall()
+            columns = list(result.keys())
+            
+            # Find a unique identifier column (prefer 'id', otherwise use first column)
+            id_column = None
+            if 'id' in columns:
+                id_column = 'id'
+            else:
+                # Use the first column as identifier
+                id_column = columns[0]
+            
+            logger.info(f"{self._log_prefix(user_id, dynamic_table_name)} | Using '{id_column}' as identifier for embedding updates")
+            
+            # Update embeddings for each row
+            id_idx = columns.index(id_column)
+            for i, (row, embedding) in enumerate(zip(rows, embeddings)):
+                if embedding is None:
+                    logger.warning(f"{self._log_prefix(user_id, dynamic_table_name)} | Skipping row {i} - no embedding generated")
+                    continue
+                
+                # Get the identifier value
+                id_value = row[id_idx]
+                
+                # Convert embedding to PostgreSQL vector format
+                embedding_str = "[" + ",".join(str(x) for x in embedding) + "]"
+                
+                # Update the row - use direct string formatting for asyncpg compatibility
+                update_query = text(
+                    f'UPDATE "{dynamic_table_name}" '
+                    f'SET __embedding__ = \'{embedding_str}\'::vector '
+                    f'WHERE "{id_column}" = :id_value'
+                )
+                await self.db.execute(update_query, {"id_value": id_value})
+            
+            await self.db.commit()
+            logger.info(f"{self._log_prefix(user_id, dynamic_table_name)} | Successfully updated {len([e for e in embeddings if e is not None])} embeddings")
+            
+        except Exception as e:
+            logger.error(f"{self._log_prefix(user_id, dynamic_table_name)} | Failed to add embeddings: {e}", exc_info=True)
+            await self.db.rollback()
+            raise
+
     async def upload_csv(
         self,
         user_id: str,
@@ -386,6 +505,21 @@ Generate ONLY the name, nothing else. No quotes, no explanation, just the name."
                 user_id=user_id
             )
 
+            # Generate embeddings if vector_store_columns are identified
+            embeddings_generated = False
+            vector_store_columns = eda_response.get("vector_store_columns", {})
+            if vector_store_columns and vector_store_columns.get("main_column"):
+                logger.info(f"{self._log_prefix(user_id, dynamic_table_name)} | Generating embeddings for vector store")
+                await self._add_embeddings_to_table(
+                    df=df,
+                    dynamic_table_name=dynamic_table_name,
+                    vector_store_columns=vector_store_columns,
+                    user_id=user_id
+                )
+                await self.db.commit()
+                embeddings_generated = True
+                logger.info(f"{self._log_prefix(user_id, dynamic_table_name)} | Embeddings generated and stored")
+
             # Create user dataset record with all EDA data - store dynamic_table_name as table_name
             user_dataset = await self.repository.create(
                 db=self.db,
@@ -414,7 +548,8 @@ Generate ONLY the name, nothing else. No quotes, no explanation, just the name."
                 "field_metadata": eda_response["field_metadata"],
                 "column_stats": eda_response["column_stats"],
                 "sample_data": eda_response["sample_data"],
-                "vector_store_columns": eda_response["vector_store_columns"]
+                "vector_store_columns": eda_response["vector_store_columns"],
+                "embeddings_generated": embeddings_generated
             }
 
         except Exception as e:
@@ -670,3 +805,52 @@ Generate ONLY the name, nothing else. No quotes, no explanation, just the name."
         except Exception as e:
             logger.error(f"Failed to get dataset data from semantic search: {e}", exc_info=True)
             raise ValueError(f"Failed to get dataset data from semantic search: {str(e)}")
+
+    async def delete_dataset(self, dataset_id: str, user_id: str) -> bool:
+        """
+        Delete a user dataset and its associated dynamic table.
+        
+        Args:
+            dataset_id: ID of the dataset to delete
+            user_id: ID of the user who owns the dataset
+            
+        Returns:
+            True if deletion was successful
+            
+        Raises:
+            ValueError: If dataset not found or user doesn't have permission
+        """
+        logger.info(f"{self._log_prefix(user_id)} | Deleting dataset {dataset_id}")
+        
+        # Get the dataset to verify ownership and get table name
+        dataset = await self.repository.get_by_id(self.db, dataset_id)
+        
+        if not dataset:
+            logger.warning(f"{self._log_prefix(user_id)} | Dataset {dataset_id} not found")
+            raise ValueError("Dataset not found")
+        
+        if dataset.user_id != user_id:
+            logger.warning(f"{self._log_prefix(user_id)} | User does not own dataset {dataset_id}")
+            raise ValueError("You do not have permission to delete this dataset")
+        
+        table_name = dataset.table_name
+        
+        try:
+            # Drop the dynamic table first
+            logger.info(f"{self._log_prefix(user_id)} | Dropping dynamic table {table_name}")
+            await drop_dynamic_table(self.db, table_name)
+            
+            # Delete the database record
+            logger.info(f"{self._log_prefix(user_id)} | Deleting dataset record {dataset_id}")
+            await self.repository.delete(self.db, dataset_id)
+            
+            # Commit the transaction
+            await self.db.commit()
+            
+            logger.info(f"{self._log_prefix(user_id)} | Successfully deleted dataset {dataset_id} and table {table_name}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"{self._log_prefix(user_id)} | Failed to delete dataset {dataset_id}: {e}", exc_info=True)
+            await self.db.rollback()
+            raise ValueError(f"Failed to delete dataset: {str(e)}")
