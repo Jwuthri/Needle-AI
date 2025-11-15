@@ -131,8 +131,8 @@ class UserReviewsService:
         
         if existing:
             logger.info(f"{self._log_prefix(user_id)} | user_datasets record already exists for {table_name}")
-            # Update row count if provided
-            if row_count > 0 and existing.row_count != row_count:
+            # Always update row count to the actual value
+            if existing.row_count != row_count:
                 existing.row_count = row_count
                 await self.db.commit()
                 logger.info(f"{self._log_prefix(user_id)} | Updated row count to {row_count}")
@@ -380,8 +380,13 @@ class UserReviewsService:
         
         logger.info(f"{self._log_prefix(user_id)} | Synced {synced_count} reviews to {table_name}")
         
-        # Ensure user_datasets record exists for discovery by LLM agents
-        await self.ensure_user_dataset_record(user_id, row_count=synced_count)
+        # Get ACTUAL total row count from the table
+        count_query = text(f'SELECT COUNT(*) FROM "{table_name}"')
+        result = await self.db.execute(count_query)
+        total_rows = result.scalar()
+        
+        # Update user_datasets record with actual row count
+        await self.ensure_user_dataset_record(user_id, row_count=total_rows)
         
         return synced_count
 

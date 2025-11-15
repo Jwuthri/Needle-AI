@@ -113,7 +113,36 @@ export default function DatasetDetailPage() {
           return <span className="text-blue-400">{value.toLocaleString()}</span>
         }
         
-        return <span>{String(value)}</span>
+        // For strings, truncate if too long and add tooltip
+        const stringValue = String(value)
+        const maxLength = 150 // Max characters to show
+        
+        if (stringValue.length > maxLength) {
+          return (
+            <div className="group relative max-w-sm">
+              <span className="block truncate">
+                {stringValue.substring(0, maxLength)}...
+              </span>
+              <div className="hidden group-hover:block absolute z-50 bottom-full left-0 mb-2 p-3 bg-gray-800 border border-gray-700 rounded-lg shadow-xl max-w-md max-h-60 overflow-auto text-sm whitespace-pre-wrap">
+                {stringValue}
+              </div>
+            </div>
+          )
+        }
+        
+        // For shorter strings, still truncate visually but show tooltip on hover
+        return (
+          <div className="group relative max-w-sm">
+            <span className="block truncate" title={stringValue}>
+              {stringValue}
+            </span>
+            {/* Show tooltip if text is actually truncated (overflow) */}
+            <div className="hidden group-hover:block absolute z-50 bottom-full left-0 mb-2 p-3 bg-gray-800 border border-gray-700 rounded-lg shadow-xl max-w-md max-h-60 overflow-auto text-sm whitespace-pre-wrap">
+              {stringValue}
+            </div>
+          </div>
+        )
+ 
       },
       enableSorting: true,
       enableColumnFilter: true,
