@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Coins, CreditCard, TrendingDown, TrendingUp } from 'lucide-react'
@@ -8,6 +8,7 @@ import { useAuth } from '@clerk/nextjs'
 import { createApiClient } from '@/lib/api'
 
 const pricingTiers = [
+  { id: 'free', name: 'Free Trial', credits: 1000, price: 0, popular: false, isFree: true },
   { id: '1', name: 'Starter', credits: 1000, price: 10, popular: false },
   { id: '2', name: 'Professional', credits: 5000, price: 40, popular: true, savings: '20% off' },
   { id: '3', name: 'Enterprise', credits: 15000, price: 100, popular: false, savings: '33% off' },
@@ -19,6 +20,77 @@ export default function CreditsPage() {
   const [balance, setBalance] = useState(0)
   const [transactions, setTransactions] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [purchasing, setPurchasing] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const fetchData = useCallback(async () => {
+    if (!isSignedIn) {
+      console.log('Not signed in, skipping fetch')
+      return
+    }
+    
+    console.log('fetchData called, isSignedIn:', isSignedIn)
+    
+    try {
+      const token = await getToken()
+      console.log('Token obtained:', token ? 'Yes' : 'No')
+      
+      const api = createApiClient(token)
+      
+      // Fetch only credits, skip transactions for now
+      const creditsData = await api.getCreditBalance()
+
+      console.log('Raw credits data from API:', creditsData)
+      console.log('Type of creditsData:', typeof creditsData)
+      console.log('creditsData.credits_available:', creditsData.credits_available)
+      console.log('Type of credits_available:', typeof creditsData.credits_available)
+
+      const balanceValue = creditsData.credits_available || 0
+      console.log('Setting balance to:', balanceValue)
+      
+      setBalance(balanceValue)
+      setTransactions([]) // Set empty transactions for now
+      
+      console.log('Balance state should now be:', balanceValue)
+    } catch (error) {
+      console.error('Failed to fetch credit data:', error)
+    } finally {
+      setLoading(false)
+    }
+  }, [isSignedIn, getToken])
+
+  const handlePurchase = async (tier: typeof pricingTiers[0]) => {
+    if (tier.isFree) {
+      // Handle free credits
+      setPurchasing(tier.id)
+      setError(null)
+      
+      try {
+        const token = await getToken()
+        const api = createApiClient(token)
+        const response = await api.addFreeCredits(tier.credits)
+        
+        console.log('Free credits response:', response)
+        
+        // Update balance immediately from response
+        setBalance(response.credits_available)
+        
+        // Refresh full data
+        await fetchData()
+        
+        // Show success (you could add a toast notification here)
+        alert(`Successfully added ${tier.credits} free credits! New balance: ${response.credits_available}`)
+      } catch (err: any) {
+        console.error('Error adding free credits:', err)
+        setError(err.message || 'Failed to add free credits')
+      } finally {
+        setPurchasing(null)
+      }
+    } else {
+      // Handle paid purchase (placeholder for now)
+      alert('Paid purchases not implemented yet')
+    }
+  }
 
   useEffect(() => {
     if (isLoaded && !isSignedIn) {
@@ -27,29 +99,11 @@ export default function CreditsPage() {
   }, [isLoaded, isSignedIn, router])
 
   useEffect(() => {
-    const fetchData = async () => {
-      if (!isSignedIn) return
-      
-      try {
-        const token = await getToken()
-        const api = createApiClient(token)
-        
-        const [creditsData, transactionsData] = await Promise.all([
-          api.getCreditBalance(),
-          api.getCreditTransactions(),
-        ])
-
-        setBalance(creditsData.credits_available || 0)
-        setTransactions(transactionsData.transactions || [])
-      } catch (error) {
-        console.error('Failed to fetch credit data:', error)
-      } finally {
-        setLoading(false)
-      }
+    console.log('useEffect triggered, isSignedIn:', isSignedIn, 'isLoaded:', isLoaded)
+    if (isSignedIn && isLoaded) {
+      fetchData()
     }
-
-    fetchData()
-  }, [getToken, isSignedIn])
+  }, [isSignedIn, isLoaded, fetchData])
 
   if (!isLoaded || !isSignedIn || loading) {
     return (
@@ -91,7 +145,14 @@ export default function CreditsPage() {
         {/* Pricing Tiers */}
         <div className="mb-8">
           <h2 className="text-2xl font-bold text-white mb-6">Purchase Credits</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          
+          {error && (
+            <div className="mb-4 p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400">
+              {error}
+            </div>
+          )}
+          
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             {pricingTiers.map((tier, index) => (
               <motion.div
                 key={tier.id}
@@ -107,25 +168,36 @@ export default function CreditsPage() {
                     POPULAR
                   </div>
                 )}
+                {tier.isFree && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 bg-blue-500 text-white text-xs font-semibold rounded-full">
+                    FREE
+                  </div>
+                )}
                 
                 <div className="text-center mb-6">
                   <h3 className="text-xl font-bold text-white mb-2">{tier.name}</h3>
                   <div className="text-4xl font-bold text-white mb-1">{tier.credits.toLocaleString()}</div>
                   <div className="text-white/40 text-sm mb-4">credits</div>
-                  <div className="text-2xl font-bold text-emerald-400">${tier.price}</div>
+                  <div className={`text-2xl font-bold ${tier.isFree ? 'text-blue-400' : 'text-emerald-400'}`}>
+                    {tier.isFree ? 'FREE' : `$${tier.price}`}
+                  </div>
                   {tier.savings && (
                     <div className="text-emerald-400 text-xs mt-1">{tier.savings}</div>
                   )}
                 </div>
 
                 <button
-                  className={`w-full py-3 rounded-xl font-medium transition-all ${
-                    tier.popular
+                  onClick={() => handlePurchase(tier)}
+                  disabled={purchasing === tier.id}
+                  className={`w-full py-3 rounded-xl font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                    tier.isFree
+                      ? 'bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white'
+                      : tier.popular
                       ? 'bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white'
                       : 'bg-gray-800 hover:bg-gray-700 text-white'
                   }`}
                 >
-                  Purchase
+                  {purchasing === tier.id ? 'Processing...' : tier.isFree ? 'Claim Free Credits' : 'Purchase'}
                 </button>
               </motion.div>
             ))}

@@ -97,7 +97,7 @@ class Settings(BaseSettings):
     websocket_max_connections: int = Field(default=1000, ge=1, le=10000, description="Maximum concurrent WebSocket connections")
 
     # LLM Configuration
-    llm_provider: str = Field(default="openrouter", description="LLM provider")
+    llm_provider: str = Field(default="openai", description="LLM provider")
     openrouter_api_key: Optional[str] = Field(default=None, description="OpenRouter API key")
     default_model: str = Field(default="gpt-5-mini", description="Default LLM model")
     max_tokens: int = Field(default=1000, ge=1, le=32000, description="Maximum tokens per request")

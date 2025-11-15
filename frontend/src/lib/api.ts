@@ -152,7 +152,13 @@ class ApiClient {
     return this.request('/scraping/sources')
   }
 
-  async startScrapingJob(data: { company_id: string; source_id: string; total_reviews_target: number }): Promise<any> {
+  async startScrapingJob(data: { 
+    company_id: string
+    source_id: string
+    review_count?: number
+    max_cost?: number
+    generation_mode?: string
+  }): Promise<any> {
     return this.request('/scraping/jobs', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -210,6 +216,13 @@ class ApiClient {
   // Credits endpoints
   async getCreditBalance(): Promise<any> {
     return this.request('/payments/credits')
+  }
+
+  async addFreeCredits(amount: number): Promise<any> {
+    return this.request('/payments/credits/free', {
+      method: 'POST',
+      body: JSON.stringify({ amount }),
+    })
   }
 
   async createCheckoutSession(data: { pricing_tier_id: string; success_url: string; cancel_url: string }): Promise<any> {

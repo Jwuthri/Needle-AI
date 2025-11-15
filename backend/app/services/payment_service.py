@@ -32,14 +32,19 @@ class PaymentService:
     """
 
     def __init__(self, settings: Any = None):
-        if not STRIPE_AVAILABLE:
-            raise ConfigurationError("Stripe package not installed. Install with: pip install stripe")
-
         self.settings = settings or get_settings()
-        self._initialize_stripe()
+        
+        # Only initialize Stripe if available
+        if STRIPE_AVAILABLE:
+            self._initialize_stripe()
+        else:
+            logger.warning("Stripe package not installed. Paid features will not be available.")
 
     def _initialize_stripe(self):
         """Initialize Stripe with API key."""
+        if not STRIPE_AVAILABLE:
+            raise ConfigurationError("Stripe package not installed. Install with: pip install stripe")
+            
         secret_key = self.settings.get_secret("stripe_secret_key")
         if not secret_key:
             raise ConfigurationError("Stripe secret key not configured")
@@ -254,17 +259,75 @@ class PaymentService:
         async with get_async_session() as session:
             credit_account = await UserCreditRepository.get_by_user_id(session, user_id)
             
+            logger.info(f"Getting balance for user {user_id}")
+            
             if not credit_account:
+                logger.warning(f"No credit account found for user {user_id}")
                 return {
                     "credits_available": 0.0,
                     "total_purchased": 0.0,
                     "total_spent": 0.0
                 }
 
+            logger.info(f"User {user_id} balance: {credit_account.credits_available}")
+            
             return {
                 "credits_available": credit_account.credits_available,
                 "total_purchased": credit_account.total_purchased,
                 "total_spent": credit_account.total_spent
+            }
+
+    async def add_free_credits(self, user_id: str, amount: float) -> Dict[str, Any]:
+        """
+        Add free credits to user account (for testing/promotional purposes).
+        
+        Args:
+            user_id: User ID
+            amount: Amount of credits to add
+            
+        Returns:
+            Dict with new balance and confirmation
+        """
+        async with get_async_session() as session:
+            # Get or create credit account
+            credit_account = await UserCreditRepository.get_or_create(session, user_id)
+            balance_before = credit_account.credits_available
+            
+            logger.info(f"Adding {amount} free credits to user {user_id}. Balance before: {balance_before}")
+            
+            # Add credits
+            updated_account = await UserCreditRepository.add_credits(session, user_id, amount)
+            
+            if not updated_account:
+                logger.error(f"Failed to add credits to user {user_id}")
+                raise Exception("Failed to update credit balance")
+            
+            logger.info(f"Credits after update: {updated_account.credits_available}")
+            
+            # Record transaction
+            await CreditTransactionRepository.create(
+                session,
+                user_credit_id=credit_account.id,
+                transaction_type=TransactionTypeEnum.PURCHASE,
+                amount=amount,
+                balance_before=balance_before,
+                balance_after=updated_account.credits_available,
+                description=f"Free credits (promotional)",
+                stripe_payment_intent_id=None
+            )
+            
+            await session.commit()
+            
+            # Refresh to get final state
+            await session.refresh(updated_account)
+            
+            final_balance = updated_account.credits_available
+            logger.info(f"Added {amount} free credits to user {user_id}. Final balance: {final_balance}")
+            
+            return {
+                "credits_available": final_balance,
+                "amount_added": amount,
+                "message": f"Successfully added {amount} free credits"
             }
 
     def list_available_packages(self) -> Dict[str, Dict[str, Any]]:

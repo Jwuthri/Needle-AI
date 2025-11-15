@@ -34,6 +34,18 @@ class BalanceResponse(BaseModel):
     total_spent: float
 
 
+class FreeCreditsRequest(BaseModel):
+    """Request for adding free credits."""
+    amount: float
+
+
+class FreeCreditsResponse(BaseModel):
+    """Response after adding free credits."""
+    credits_available: float
+    amount_added: float
+    message: str
+
+
 @router.post("/checkout", response_model=CheckoutResponse)
 async def create_checkout_session(
     data: CheckoutRequest,
@@ -110,16 +122,72 @@ async def get_credit_balance(
 ) -> BalanceResponse:
     """Get current user's credit balance."""
     try:
+        logger.info(f"Getting credit balance for user: {current_user.id if current_user else 'None'}")
+        
+        if not current_user:
+            logger.error("No current user in request")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not authenticated"
+            )
+        
         payment_service = PaymentService()
         balance = await payment_service.get_customer_balance(current_user.id)
         
+        logger.info(f"Returning balance for user {current_user.id}: {balance}")
+        
         return BalanceResponse(**balance)
         
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error getting credit balance: {e}")
+        logger.error(f"Error getting credit balance: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get credit balance: {str(e)}"
+        )
+
+
+@router.post("/credits/free", response_model=FreeCreditsResponse)
+async def add_free_credits(
+    data: FreeCreditsRequest,
+    current_user: ClerkUser = Depends(get_current_user)
+) -> FreeCreditsResponse:
+    """
+    Add free credits to user account (for testing/promotional purposes).
+    
+    This endpoint allows users to claim free credits without payment.
+    """
+    try:
+        if data.amount <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Amount must be greater than 0"
+            )
+        
+        if data.amount > 10000:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Maximum free credits per request is 10,000"
+            )
+        
+        payment_service = PaymentService()
+        result = await payment_service.add_free_credits(
+            user_id=current_user.id,
+            amount=data.amount
+        )
+        
+        logger.info(f"Added {data.amount} free credits to user {current_user.id}")
+        
+        return FreeCreditsResponse(**result)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error adding free credits: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to add free credits: {str(e)}"
         )
 
 

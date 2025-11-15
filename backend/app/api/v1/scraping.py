@@ -19,7 +19,7 @@ from app.database.repositories import (
 from app.exceptions import NotFoundError
 from app.models.scraping import CostEstimate, ScrapingJobCreate, ScrapingJobResponse
 from app.services.scraper_factory import get_scraper_factory
-from app.tasks.scraping_tasks import scrape_reviews_task
+from app.tasks.scraping_tasks import scrape_reviews_task, generate_fake_reviews_task
 from app.utils.logging import get_logger
 
 logger = get_logger("scraping_api")
@@ -35,15 +35,18 @@ async def create_scraping_job(
     _rate_limit = Depends(check_rate_limit)
 ) -> ScrapingJobResponse:
     """
-    Start a new scraping job.
+    Start a new scraping or fake review generation job.
     
     This will:
     1. Check if user has sufficient credits
-    2. Create a scraping job
-    3. Start background task
-    4. Return job details
+    2. Calculate review count from max_cost if needed
+    3. Create a scraping/generation job
+    4. Start background task (real scraping or fake generation)
+    5. Return job details
     """
     try:
+        logger.info(f"Received scraping job request: company_id={data.company_id}, source_id={data.source_id}, review_count={data.review_count}, max_cost={data.max_cost}, generation_mode={data.generation_mode}")
+        
         # Verify company exists and user owns it
         company = await CompanyRepository.get_by_id(db, data.company_id)
         if not company or company.created_by != current_user.id:
@@ -60,9 +63,25 @@ async def create_scraping_job(
                 detail="Source not found or inactive"
             )
 
+        # Determine review count and cost
+        review_count = data.review_count
+        max_cost = data.max_cost
+        
+        # If max_cost is provided but not review_count, calculate review_count
+        if max_cost is not None and review_count is None:
+            review_count = int(max_cost / source.cost_per_review)
+            review_count = max(1, min(1000, review_count))  # Clamp between 1 and 1000
+        
+        # If review_count is not set by now, raise error
+        if review_count is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Either review_count or max_cost must be provided"
+            )
+
         # Calculate cost
         factory = get_scraper_factory()
-        cost = await factory.estimate_total_cost(source.source_type, data.review_count)
+        cost = await factory.estimate_total_cost(source.source_type, review_count)
 
         # Check credits
         has_credits = await UserCreditRepository.has_sufficient_credits(
@@ -82,25 +101,41 @@ async def create_scraping_job(
             company_id=data.company_id,
             source_id=data.source_id,
             user_id=current_user.id,
-            total_reviews_target=data.review_count,
+            total_reviews_target=review_count,
             cost=cost
         )
         await db.commit()
 
-        # Start background task
-        task = scrape_reviews_task.delay(
-            job_id=job.id,
-            company_id=data.company_id,
-            source_id=data.source_id,
-            user_id=current_user.id,
-            review_count=data.review_count
+        # Determine if this is fake generation or real scraping
+        is_fake_generation = (
+            data.generation_mode == "fake" or
+            "fake" in source.name.lower() or
+            "llm" in source.name.lower()
         )
+
+        # Start appropriate background task
+        if is_fake_generation:
+            task = generate_fake_reviews_task.delay(
+                job_id=job.id,
+                company_id=data.company_id,
+                source_id=data.source_id,
+                user_id=current_user.id,
+                review_count=review_count
+            )
+            logger.info(f"Started fake review generation job {job.id} for user {current_user.id}")
+        else:
+            task = scrape_reviews_task.delay(
+                job_id=job.id,
+                company_id=data.company_id,
+                source_id=data.source_id,
+                user_id=current_user.id,
+                review_count=review_count
+            )
+            logger.info(f"Started scraping job {job.id} for user {current_user.id}")
 
         # Update job with Celery task ID
         await ScrapingJobRepository.set_celery_task_id(db, job.id, task.id)
         await db.commit()
-
-        logger.info(f"Started scraping job {job.id} for user {current_user.id}")
 
         # Refresh job to get updated data
         job = await ScrapingJobRepository.get_by_id(db, job.id)
@@ -192,12 +227,25 @@ async def list_scraping_jobs(
 async def list_sources(
     db: AsyncSession = Depends(get_db)
 ):
-    """List available review sources."""
+    """List available review sources from the database."""
     try:
-        factory = get_scraper_factory()
-        sources = factory.list_available_sources()
+        # Get all active sources from database
+        sources = await ReviewSourceRepository.list_active_sources(db)
         
-        return {"sources": sources}
+        return {
+            "sources": [
+                {
+                    "id": source.id,
+                    "name": source.name,
+                    "source_type": source.source_type.value,
+                    "description": source.description,
+                    "cost_per_review": source.cost_per_review,
+                    "is_active": source.is_active,
+                    "config": source.config
+                }
+                for source in sources
+            ]
+        }
         
     except Exception as e:
         logger.error(f"Error listing sources: {e}")
