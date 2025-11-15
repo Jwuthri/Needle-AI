@@ -2,6 +2,8 @@
 
 from typing import Any, Dict, List, Optional
 
+from app.core.llm.simple_workflow.tools.sentiment_analysis_tool import analyze_sentiment
+from app.core.llm.simple_workflow.tools.user_dataset_tool import get_available_datasets_in_context
 from llama_index.core.agent.workflow import FunctionAgent
 from llama_index.core.tools import FunctionTool
 from llama_index.llms.openai import OpenAI
@@ -20,29 +22,10 @@ def create_sentiment_analysis_agent(llm: OpenAI, user_id: str) -> FunctionAgent:
     Returns:
         FunctionAgent configured as sentiment analysis specialist
     """
-    # Create wrapper functions that hide user_id from LLM
-    def analyze_sentiment_patterns(filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Analyze sentiment patterns and trends."""
-        return review_analysis_tools.analyze_sentiment_patterns(user_id=user_id, filters=filters)
-    
-    def get_review_statistics(filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Get aggregate statistics for reviews."""
-        return review_analysis_tools.get_review_statistics(user_id=user_id, filters=filters)
-    
-    def query_user_reviews_table(
-        query: str,
-        table_name: str,
-        limit: int = 100
-    ) -> List[Dict[str, Any]]:
-        """Query user reviews table with SQL."""
-        return review_analysis_tools.query_user_reviews_table(
-            user_id=user_id, query=query, table_name=table_name, limit=limit
-        )
-    
-    analyze_sentiment_tool = FunctionTool.from_defaults(fn=analyze_sentiment_patterns)
-    get_review_stats_tool = FunctionTool.from_defaults(fn=get_review_statistics)
-    query_user_reviews_tool = FunctionTool.from_defaults(fn=query_user_reviews_table)
-    
+
+    analyze_sentiment_tool = FunctionTool.from_defaults(fn=analyze_sentiment)
+    # get_available_datasets_in_context_tool = FunctionTool.from_defaults(fn=get_available_datasets_in_context)
+
     return FunctionAgent(
         name="sentiment_analysis",
         description="Specialist in analyzing sentiment patterns and positive/negative trends",
@@ -56,6 +39,7 @@ def create_sentiment_analysis_agent(llm: OpenAI, user_id: str) -> FunctionAgent:
 Use sentiment analysis tools and review statistics.
 After analysis, hand off to Visualization Agent for charts, then to Report Writer.
 Provide actionable insights about sentiment patterns.""",
-        tools=[analyze_sentiment_tool, get_review_stats_tool, query_user_reviews_tool],
+        # tools=[analyze_sentiment_tool, get_review_stats_tool, query_user_reviews_tool],
+        tools=[analyze_sentiment_tool],
         llm=llm,
     )

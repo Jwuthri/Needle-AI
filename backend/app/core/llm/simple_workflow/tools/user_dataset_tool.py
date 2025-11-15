@@ -23,8 +23,14 @@ async def get_user_datasets(ctx: Context, user_id: str, limit: int = 50, offset:
     async with get_async_session() as db:
         try:
             datasets = await UserDatasetService(db).list_datasets(user_id, limit, offset)
+            
+            # Store as dict with dataset names as keys for easy lookup
+            datasets_dict = {ds.get("table_name"): ds for ds in datasets if ds.get("table_name")}
+            
             async with ctx.store.edit_state() as ctx_state:
-                ctx_state["state"]["list_of_user_datasets"] = datasets
+                if "state" not in ctx_state:
+                    ctx_state["state"] = {}
+                ctx_state["state"]["list_of_user_datasets"] = datasets_dict
             
             return datasets
         except Exception as e:
@@ -44,12 +50,18 @@ async def get_dataset_data_from_sql(ctx: Context, sql_query: str, dataset_name: 
         pd.DataFrame: Dataset data as markdown table
     """
     async with get_async_session() as db:
-        try:
+        try:    
             data = await UserDatasetService(db).get_dataset_data_from_sql(sql_query)
             async with ctx.store.edit_state() as ctx_state:
-                ctx_state["state"]["dataset_data"]["sql_search"][dataset_name] = data
-
-            return data.head(10).to_markdown()
+                if "state" not in ctx_state:
+                    ctx_state["state"] = {}
+                if "dataset_data" not in ctx_state["state"]:
+                    ctx_state["state"]["dataset_data"] = {}
+                ctx_state["state"]["dataset_data"][dataset_name] = data
+            ddata = data.copy()
+            if "__embedding__" in ddata.columns:
+                ddata.drop(columns=["__embedding__"], inplace=True)
+            return ddata.head(10).to_markdown()
         except Exception as e:
             logger.error(f"Error getting dataset data: {e}", exc_info=True)
             return {"error": str(e)}
@@ -64,9 +76,16 @@ async def get_available_datasets_in_context(ctx: Context) -> list[str]:
     Returns:
         list[str]: List of datasets names
     """
-    async with ctx.store.get_state() as ctx_state:
-        try:
-            return list(ctx_state["state"]["dataset_data"].keys())
-        except Exception as e:
-            logger.error(f"Error getting datasets in context: {e}", exc_info=True)
-            return {"error": str(e)}
+    try:
+        ctx_state = await ctx.store.get_state()
+        return list(ctx_state.get("state", {}).get("dataset_data", {}).keys())
+    except Exception as e:
+        logger.error(f"Error getting datasets in context: {e}", exc_info=True)
+        return {"error": str(e)}
+
+    # async with ctx.store.get_state() as ctx_state:
+    #     try:
+    #         return list(ctx_state["state"]["dataset_data"].keys())
+    #     except Exception as e:
+    #         logger.error(f"Error getting datasets in context: {e}", exc_info=True)
+    #         return {"error": str(e)}

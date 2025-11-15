@@ -102,7 +102,53 @@ python -m app.cli_commands.main reviews generate-embeddings --batch-size 50
 - `--batch-size, -b`: Batch size for processing (default: 100)
 - `--limit, -l`: Limit number of reviews to process
 
-### 3. Show Statistics
+### 3. Sync to User Reviews Table
+
+Sync reviews from the `reviews` table to a user's aggregated reviews table (`__user_{user_id}_reviews`):
+
+```bash
+# Sync all reviews from companies owned by the user
+python -m app.cli_commands.main reviews sync-to-user-reviews --user-id YOUR_USER_ID
+
+# Sync reviews from a specific scraping job only
+python -m app.cli_commands.main reviews sync-to-user-reviews --user-id YOUR_USER_ID --scraping-job-id JOB_ID
+
+# Short flags
+python -m app.cli_commands.main reviews sync-to-user-reviews -u YOUR_USER_ID -j JOB_ID
+```
+
+**What it does:**
+- Creates the `__user_{user_id}_reviews` table if it doesn't exist
+- Syncs all reviews from companies owned by the user
+- Copies embeddings from the original reviews
+- Uses ON CONFLICT to handle duplicates (updates existing reviews)
+- Standardizes review format (id, user_id, company_name, category, rating, text, source, date, author, embeddings)
+
+**Options:**
+- `--user-id, -u`: User ID to sync reviews for (required)
+- `--scraping-job-id, -j`: Scraping job ID to sync only reviews from that job (optional)
+
+**Example output:**
+```
+🔄 Syncing Reviews to User Reviews Table
+
+✓ User found: user@example.com
+
+🎉 Sync Complete!
+
+Sync Details:
+  • User ID: abc-123
+  • Table Name: __user_abc_123_reviews
+  • Reviews Synced: 190
+  • Source: All companies owned by user
+```
+
+**Use Cases:**
+- After ingesting mock reviews, sync them to user's aggregated table
+- After a scraping job completes, sync new reviews to user table
+- Update user's reviews table with latest data from companies
+
+### 4. Show Statistics
 
 Display statistics about reviews in the database:
 

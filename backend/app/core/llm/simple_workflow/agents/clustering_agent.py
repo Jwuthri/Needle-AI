@@ -2,6 +2,9 @@
 
 from typing import Any, Dict, Optional
 
+from app.core.llm.simple_workflow.tools.clustering_analysis_tool import cuterize_dataset
+from app.core.llm.simple_workflow.tools.semantic_search_tool import semantic_search_from_query, semantic_search_from_sql
+from app.core.llm.simple_workflow.tools.user_dataset_tool import get_available_datasets_in_context
 from llama_index.core.agent.workflow import FunctionAgent
 from llama_index.core.tools import FunctionTool
 from llama_index.llms.openai import OpenAI
@@ -20,23 +23,12 @@ def create_clustering_agent(llm: OpenAI, user_id: str) -> FunctionAgent:
     Returns:
         FunctionAgent configured as clustering specialist
     """
-    # Create wrapper functions that hide user_id from LLM
-    def cluster_reviews(n_clusters: int = 5, filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Cluster similar reviews to identify themes."""
-        return review_analysis_tools.cluster_reviews(user_id=user_id, n_clusters=n_clusters, filters=filters)
-    
-    def extract_keywords(filters: Optional[Dict[str, Any]] = None, top_n: int = 20) -> Dict[str, Any]:
-        """Extract top keywords from reviews."""
-        return review_analysis_tools.extract_keywords(user_id=user_id, filters=filters, top_n=top_n)
-    
-    def semantic_search_reviews(query: str, limit: int = 10) -> Dict[str, Any]:
-        """Perform semantic search on reviews using vector embeddings."""
-        return review_analysis_tools.semantic_search_reviews(user_id=user_id, query=query, limit=limit)
-    
-    cluster_reviews_tool = FunctionTool.from_defaults(fn=cluster_reviews)
-    extract_keywords_tool = FunctionTool.from_defaults(fn=extract_keywords)
-    semantic_search_tool = FunctionTool.from_defaults(fn=semantic_search_reviews)
-    
+
+    cuterize_dataset_tool = FunctionTool.from_defaults(fn=cuterize_dataset)
+    semantic_search_from_sql_tool = FunctionTool.from_defaults(fn=semantic_search_from_sql)
+    semantic_search_from_query_tool = FunctionTool.from_defaults(fn=semantic_search_from_query)
+    get_available_datasets_in_context_tool = FunctionTool.from_defaults(fn=get_available_datasets_in_context)
+
     return FunctionAgent(
         name="clustering",
         description="Specialist in grouping similar reviews and identifying themes",
@@ -49,6 +41,6 @@ def create_clustering_agent(llm: OpenAI, user_id: str) -> FunctionAgent:
 Use clustering tools and keyword extraction.
 After analysis, hand off to Visualization Agent for visualizations, then to Report Writer.
 Help users understand the main themes in their review data.""",
-        tools=[cluster_reviews_tool, extract_keywords_tool, semantic_search_tool],
+        tools=[cuterize_dataset_tool, get_available_datasets_in_context_tool, semantic_search_from_sql_tool, semantic_search_from_query_tool],
         llm=llm,
     )

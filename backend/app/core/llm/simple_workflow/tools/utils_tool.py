@@ -23,6 +23,8 @@ async def get_current_time(ctx: Context) -> Dict[str, Any]:
     }
 
     async with ctx.store.edit_state() as ctx_state:
+        if "state" not in ctx_state:
+            ctx_state["state"] = {}
         ctx_state["state"]["current_time"] = current_time
 
     return current_time
@@ -50,6 +52,8 @@ async def get_user_location(ctx: Context) -> Dict[str, Any]:
         logger.error(f"Failed to get location: {e}")
 
     async with ctx.store.edit_state() as ctx_state:
+        if "state" not in ctx_state:
+            ctx_state["state"] = {}
         ctx_state["state"]["user_location"] = user_location
 
     return user_location

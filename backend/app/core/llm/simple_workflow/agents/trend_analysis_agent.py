@@ -1,17 +1,19 @@
 """Trend Analysis Agent - Detects temporal trends"""
 
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
+from app.core.llm.simple_workflow.tools.user_dataset_tool import get_available_datasets_in_context
 from llama_index.core.agent.workflow import FunctionAgent
 from llama_index.core.tools import FunctionTool
+from llama_index.core.workflow import Context
 from llama_index.llms.openai import OpenAI
 
-from app.core.llm.workflow.tools import review_analysis_tools
+from app.core.llm.simple_workflow.tools.trend_analysis_tool import analyze_temporal_trends
 
 
 def create_trend_analysis_agent(llm: OpenAI, user_id: str) -> FunctionAgent:
     """
-    Create the trend analysis agent for detecting temporal trends.
+    Create the trend analysis agent for detecting temporal trends using Python/pandas.
     
     Args:
         llm: OpenAI LLM instance
@@ -20,41 +22,34 @@ def create_trend_analysis_agent(llm: OpenAI, user_id: str) -> FunctionAgent:
     Returns:
         FunctionAgent configured as trend analysis specialist
     """
-    # Create wrapper functions that hide user_id from LLM
-    def detect_trends(time_field: str = "date", metric: str = "rating") -> Dict[str, Any]:
-        """Detect temporal trends in reviews."""
-        return review_analysis_tools.detect_trends(user_id=user_id, time_field=time_field, metric=metric)
     
-    def query_user_reviews_table(
-        query: str,
-        table_name: str,
-        limit: int = 100
-    ) -> List[Dict[str, Any]]:
-        """Query user reviews table with SQL."""
-        return review_analysis_tools.query_user_reviews_table(
-            user_id=user_id, query=query, table_name=table_name, limit=limit
-        )
-    
-    def get_review_statistics(filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Get aggregate statistics for reviews."""
-        return review_analysis_tools.get_review_statistics(user_id=user_id, filters=filters)
-    
-    detect_trends_tool = FunctionTool.from_defaults(fn=detect_trends)
-    query_user_reviews_tool = FunctionTool.from_defaults(fn=query_user_reviews_table)
-    get_review_stats_tool = FunctionTool.from_defaults(fn=get_review_statistics)
-    
+    analyze_trends_tool = FunctionTool.from_defaults(fn=analyze_temporal_trends)
+    # get_available_datasets_in_context_tool = FunctionTool.from_defaults(fn=get_available_datasets_in_context)
+
     return FunctionAgent(
         name="trend_analysis",
-        description="Specialist in detecting temporal trends and patterns over time",
-        system_prompt="""You are a trend analysis specialist. You detect:
-1. Temporal trends in ratings, sentiment, or review volume
-2. Patterns over time (daily, weekly, monthly)
-3. Seasonal variations
-4. Trend direction (improving, declining, stable)
+        description="Specialist in detecting temporal trends and patterns over time using Python/pandas",
+        system_prompt="""You are a trend analysis specialist. You analyze time-series data to detect:
+1. Temporal trends (increasing, decreasing, stable)
+2. Patterns over time (daily, weekly, monthly, quarterly, yearly)
+3. Seasonal variations and cyclical patterns
+4. Growth rates and velocity
+5. Volatility and anomalies
 
-Use trend detection tools and time-series analysis.
-After analysis, hand off to Visualization Agent for line charts showing trends.
-Provide insights about what trends mean for the product.""",
-        tools=[detect_trends_tool, query_user_reviews_tool, get_review_stats_tool],
+Your tool uses Python/pandas for robust statistical analysis. You need to:
+- Identify the time/date column in the dataset
+- Specify which numeric columns to analyze (or let it auto-detect)
+- Choose appropriate time grouping (auto, day, week, month, quarter, year)
+- Select aggregation method (mean, sum, count, median)
+
+Key insights to provide:
+- What is the overall trend direction?
+- Are there significant changes or inflection points?
+- Is the data volatile or stable?
+- What patterns emerge over different time periods?
+
+After analysis, you can hand off to Visualization Agent for line charts showing trends.
+Provide actionable insights about what trends mean for the business.""",
+        tools=[analyze_trends_tool],
         llm=llm,
     )

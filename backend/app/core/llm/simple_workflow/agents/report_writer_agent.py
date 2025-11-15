@@ -25,9 +25,11 @@ def create_report_writer_agent(llm: OpenAI, user_id: str) -> FunctionAgent:
 4. Format findings with proper headings, lists, and citations
 5. Make reports actionable and easy to read
 
-You are the final agent - format all analysis results into a comprehensive report.
+IMPORTANT: You are the final agent - format all analysis results into a comprehensive report.
 Include visualizations where appropriate using markdown image syntax.
-Structure the report with clear sections: Summary, Findings, Visualizations, Recommendations.""",
+Structure the report with clear sections: Summary, Findings, Visualizations, Recommendations.
+
+DO NOT suggest next steps or ask "Which would you like next?" - just deliver the complete report.""",
         tools=[],  # No tools - just formats output
         llm=llm,
     )

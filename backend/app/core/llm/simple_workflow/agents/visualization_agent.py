@@ -2,6 +2,7 @@
 
 from typing import Any, Dict, List, Optional
 
+from app.core.llm.simple_workflow.tools.visualization_tool import generate_bar_chart, generate_heatmap, generate_line_chart, generate_pie_chart
 from llama_index.core.agent.workflow import FunctionAgent
 from llama_index.core.tools import FunctionTool
 from llama_index.llms.openai import OpenAI
@@ -20,52 +21,6 @@ def create_visualization_agent(llm: OpenAI, user_id: str) -> FunctionAgent:
     Returns:
         FunctionAgent configured as visualization specialist
     """
-    # Create wrapper functions that hide user_id from LLM
-    def generate_bar_chart(
-        data: Optional[List[Dict[str, Any]]] = None,
-        title: str = "",
-        x_label: str = "",
-        y_label: str = "",
-        context_key: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Generate a bar chart visualization."""
-        return review_analysis_tools.generate_bar_chart(
-            data=data, title=title, x_label=x_label, y_label=y_label,
-            user_id=user_id, context_key=context_key
-        )
-    
-    def generate_line_chart(
-        data: Optional[List[Dict[str, Any]]] = None,
-        title: str = "",
-        x_label: str = "",
-        y_label: str = "",
-        context_key: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Generate a line chart visualization."""
-        return review_analysis_tools.generate_line_chart(
-            data=data, title=title, x_label=x_label, y_label=y_label,
-            user_id=user_id, context_key=context_key
-        )
-    
-    def generate_pie_chart(
-        data: Optional[List[Dict[str, Any]]] = None,
-        title: str = "",
-        context_key: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Generate a pie chart visualization."""
-        return review_analysis_tools.generate_pie_chart(
-            data=data, title=title, user_id=user_id, context_key=context_key
-        )
-    
-    def generate_heatmap(
-        data: Optional[List[Dict[str, Any]]] = None,
-        title: str = "",
-        context_key: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Generate a heatmap visualization."""
-        return review_analysis_tools.generate_heatmap(
-            data=data, title=title, user_id=user_id, context_key=context_key
-        )
     
     generate_bar_chart_tool = FunctionTool.from_defaults(fn=generate_bar_chart)
     generate_line_chart_tool = FunctionTool.from_defaults(fn=generate_line_chart)

@@ -21,8 +21,19 @@ def create_coordinator_agent(llm: OpenAI, user_id: str) -> FunctionAgent:
         FunctionAgent configured as coordinator
     """
 
+    async def _get_user_datasets(ctx: Context, limit: int = 50, offset: int = 0) -> list[dict]:
+        """Get all the user's datasets information.
+
+        Args:
+            ctx: Context
+            limit: Maximum number of datasets to return
+            offset: Offset for pagination
+        """
+        return await get_user_datasets(ctx=ctx, user_id=user_id, limit=limit, offset=offset)
+
     get_current_time_tool = FunctionTool.from_defaults(fn=get_current_time)
     get_user_location_tool = FunctionTool.from_defaults(fn=get_user_location)
+    get_user_datasets_tool = FunctionTool.from_defaults(fn=_get_user_datasets)
     
     return FunctionAgent(
         name="coordinator",
@@ -32,15 +43,17 @@ def create_coordinator_agent(llm: OpenAI, user_id: str) -> FunctionAgent:
 2. Determine if the query requires data analysis or is a general question
 3. Route to the appropriate specialist:
    - General Assistant: for simple questions (time, date, general info), greetings, non-data queries
-   - Data Discovery Agent: for queries about product reviews, gaps, sentiment, trends, or any data analysis
+   - Data Discovery Agent: ALWAYS route here FIRST for ANY query about product reviews, gaps, sentiment, trends, or data analysis
 
-IMPORTANT: Use your judgment to determine query type. Do NOT use rule-based text matching.
-- If the query asks about time, date, or general knowledge → General Assistant
-- If the query asks about reviews, gaps, sentiment, trends, or requires data → Data Discovery Agent
+CRITICAL ROUTING RULES:
+- Time/date/greetings → General Assistant
+- Product gaps/sentiment/trends/reviews/any data question → Data Discovery Agent (who will then route to specialists)
+
+NEVER route directly to gap_analysis, sentiment_analysis, trend_analysis, clustering, or other specialists.
+The Data Discovery Agent must ALWAYS be the first stop for data queries - it will discover datasets and route appropriately.
 
 When handing off, explain which specialist will help them.
 Be concise and helpful.""",
-        tools=[get_current_time_tool, get_user_location_tool],
+        tools=[get_current_time_tool, get_user_location_tool, get_user_datasets_tool],
         llm=llm,
     )
-

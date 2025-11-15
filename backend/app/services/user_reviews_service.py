@@ -15,6 +15,7 @@ from sqlalchemy.future import select
 from app.database.models.company import Company
 from app.database.models.review import Review
 from app.database.models.scraping_job import ScrapingJob
+from app.database.repositories.user_dataset import UserDatasetRepository
 from app.utils.dynamic_tables import sanitize_table_name
 from app.utils.logging import get_logger
 
@@ -77,7 +78,7 @@ class UserReviewsService:
         
         # Create table with standardized schema
         # Based on the EDA example: id, user_id, company_name, category, rating, text, source, date, author, created_at, updated_at
-        # Plus embedding column for vector search
+        # Plus __embedding__ column for vector search
         create_table_sql = f"""
             CREATE TABLE "{table_name}" (
                 id TEXT PRIMARY KEY,
@@ -91,7 +92,7 @@ class UserReviewsService:
                 author TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                embedding vector(1536)
+                __embedding__ vector(1536)
             )
         """
         
@@ -113,6 +114,138 @@ class UserReviewsService:
         
         logger.info(f"{self._log_prefix(user_id)} | Created table {table_name} with indexes")
         return True
+
+    async def ensure_user_dataset_record(self, user_id: str, row_count: int = 0) -> None:
+        """Ensure a user_datasets record exists for the reviews table.
+        
+        This creates metadata that allows the LLM agents to discover the reviews dataset.
+        
+        Args:
+            user_id: User ID
+            row_count: Number of rows in the reviews table
+        """
+        table_name = self.get_user_reviews_table_name(user_id)
+        
+        # Check if user_datasets record already exists
+        existing = await UserDatasetRepository.get_by_table_name(self.db, table_name, user_id)
+        
+        if existing:
+            logger.info(f"{self._log_prefix(user_id)} | user_datasets record already exists for {table_name}")
+            # Update row count if provided
+            if row_count > 0 and existing.row_count != row_count:
+                existing.row_count = row_count
+                await self.db.commit()
+                logger.info(f"{self._log_prefix(user_id)} | Updated row count to {row_count}")
+            return
+        
+        # Create user_datasets record
+        repository = UserDatasetRepository()
+        
+        # Build field metadata for the reviews table
+        field_metadata = [
+            {
+                "column_name": "id",
+                "data_type": "TEXT",
+                "description": "Unique identifier for the review",
+                "key_insight": "Primary key for reviews",
+                "is_key_field": True
+            },
+            {
+                "column_name": "user_id",
+                "data_type": "TEXT",
+                "description": "User ID who owns this review",
+                "key_insight": "Links review to user",
+                "is_key_field": False
+            },
+            {
+                "column_name": "company_name",
+                "data_type": "TEXT",
+                "description": "Name of the company being reviewed",
+                "key_insight": "Key dimension for grouping and filtering reviews",
+                "is_key_field": True
+            },
+            {
+                "column_name": "category",
+                "data_type": "TEXT",
+                "description": "Category of the review",
+                "key_insight": "Review classification",
+                "is_key_field": False
+            },
+            {
+                "column_name": "rating",
+                "data_type": "INTEGER",
+                "description": "Rating score (1-5 stars)",
+                "key_insight": "Quantitative sentiment indicator",
+                "is_key_field": True
+            },
+            {
+                "column_name": "text",
+                "data_type": "TEXT",
+                "description": "Full review content/text",
+                "key_insight": "Main content for analysis - contains customer feedback, sentiment, and insights",
+                "is_key_field": True
+            },
+            {
+                "column_name": "source",
+                "data_type": "TEXT",
+                "description": "Source platform of the review",
+                "key_insight": "Identifies where review came from",
+                "is_key_field": False
+            },
+            {
+                "column_name": "date",
+                "data_type": "TIMESTAMP",
+                "description": "Date when the review was written",
+                "key_insight": "Temporal dimension for trend analysis",
+                "is_key_field": True
+            },
+            {
+                "column_name": "author",
+                "data_type": "TEXT",
+                "description": "Author of the review",
+                "key_insight": "Review attribution",
+                "is_key_field": False
+            },
+            {
+                "column_name": "__embedding__",
+                "data_type": "vector(1536)",
+                "description": "Vector embedding for semantic search",
+                "key_insight": "Enables similarity and semantic search",
+                "is_key_field": False
+            }
+        ]
+        
+        # Build column stats
+        column_stats = {
+            "id": {"dtype": "TEXT", "description": "Primary key"},
+            "text": {"dtype": "TEXT", "description": "Review content for analysis"},
+            "rating": {"dtype": "INTEGER", "description": "Rating 1-5"},
+            "date": {"dtype": "TIMESTAMP", "description": "Review date"},
+            "company_name": {"dtype": "TEXT", "description": "Company name"},
+        }
+        
+        # Vector store columns - main column for embeddings
+        vector_store_columns = {
+            "main_column": "text",
+            "alternative_columns": ["company_name", "author"]
+        }
+        
+        await repository.create(
+            db=self.db,
+            user_id=user_id,
+            origin="reviews_sync",
+            table_name=table_name,
+            row_count=row_count,
+            description="Aggregated product reviews from all user companies. This is the core dataset containing customer feedback, ratings, and sentiment for analysis.",
+            field_metadata=field_metadata,
+            column_stats=column_stats,
+            sample_data=[],
+            vector_store_columns=vector_store_columns,
+            meta={"dataset_type": "reviews", "auto_generated": True}
+        )
+        await self.db.commit()
+        
+        logger.info(f"{self._log_prefix(user_id)} | Created user_datasets record for {table_name}")
 
     async def sync_reviews_to_user_table(
         self,
@@ -194,7 +327,7 @@ class UserReviewsService:
                 insert_sql = f"""
                     INSERT INTO "{table_name}" (
                         id, user_id, company_name, category, rating, text, source, date, author, 
-                        created_at, updated_at, embedding
+                        created_at, updated_at, __embedding__
                     ) VALUES (
                         :id, :user_id, :company_name, :category, :rating, :text, :source, :date, :author,
                         :created_at, :updated_at, :embedding
@@ -207,16 +340,19 @@ class UserReviewsService:
                         date = EXCLUDED.date,
                         author = EXCLUDED.author,
                         updated_at = CURRENT_TIMESTAMP,
-                        embedding = EXCLUDED.embedding
+                        __embedding__ = EXCLUDED.__embedding__
                 """
                 
                 # Convert embedding to string format if present
                 embedding_str = None
-                if review.embedding:
+                if review.embedding is not None:
                     # Embedding is a Vector type, convert to list then string
-                    embedding_list = list(review.embedding) if hasattr(review.embedding, '__iter__') else None
-                    if embedding_list:
-                        embedding_str = '[' + ','.join(map(str, embedding_list)) + ']'
+                    try:
+                        embedding_list = list(review.embedding) if hasattr(review.embedding, '__iter__') else None
+                        if embedding_list:
+                            embedding_str = '[' + ','.join(map(str, embedding_list)) + ']'
+                    except Exception as e:
+                        logger.warning(f"{self._log_prefix(user_id)} | Failed to convert embedding for review {review.id}: {e}")
                 
                 await self.db.execute(
                     text(insert_sql),
@@ -243,5 +379,9 @@ class UserReviewsService:
         await self.db.commit()
         
         logger.info(f"{self._log_prefix(user_id)} | Synced {synced_count} reviews to {table_name}")
+        
+        # Ensure user_datasets record exists for discovery by LLM agents
+        await self.ensure_user_dataset_record(user_id, row_count=synced_count)
+        
         return synced_count
 

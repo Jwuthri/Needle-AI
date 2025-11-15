@@ -13,7 +13,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from llama_index.core.llms import ChatMessage
 
-from app.core.llm.eda_generator import EDAGenerator, TableEDAResponse
+from app.core.llm.eda_generator import EDAGenerator
 from app.database.repositories.user_dataset import UserDatasetRepository
 from app.database.models.llm_call import LLMCallTypeEnum
 from app.optimal_workflow.agents.base import get_llm
@@ -198,16 +198,22 @@ Generate ONLY the name, nothing else. No quotes, no explanation, just the name."
     def compute_column_stats(self, df: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
         """
         Compute column-level statistics from a DataFrame.
+        Uses normalized column names (same as the database table).
 
         Args:
-            df: Pandas DataFrame
+            df: Pandas DataFrame with normalized column names
 
         Returns:
-            Dict mapping column names to their statistics
+            Dict mapping normalized column names to their statistics
         """
+        from app.utils.dynamic_tables import sanitize_column_name
+        
         stats = {}
 
         for col_name in df.columns:
+            # Use normalized column name for stats
+            normalized_col_name = sanitize_column_name(col_name)
+            
             col_stats = {
                 "non_null_count": int(df[col_name].notna().sum()),
                 "null_count": int(df[col_name].isna().sum()),
@@ -218,8 +224,39 @@ Generate ONLY the name, nothing else. No quotes, no explanation, just the name."
             non_null = df[col_name].dropna()
 
             if len(non_null) == 0:
-                stats[col_name] = col_stats
+                stats[normalized_col_name] = col_stats
                 continue
+
+            # Try to detect and convert date strings to datetime
+            if pd.api.types.is_string_dtype(df[col_name]) or df[col_name].dtype == 'object':
+                # Sample a few values to check if they're dates
+                sample_values = non_null.head(10)
+                date_like_count = 0
+                
+                for val in sample_values:
+                    val_str = str(val).strip()
+                    # Check for common date patterns
+                    if re.match(r'\d{4}-\d{2}-\d{2}', val_str) or \
+                       re.match(r'\d{2}/\d{2}/\d{4}', val_str) or \
+                       re.match(r'\d{2}-\d{2}-\d{4}', val_str) or \
+                       re.match(r'\d{4}/\d{2}/\d{2}', val_str):
+                        date_like_count += 1
+                
+                # If majority look like dates, try to convert
+                if date_like_count >= len(sample_values) * 0.7:
+                    try:
+                        converted = pd.to_datetime(non_null, errors='coerce')
+                        # If most values converted successfully, use datetime stats
+                        if converted.notna().sum() >= len(non_null) * 0.7:
+                            non_null = converted.dropna()
+                            col_stats["dtype"] = "datetime64[ns]"
+                            col_stats["min"] = str(non_null.min())
+                            col_stats["max"] = str(non_null.max())
+                            col_stats["distinct_count"] = int(non_null.nunique())
+                            stats[normalized_col_name] = col_stats
+                            continue
+                    except Exception:
+                        pass  # Fall through to string handling
 
             # Numeric columns
             if pd.api.types.is_numeric_dtype(df[col_name]):
@@ -254,7 +291,7 @@ Generate ONLY the name, nothing else. No quotes, no explanation, just the name."
                 col_stats["max"] = str(non_null.max())
                 col_stats["distinct_count"] = int(non_null.nunique())
 
-            stats[col_name] = col_stats
+            stats[normalized_col_name] = col_stats
 
         return stats
 
@@ -445,9 +482,22 @@ Generate ONLY the name, nothing else. No quotes, no explanation, just the name."
             row_count = len(df)
             logger.info(f"{self._log_prefix(user_id, table_name)} | Parsed {row_count} rows, {len(df.columns)} columns")
 
+            # Normalize column names BEFORE any processing
+            from app.utils.dynamic_tables import sanitize_column_name
+            original_columns = list(df.columns)
+            normalized_columns = [sanitize_column_name(col) for col in df.columns]
+            
+            # Create mapping for logging
+            column_mapping = {orig: norm for orig, norm in zip(original_columns, normalized_columns) if orig != norm}
+            if column_mapping:
+                logger.info(f"{self._log_prefix(user_id, table_name)} | Normalized {len(column_mapping)} column names: {column_mapping}")
+            
+            # Rename columns in DataFrame
+            df.columns = normalized_columns
+
             # Generate table name if not provided
             if not table_name or not table_name.strip():
-                # Get sample data for context
+                # Get sample data for context (using original column names for context)
                 sample_data = None
                 if not df.empty:
                     sample_data = df.iloc[0].to_dict()
@@ -455,7 +505,7 @@ Generate ONLY the name, nothing else. No quotes, no explanation, just the name."
                 table_name = await self.generate_dataset_name(
                     user_id=user_id,
                     filename=filename,
-                    column_names=list(df.columns),
+                    column_names=original_columns,  # Use original names for better context
                     sample_data=sample_data
                 )
                 logger.info(f"{self._log_prefix(user_id, table_name)} | Generated table name: {table_name}")
@@ -663,12 +713,18 @@ Generate ONLY the name, nothing else. No quotes, no explanation, just the name."
                 raise ValueError(f"Table '{table_name}' does not exist. Please re-upload the dataset.")
             raise
         
-        # Convert rows to dicts
+        # Convert rows to dicts, filtering out __embedding__ column
         rows = []
-        columns = data_result.keys()
+        columns = [col for col in data_result.keys() if col != '__embedding__']
+        all_columns = list(data_result.keys())
+        
         for row in data_result.fetchall():
             row_dict = {}
-            for i, col in enumerate(columns):
+            for i, col in enumerate(all_columns):
+                # Skip __embedding__ column
+                if col == '__embedding__':
+                    continue
+                    
                 value = row[i]
                 # Handle JSONB columns - parse if it's a string
                 if isinstance(value, str) and (value.startswith('{') or value.startswith('[')):
@@ -682,7 +738,7 @@ Generate ONLY the name, nothing else. No quotes, no explanation, just the name."
         
         return {
             "data": rows,
-            "columns": list(columns),
+            "columns": columns,
             "total_rows": total_rows,
             "limit": limit,
             "offset": offset,
@@ -725,12 +781,13 @@ Generate ONLY the name, nothing else. No quotes, no explanation, just the name."
     async def get_dataset_data_from_sql(self, sql_query: str) -> pd.DataFrame:
         """
         Execute a SQL query and return the results as a pandas DataFrame.
+        Filters out __embedding__ column from results.
         
         Args:
             sql_query: SQL query to execute
             
         Returns:
-            Pandas DataFrame with query results
+            Pandas DataFrame with query results (without __embedding__ column)
             
         Raises:
             ValueError: If query execution fails
@@ -738,7 +795,19 @@ Generate ONLY the name, nothing else. No quotes, no explanation, just the name."
         logger.info(f"{self._log_prefix()} | Executing SQL query")
         
         try:
-            df = pd.read_sql(sql_query, self.db.connection())
+            # Execute query using async SQLAlchemy
+            result = await self.db.execute(text(sql_query))
+            rows = result.fetchall()
+            
+            # Convert to DataFrame
+            if rows:
+                df = pd.DataFrame(rows, columns=result.keys())
+                # Drop __embedding__ column if it exists
+                if '__embedding__' in df.columns:
+                    df = df.drop(columns=['__embedding__'])
+            else:
+                df = pd.DataFrame()
+            
             logger.info(f"{self._log_prefix()} | Query returned {len(df)} rows")
             return df
         except Exception as e:

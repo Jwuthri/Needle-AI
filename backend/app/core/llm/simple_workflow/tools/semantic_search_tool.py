@@ -40,9 +40,15 @@ async def semantic_search_from_sql(ctx: Context, sql_query: str, query: str, dat
         try:
             data = await UserDatasetService(db).get_dataset_data_from_semantic_search_from_sql(sql_query, query)
             async with ctx.store.edit_state() as ctx_state:
-                ctx_state["state"]["dataset_data"]["semantic_search"][dataset_name] = data
-
-            return data.head(10).to_markdown()
+                if "state" not in ctx_state:
+                    ctx_state["state"] = {}
+                if "dataset_data" not in ctx_state["state"]:
+                    ctx_state["state"]["dataset_data"] = {}
+                ctx_state["state"]["dataset_data"][dataset_name] = data
+            ddata = data.copy()
+            if "__embedding__" in ddata.columns:
+                ddata.drop(columns=["__embedding__"], inplace=True)
+            return ddata.head(10).to_markdown()
         except Exception as e:
             logger.error(f"Error getting dataset data: {e}", exc_info=True)
             return {"error": str(e)}
@@ -71,9 +77,15 @@ async def semantic_search_from_query(ctx: Context, query: str, dataset_name: str
         try:
             data = await UserDatasetService(db).get_dataset_data_from_semantic_search(query, dataset_name, top_n)
             async with ctx.store.edit_state() as ctx_state:
-                ctx_state["state"]["dataset_data"]["semantic_search"][dataset_name] = data
-
-            return data.head(10).to_markdown()
+                if "state" not in ctx_state:
+                    ctx_state["state"] = {}
+                if "dataset_data" not in ctx_state["state"]:
+                    ctx_state["state"]["dataset_data"] = {}
+                ctx_state["state"]["dataset_data"][dataset_name] = data
+            ddata = data.copy()
+            if "__embedding__" in ddata.columns:
+                ddata.drop(columns=["__embedding__"], inplace=True)
+            return ddata.head(10).to_markdown()
         except Exception as e:
             logger.error(f"Error getting dataset data: {e}", exc_info=True)
             return {"error": str(e)}

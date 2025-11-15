@@ -4,8 +4,9 @@ import pandas as pd
 
 
 async def extract_data_from_ctx_by_key(ctx: Context, key: str, dataset: str) -> pd.DataFrame:
-    state = await ctx.store.get("state", {}).get("dataset_data", {}).get(key)
-    if not state:
+    state = await ctx.store.get("state", {})
+    dataset_data = state.get("dataset_data", {})
+    if not dataset_data:
         return None
 
-    return state.get(dataset)
+    return dataset_data.get(dataset)

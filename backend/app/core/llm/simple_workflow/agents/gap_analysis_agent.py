@@ -1,17 +1,17 @@
 """Gap Analysis Agent - Identifies product gaps and unmet needs"""
 
-from typing import Any, Dict, List, Optional
-
+from app.core.llm.simple_workflow.tools.user_dataset_tool import get_available_datasets_in_context
 from llama_index.core.agent.workflow import FunctionAgent
 from llama_index.core.tools import FunctionTool
+from llama_index.core.workflow import Context
 from llama_index.llms.openai import OpenAI
 
-from app.core.llm.workflow.tools import review_analysis_tools
+from app.core.llm.simple_workflow.tools.gap_analysis_tool import detect_gaps_from_clusters
 
 
 def create_gap_analysis_agent(llm: OpenAI, user_id: str) -> FunctionAgent:
     """
-    Create the gap analysis agent for identifying product gaps.
+    Create the gap analysis agent for identifying product gaps from clustered data.
     
     Args:
         llm: OpenAI LLM instance
@@ -20,46 +20,30 @@ def create_gap_analysis_agent(llm: OpenAI, user_id: str) -> FunctionAgent:
     Returns:
         FunctionAgent configured as gap analysis specialist
     """
-    # Create wrapper functions that hide user_id from LLM
-    def detect_product_gaps(analysis_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Identify product gaps, unmet needs, and feature requests."""
-        return review_analysis_tools.detect_product_gaps(user_id=user_id, analysis_params=analysis_params)
     
-    def semantic_search_reviews(query: str, limit: int = 10) -> Dict[str, Any]:
-        """Perform semantic search on reviews using vector embeddings."""
-        return review_analysis_tools.semantic_search_reviews(user_id=user_id, query=query, limit=limit)
-    
-    def extract_keywords(filters: Optional[Dict[str, Any]] = None, top_n: int = 20) -> Dict[str, Any]:
-        """Extract top keywords from reviews."""
-        return review_analysis_tools.extract_keywords(user_id=user_id, filters=filters, top_n=top_n)
-    
-    def query_user_reviews_table(
-        query: str,
-        table_name: str,
-        limit: int = 100
-    ) -> List[Dict[str, Any]]:
-        """Query user reviews table with SQL."""
-        return review_analysis_tools.query_user_reviews_table(
-            user_id=user_id, query=query, table_name=table_name, limit=limit
-        )
-    
-    detect_gaps_tool = FunctionTool.from_defaults(fn=detect_product_gaps)
-    semantic_search_tool = FunctionTool.from_defaults(fn=semantic_search_reviews)
-    extract_keywords_tool = FunctionTool.from_defaults(fn=extract_keywords)
-    query_user_reviews_tool = FunctionTool.from_defaults(fn=query_user_reviews_table)
+    detect_gaps_from_clusters_tool = FunctionTool.from_defaults(fn=detect_gaps_from_clusters)
+    # get_available_datasets_in_context_tool = FunctionTool.from_defaults(fn=get_available_datasets_in_context)
     
     return FunctionAgent(
         name="gap_analysis",
-        description="Specialist in identifying product gaps, unmet needs, and feature requests",
-        system_prompt="""You are a product gap analysis specialist. You help identify:
-1. Product gaps and unmet customer needs
-2. Feature requests and improvement opportunities
-3. Common pain points across reviews
-4. Areas where competitors might have advantages
+        description="Specialist in identifying product gaps, unmet needs, and opportunities from clustered data",
+        system_prompt="""You are a product gap analysis specialist. You analyze clustered data to identify:
+1. Underrepresented clusters (potential market gaps)
+2. Outlier patterns (edge cases or niche needs)
+3. Missing themes (by analyzing cluster coverage)
+4. Feature requests or unmet needs
 
-Use semantic search to find relevant reviews, extract keywords, and detect patterns.
-After analysis, hand off to Visualization Agent for charts, then to Report Writer for final formatting.
+Your analysis is based on clustering results. If clustering hasn't been performed on the dataset,
+the tool will automatically trigger it before performing gap analysis.
+
+Key insights to provide:
+- Which customer segments are underserved?
+- What patterns appear in outliers?
+- Are there concentration issues (too much focus on few themes)?
+- What opportunities exist in small clusters?
+
+After analysis, you can hand off to Visualization Agent for charts, then to Report Writer for final formatting.
 Be thorough and evidence-based in your analysis.""",
-        tools=[detect_gaps_tool, semantic_search_tool, extract_keywords_tool, query_user_reviews_tool],
+        tools=[detect_gaps_from_clusters_tool],
         llm=llm,
     )

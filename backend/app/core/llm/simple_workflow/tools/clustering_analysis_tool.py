@@ -1,9 +1,10 @@
-from app.core.llm.simple_workflow.utils import extract_data_from_ctx_by_key
+from app.core.llm.simple_workflow.utils.extract_data_from_ctx_by_key import extract_data_from_ctx_by_key
 from app.database.session import get_async_session
 from app.services.user_dataset_service import UserDatasetService
 from app.services.embedding_service import get_embedding_service
 from app.utils.logging import get_logger
 
+import asyncio
 import pandas as pd
 import numpy as np
 from llama_index.core.workflow import Context
@@ -37,7 +38,49 @@ async def _generate_embeddings_for_text(texts: List[str]) -> np.ndarray:
     return np.array(valid_embeddings)
 
 
-async def cuterize_dataset(ctx: Context, dataset_name: str, min_cluster_size: int = 5) -> str:
+async def _generate_embeddings_for_text_fast(texts: List[str]) -> np.ndarray:
+    """Generate embeddings for a list of texts using sentence-transformers BGE model.
+    
+    This uses a local embedding model for faster clustering without API calls.
+    
+    Args:
+        texts: List of text strings to embed
+        
+    Returns:
+        numpy array of embeddings (n_samples, embedding_dim)
+    """
+    try:
+        from sentence_transformers import SentenceTransformer
+        
+        # Use BGE-large - high quality embeddings for clustering
+        model = SentenceTransformer('BAAI/bge-base-en-v1.5')
+        
+        # Generate embeddings locally (no API calls) with normalization
+        embeddings = model.encode(texts, normalize_embeddings=True, show_progress_bar=False)
+        
+        logger.info(f"Generated {len(embeddings)} normalized embeddings using BGE-large (local)")
+        
+        return embeddings
+        
+    except ImportError:
+        logger.warning("sentence-transformers not installed, falling back to OpenAI embeddings")
+        # Fallback to OpenAI if sentence-transformers not available
+        embedding_service = get_embedding_service()
+        embeddings = await embedding_service.generate_embeddings_batch(texts, batch_size=100)
+        valid_embeddings = [emb for emb in embeddings if emb is not None]
+        
+        if len(valid_embeddings) != len(embeddings):
+            logger.warning(f"Some embeddings failed to generate: {len(embeddings) - len(valid_embeddings)} out of {len(embeddings)}")
+        
+        return np.array(valid_embeddings)
+
+
+async def cuterize_dataset(
+    ctx: Context, 
+    dataset_name: str, 
+    min_cluster_size: int = 5,
+    column: str | None = None
+) -> str:
     """Perform clustering analysis on a dataset using UMAP + HDBSCAN.
     
     This function uses the recommended approach from UMAP documentation:
@@ -51,11 +94,15 @@ async def cuterize_dataset(ctx: Context, dataset_name: str, min_cluster_size: in
         ctx: Context
         dataset_name: Name of the dataset to cluster
         min_cluster_size: Minimum size of clusters (default: 5)
+        column: Optional specific column to cluster on. If provided, generates embeddings
+               from this column. If not provided, uses existing __embedding__ column or
+               main_column from vector_store_columns configuration.
 
     ```
     cuterize_dataset(
         dataset_name="products",
-        min_cluster_size=5
+        min_cluster_size=5,
+        column="description"  # Optional: cluster on specific column
     )
     ```
 
@@ -69,30 +116,43 @@ async def cuterize_dataset(ctx: Context, dataset_name: str, min_cluster_size: in
             if data is None or data.empty:
                 return f"Error: Dataset '{dataset_name}' not found or is empty"
 
-            # Get vector store columns configuration from context
-            ctx_state = await ctx.store.get("state", {})
-            list_of_datasets = ctx_state.get("list_of_user_datasets", {})
-            dataset_config = list_of_datasets.get(dataset_name, {})
-            vector_store_columns = dataset_config.get("vector_store_columns", {})
-            
-            main_column = vector_store_columns.get("main_column")
-            alternative_columns = vector_store_columns.get("alternative_columns", [])
-            
-            # Check if embeddings already exist
+            # Determine which column(s) to use for clustering
             embeddings = None
-            if "__embedding__" in data.columns:
+            
+            # If a specific column is provided, use it
+            if column:
+                if column not in data.columns:
+                    return f"Error: Column '{column}' not found in dataset '{dataset_name}'"
+                
+                logger.info(f"Generating embeddings from specified column: {column}")
+                text_data = [str(val) for val in data[column]]
+                embeddings = await _generate_embeddings_for_text_fast(text_data)
+
+            # Check if embeddings already exist
+            elif "__embedding__" in data.columns:
                 logger.info(f"Using existing __embedding__ column for clustering")
                 # Convert embedding column to numpy array
                 embeddings = np.array([
                     np.array(emb) if isinstance(emb, (list, np.ndarray)) else np.fromstring(emb.strip('[]'), sep=',')
                     for emb in data["__embedding__"]
                 ])
+            
+            # Fallback to vector_store_columns configuration
             else:
+                # Get vector store columns configuration from context
+                ctx_state = await ctx.store.get("state", {})
+                list_of_datasets = ctx_state.get("list_of_user_datasets", {})
+                dataset_config = list_of_datasets.get(dataset_name, {})
+                vector_store_columns = dataset_config.get("vector_store_columns", {})
+                
+                main_column = vector_store_columns.get("main_column")
+                alternative_columns = vector_store_columns.get("alternative_columns", [])
+                
                 # Generate embeddings from text columns
                 if not main_column:
-                    return "Error: No main_column specified in vector_store_columns and no __embedding__ column found"
+                    return "Error: No column specified, no main_column in vector_store_columns, and no __embedding__ column found"
                 
-                logger.info(f"Generating embeddings from column: {main_column}")
+                logger.info(f"Generating embeddings from configured main_column: {main_column}")
                 
                 # Concatenate main and alternative columns for richer context
                 text_data = []
@@ -107,11 +167,23 @@ async def cuterize_dataset(ctx: Context, dataset_name: str, min_cluster_size: in
             
             # Apply UMAP for dimension reduction before clustering
             # Use clustering-optimized parameters as per UMAP documentation
-            logger.info(f"Applying UMAP dimension reduction for clustering (from {embeddings.shape[1]} to 10 dimensions)")
+            n_samples = embeddings.shape[0]
+            n_features = embeddings.shape[1]
+            
+            # Adjust n_components based on dataset size
+            # For small datasets, use much smaller dimensions to avoid scipy errors
+            if n_samples < 50:
+                n_components = min(5, n_samples // 2, n_features)
+            else:
+                n_components = min(32, n_samples - 1, n_features)
+            
+            n_neighbors = min(10, max(2, n_samples // 3))
+            
+            logger.info(f"Applying UMAP dimension reduction for clustering (from {n_features} to {n_components} dimensions, {n_samples} samples)")
             umap_reducer = umap.UMAP(
-                n_neighbors=10,  # Larger than default for broader structure
+                n_neighbors=n_neighbors,  # Adjust based on dataset size
                 min_dist=0.0,    # Pack points tightly for better density
-                n_components=32,  # Reduce to 10D for clustering (not visualization)
+                n_components=n_components,  # Adjust based on dataset size
                 metric='cosine',  # Cosine is better for text embeddings
                 random_state=42
             )
@@ -158,6 +230,8 @@ async def cuterize_dataset(ctx: Context, dataset_name: str, min_cluster_size: in
             
             # Store clustered data back in context
             async with ctx.store.edit_state() as ctx_state:
+                if "state" not in ctx_state:
+                    ctx_state["state"] = {}
                 if "dataset_data" not in ctx_state["state"]:
                     ctx_state["state"]["dataset_data"] = {}
                 if "clustering" not in ctx_state["state"]["dataset_data"]:
@@ -173,3 +247,8 @@ async def cuterize_dataset(ctx: Context, dataset_name: str, min_cluster_size: in
         except Exception as e:
             logger.error(f"Error performing clustering analysis: {e}", exc_info=True)
             return f"Error: {str(e)}"
+
+
+if __name__ == "__main__":
+    res = asyncio.run(_generate_embeddings_for_text_fast(["Hello, how are you?", "I am fine, thank you!", "How are you doing?"]))
+    print(res)
