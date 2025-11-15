@@ -241,6 +241,16 @@ class ApiClient {
     return this.request(url)
   }
 
+  // Analytics endpoints
+  async getUserReviewsStats(companyId?: string, source?: string, timePeriod?: string): Promise<any> {
+    const params = new URLSearchParams()
+    if (companyId) params.append('company_id', companyId)
+    if (source) params.append('source', source)
+    if (timePeriod) params.append('time_period', timePeriod)
+    const queryString = params.toString() ? `?${params.toString()}` : ''
+    return this.request(`/analytics/user-reviews/stats${queryString}`)
+  }
+
   // Data import endpoints
   async uploadCSV(companyId: string, file: File): Promise<any> {
     const formData = new FormData()
