@@ -364,23 +364,53 @@ async def get_user_reviews_stats(
             for row in sentiment_by_source_result.fetchall()
         ]
         
-        # Get average rating by source
-        avg_rating_by_source_query = text(f"""
-            SELECT source, AVG(rating) as avg_rating, COUNT(*) as count
+        # Get rating distribution by source for boxplot
+        rating_by_source_query = text(f"""
+            SELECT source, rating
             FROM "{table_name}"
             {where_clause}
-            GROUP BY source
-            ORDER BY avg_rating DESC
+            ORDER BY source, rating
         """)
-        avg_rating_by_source_result = await db.execute(avg_rating_by_source_query)
-        avg_rating_by_source = [
-            {
-                "source": row[0],
-                "avg_rating": float(row[1]) if row[1] else 0,
-                "count": row[2]
-            }
-            for row in avg_rating_by_source_result.fetchall()
-        ]
+        rating_by_source_result = await db.execute(rating_by_source_query)
+        
+        # Group ratings by source and calculate boxplot statistics
+        from collections import defaultdict
+        import numpy as np
+        
+        source_ratings = defaultdict(list)
+        for row in rating_by_source_result.fetchall():
+            source_ratings[row[0]].append(float(row[1]))
+        
+        avg_rating_by_source = []
+        for source, ratings in source_ratings.items():
+            ratings_array = np.array(ratings)
+            q1 = float(np.percentile(ratings_array, 25))
+            median = float(np.percentile(ratings_array, 50))
+            q3 = float(np.percentile(ratings_array, 75))
+            min_val = float(ratings_array.min())
+            max_val = float(ratings_array.max())
+            mean_val = float(ratings_array.mean())
+            
+            # Calculate outliers using IQR method
+            iqr = q3 - q1
+            lower_bound = q1 - 1.5 * iqr
+            upper_bound = q3 + 1.5 * iqr
+            outliers = [float(r) for r in ratings_array if r < lower_bound or r > upper_bound]
+            
+            avg_rating_by_source.append({
+                "source": source,
+                "min": min_val,
+                "q1": q1,
+                "median": median,
+                "q3": q3,
+                "max": max_val,
+                "mean": mean_val,
+                "outliers": outliers,
+                "count": len(ratings)
+            })
+        
+        # Sort by median rating descending
+        avg_rating_by_source.sort(key=lambda x: x['median'], reverse=True)
         
         # Get source breakdown
         source_query = text(f"""

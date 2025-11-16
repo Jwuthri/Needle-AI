@@ -23,11 +23,23 @@ import {
   ResponsiveContainer
 } from 'recharts'
 
+interface BoxPlotData {
+  source: string
+  min: number
+  q1: number
+  median: number
+  q3: number
+  max: number
+  mean: number
+  outliers: number[]
+  count: number
+}
+
 interface AnalyticsData {
   rating_distribution: Array<{ rating: number; count: number }>
   sentiment_trend: Array<{ date: string; sentiment: number; count: number }>
   sentiment_by_source: Array<{ date: string; source: string; sentiment: number; count: number }>
-  avg_rating_by_source: Array<{ source: string; avg_rating: number; count: number }>
+  avg_rating_by_source: BoxPlotData[]
   source_distribution: Array<{ source: string; count: number }>
   total_reviews: number
   company_name: string | null
@@ -35,6 +47,72 @@ interface AnalyticsData {
 }
 
 const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6']
+
+// Custom BoxPlot component for Recharts
+const BoxPlot = ({ x, y, width, height, data }: any) => {
+  const boxWidth = Math.min(width * 0.6, 40)
+  const centerX = x + width / 2
+  const scale = height / 5 // Scale for 0-5 rating range
+  
+  const minY = y + height - (data.min * scale)
+  const q1Y = y + height - (data.q1 * scale)
+  const medianY = y + height - (data.median * scale)
+  const q3Y = y + height - (data.q3 * scale)
+  const maxY = y + height - (data.max * scale)
+  const meanY = y + height - (data.mean * scale)
+  
+  return (
+    <g>
+      {/* Whiskers */}
+      <line x1={centerX} y1={minY} x2={centerX} y2={q1Y} stroke="#9ca3af" strokeWidth={2} />
+      <line x1={centerX} y1={q3Y} x2={centerX} y2={maxY} stroke="#9ca3af" strokeWidth={2} />
+      
+      {/* Min/Max caps */}
+      <line x1={centerX - boxWidth/4} y1={minY} x2={centerX + boxWidth/4} y2={minY} stroke="#9ca3af" strokeWidth={2} />
+      <line x1={centerX - boxWidth/4} y1={maxY} x2={centerX + boxWidth/4} y2={maxY} stroke="#9ca3af" strokeWidth={2} />
+      
+      {/* Box (IQR) */}
+      <rect
+        x={centerX - boxWidth/2}
+        y={q3Y}
+        width={boxWidth}
+        height={q1Y - q3Y}
+        fill="#3b82f6"
+        fillOpacity={0.7}
+        stroke="#3b82f6"
+        strokeWidth={2}
+      />
+      
+      {/* Median line */}
+      <line 
+        x1={centerX - boxWidth/2} 
+        y1={medianY} 
+        x2={centerX + boxWidth/2} 
+        y2={medianY} 
+        stroke="#fff" 
+        strokeWidth={3}
+      />
+      
+      {/* Mean point */}
+      <circle cx={centerX} cy={meanY} r={4} fill="#10b981" stroke="#fff" strokeWidth={2} />
+      
+      {/* Outliers */}
+      {data.outliers && data.outliers.map((outlier: number, idx: number) => {
+        const outlierY = y + height - (outlier * scale)
+        return (
+          <circle 
+            key={idx} 
+            cx={centerX} 
+            cy={outlierY} 
+            r={3} 
+            fill="#ef4444" 
+            fillOpacity={0.6}
+          />
+        )
+      })}
+    </g>
+  )
+}
 
 export default function AnalyticsPage() {
   const router = useRouter()
@@ -44,6 +122,7 @@ export default function AnalyticsPage() {
   const [timePeriod, setTimePeriod] = useState<'day' | 'week' | 'month' | 'year'>('month')
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null)
   const [loading, setLoading] = useState(false)
+  const [trendLoading, setTrendLoading] = useState(false)
 
   useEffect(() => {
     if (isLoaded && !isSignedIn) {
@@ -58,7 +137,18 @@ export default function AnalyticsPage() {
         return
       }
 
-      setLoading(true)
+      // Only show full loading when company/source changes
+      const isCompanyOrSourceChange = !analytics || 
+        analytics.company_name !== selectedCompany ||
+        analytics.filtered_source !== selectedSource
+      
+      if (isCompanyOrSourceChange) {
+        setLoading(true)
+      } else {
+        // Only trend data is changing (time period)
+        setTrendLoading(true)
+      }
+
       try {
         const token = await getToken()
         const api = createApiClient(token)
@@ -70,9 +160,12 @@ export default function AnalyticsPage() {
         setAnalytics(data)
       } catch (error) {
         console.error('Failed to fetch analytics:', error)
-        setAnalytics(null)
+        if (isCompanyOrSourceChange) {
+          setAnalytics(null)
+        }
       } finally {
         setLoading(false)
+        setTrendLoading(false)
       }
     }
 
@@ -141,7 +234,7 @@ export default function AnalyticsPage() {
               <CompanySelector
                 value={selectedCompany}
                 onChange={setSelectedCompany}
-                placeholder="Select a company to view analytics..."
+                placeholder="Select a company..."
               />
             </div>
             <div>
@@ -298,56 +391,67 @@ export default function AnalyticsPage() {
                           <button
                             key={period}
                             onClick={() => setTimePeriod(period)}
+                            disabled={trendLoading}
                             className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
                               timePeriod === period
                                 ? 'bg-emerald-500 text-white'
                                 : 'text-white/60 hover:text-white'
-                            }`}
+                            } ${trendLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
                           >
                             {period.charAt(0).toUpperCase() + period.slice(1)}
                           </button>
                         ))}
                       </div>
+                      {trendLoading && (
+                        <Loader2 className="w-4 h-4 text-emerald-400 animate-spin" />
+                      )}
                     </div>
                   </div>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <LineChart data={analytics.sentiment_trend}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                      <XAxis 
-                        dataKey="date" 
-                        stroke="#9ca3af"
-                        label={{ 
-                          value: timePeriod === 'day' ? 'Day' : timePeriod === 'week' ? 'Week' : timePeriod === 'month' ? 'Month' : 'Year', 
-                          position: 'insideBottom', 
-                          offset: -5, 
-                          fill: '#9ca3af' 
-                        }}
-                      />
-                      <YAxis 
-                        stroke="#9ca3af"
-                        domain={[-1, 1]}
-                        label={{ value: 'Sentiment Score', angle: -90, position: 'insideLeft', fill: '#9ca3af' }}
-                      />
-                      <Tooltip
-                        contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
-                        labelStyle={{ color: '#fff' }}
-                      />
-                      <Legend />
-                      <Line 
-                        type="monotone" 
-                        dataKey="sentiment" 
-                        stroke="#10b981" 
-                        strokeWidth={2}
-                        dot={{ fill: '#10b981', r: 4 }}
-                        activeDot={{ r: 6 }}
-                        name="Avg Sentiment"
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
+                  <div className="relative">
+                    {trendLoading && (
+                      <div className="absolute inset-0 bg-gray-900/50 backdrop-blur-sm flex items-center justify-center z-10 rounded-lg">
+                        <Loader2 className="w-6 h-6 text-emerald-400 animate-spin" />
+                      </div>
+                    )}
+                    <ResponsiveContainer width="100%" height={300}>
+                      <LineChart data={analytics.sentiment_trend}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                        <XAxis 
+                          dataKey="date" 
+                          stroke="#9ca3af"
+                          label={{ 
+                            value: timePeriod === 'day' ? 'Day' : timePeriod === 'week' ? 'Week' : timePeriod === 'month' ? 'Month' : 'Year', 
+                            position: 'insideBottom', 
+                            offset: -5, 
+                            fill: '#9ca3af' 
+                          }}
+                        />
+                        <YAxis 
+                          stroke="#9ca3af"
+                          domain={[-1, 1]}
+                          label={{ value: 'Sentiment Score', angle: -90, position: 'insideLeft', fill: '#9ca3af' }}
+                        />
+                        <Tooltip
+                          contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
+                          labelStyle={{ color: '#fff' }}
+                        />
+                        <Legend />
+                        <Line 
+                          type="monotone" 
+                          dataKey="sentiment" 
+                          stroke="#10b981" 
+                          strokeWidth={2}
+                          dot={{ fill: '#10b981', r: 4 }}
+                          activeDot={{ r: 6 }}
+                          name="Avg Sentiment"
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
                 </motion.div>
               )}
 
-              {/* Average Rating by Source */}
+              {/* Average Rating by Source - BoxPlot */}
               {!selectedSource && analytics.avg_rating_by_source.length > 1 && (
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
@@ -355,9 +459,32 @@ export default function AnalyticsPage() {
                   transition={{ delay: 0.4 }}
                   className="bg-gray-900/50 border border-gray-800/50 rounded-xl p-6 lg:col-span-2"
                 >
-                  <h3 className="text-xl font-bold text-white mb-6">Average Rating by Source</h3>
+                  <div className="mb-6">
+                    <h3 className="text-xl font-bold text-white mb-2">Rating Distribution by Source</h3>
+                    <div className="flex items-center space-x-4 text-sm text-white/60">
+                      <div className="flex items-center space-x-1">
+                        <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+                        <span>Box (Q1-Q3)</span>
+                      </div>
+                      <div className="flex items-center space-x-1">
+                        <div className="w-3 h-0.5 bg-white"></div>
+                        <span>Median</span>
+                      </div>
+                      <div className="flex items-center space-x-1">
+                        <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
+                        <span>Mean</span>
+                      </div>
+                      <div className="flex items-center space-x-1">
+                        <div className="w-3 h-3 rounded-full bg-red-500/60"></div>
+                        <span>Outliers</span>
+                      </div>
+                    </div>
+                  </div>
                   <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={analytics.avg_rating_by_source}>
+                    <BarChart 
+                      data={analytics.avg_rating_by_source}
+                      margin={{ top: 20, right: 30, left: 20, bottom: 80 }}
+                    >
                       <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                       <XAxis 
                         dataKey="source" 
@@ -369,14 +496,36 @@ export default function AnalyticsPage() {
                       <YAxis 
                         domain={[0, 5]} 
                         stroke="#9ca3af"
-                        label={{ value: 'Average Rating', angle: -90, position: 'insideLeft', fill: '#9ca3af' }}
+                        label={{ value: 'Rating', angle: -90, position: 'insideLeft', fill: '#9ca3af' }}
                       />
                       <Tooltip
                         contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
                         labelStyle={{ color: '#fff' }}
-                        formatter={(value: any) => [parseFloat(value).toFixed(2), 'Avg Rating']}
+                        content={({ active, payload }) => {
+                          if (active && payload && payload.length) {
+                            const data = payload[0].payload
+                            return (
+                              <div className="bg-gray-800 border border-gray-700 rounded-lg p-3">
+                                <p className="text-white font-semibold mb-2">{data.source}</p>
+                                <p className="text-emerald-400 text-sm">Mean: {data.mean.toFixed(2)}</p>
+                                <p className="text-white text-sm">Median: {data.median.toFixed(2)}</p>
+                                <p className="text-white/60 text-sm">Q3: {data.q3.toFixed(2)}</p>
+                                <p className="text-white/60 text-sm">Q1: {data.q1.toFixed(2)}</p>
+                                <p className="text-white/40 text-sm">Range: {data.min.toFixed(1)} - {data.max.toFixed(1)}</p>
+                                <p className="text-white/40 text-sm">Count: {data.count}</p>
+                                {data.outliers && data.outliers.length > 0 && (
+                                  <p className="text-red-400 text-sm">Outliers: {data.outliers.length}</p>
+                                )}
+                              </div>
+                            )
+                          }
+                          return null
+                        }}
                       />
-                      <Bar dataKey="avg_rating" fill="#3b82f6" />
+                      <Bar 
+                        dataKey="median" 
+                        shape={(props: any) => <BoxPlot {...props} data={props.payload} />}
+                      />
                     </BarChart>
                   </ResponsiveContainer>
                 </motion.div>
