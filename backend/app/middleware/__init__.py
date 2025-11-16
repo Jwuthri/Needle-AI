@@ -180,7 +180,7 @@ class InputSanitizationMiddleware(BaseHTTPMiddleware):
     CHAT_ENDPOINTS = ["/api/v1/chat/", "/api/v1/completions/"]
     
     # Streaming endpoints that should skip body sanitization
-    STREAMING_ENDPOINTS = ["/api/v1/chat/stream"]
+    STREAMING_ENDPOINTS = ["/api/v1/chat/stream", "/api/v1/chat-experimental/stream"]
 
     # Maximum request body size (10MB)
     MAX_BODY_SIZE = 10 * 1024 * 1024

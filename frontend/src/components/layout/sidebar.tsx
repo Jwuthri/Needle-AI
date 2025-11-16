@@ -38,6 +38,7 @@ interface SidebarProps {
 const navItems = [
   { icon: Building2, label: 'Companies', href: '/companies' },
   { icon: MessageSquare, label: 'Chat', href: '/chat' },
+  { icon: MessageSquare, label: 'Chat (Experimental)', href: '/chat-experimental', badge: 'NEW' },
   { icon: BarChart3, label: 'Analytics', href: '/analytics' },
   { icon: Database, label: 'Data Sources', href: '/data-sources' },
   { icon: Clock, label: 'Jobs', href: '/jobs' },
@@ -53,7 +54,8 @@ export function Sidebar({ conversations = [], onNewChat, onSelectSession, curren
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [activeMenu, setActiveMenu] = useState<string | null>(null)
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null)
-  const isChatRoute = pathname?.startsWith('/chat')
+  // Show chat controls for both chat routes
+  const isChatRoute = pathname === '/chat' || pathname === '/chat-experimental'
 
   // Load chat sessions when on chat route
   useEffect(() => {
@@ -201,7 +203,10 @@ export function Sidebar({ conversations = [], onNewChat, onSelectSession, curren
       <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
         {navItems.map((item) => {
           const Icon = item.icon
-          const isActive = pathname?.startsWith(item.href)
+          // Exact match for chat routes to avoid conflicts between /chat and /chat-experimental
+          const isActive = item.href === '/chat' || item.href === '/chat-experimental'
+            ? pathname === item.href
+            : pathname?.startsWith(item.href)
 
           return (
             <Link key={item.href} href={item.href}>
@@ -217,7 +222,14 @@ export function Sidebar({ conversations = [], onNewChat, onSelectSession, curren
               >
                 <Icon className="w-5 h-5 flex-shrink-0" />
                 {!isCollapsed && (
-                  <span className="font-medium">{item.label}</span>
+                  <span className="font-medium flex items-center gap-2">
+                    {item.label}
+                    {item.badge && (
+                      <span className="px-1.5 py-0.5 text-[10px] bg-purple-500/20 text-purple-300 rounded border border-purple-500/30">
+                        {item.badge}
+                      </span>
+                    )}
+                  </span>
                 )}
               </div>
             </Link>

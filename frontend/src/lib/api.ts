@@ -98,6 +98,14 @@ class ApiClient {
     })
   }
 
+  // Experimental chat endpoints (using simple_workflow)
+  async sendMessageExperimental(request: ChatRequest): Promise<ChatResponse> {
+    return this.request<ChatResponse>('/chat-experimental/', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    })
+  }
+
   async healthCheck(): Promise<HealthResponse> {
     return this.request<HealthResponse>('/health/')
   }

@@ -101,11 +101,11 @@ async def generate_bar_chart(
     }
     
     # Save to context
-    state = await ctx.get("state", default={})
+    state = await ctx.store.get("state", {})
     if "graph_data" not in state:
         state["graph_data"] = {}
     state["graph_data"][title] = result
-    await ctx.set("state", state)
+    await ctx.store.set("state", state)
     
     return result
 
@@ -165,11 +165,11 @@ async def generate_line_chart(
     }
     
     # Save to context
-    state = await ctx.get("state", default={})
+    state = await ctx.store.get("state", {})
     if "graph_data" not in state:
         state["graph_data"] = {}
     state["graph_data"][title] = result
-    await ctx.set("state", state)
+    await ctx.store.set("state", state)
     
     return result
 
@@ -218,11 +218,11 @@ async def generate_pie_chart(
     }
     
     # Save to context
-    state = await ctx.get("state", default={})
+    state = await ctx.store.get("state", {})
     if "graph_data" not in state:
         state["graph_data"] = {}
     state["graph_data"][title] = result
-    await ctx.set("state", state)
+    await ctx.store.set("state", state)
     
     return result
 
@@ -283,10 +283,10 @@ async def generate_heatmap(
     }
     
     # Save to context
-    state = await ctx.get("state", default={})
+    state = await ctx.store.get("state", {})
     if "graph_data" not in state:
         state["graph_data"] = {}
     state["graph_data"][title] = result
-    await ctx.set("state", state)
+    await ctx.store.set("state", state)
     
     return result
