@@ -39,9 +39,10 @@ CRITICAL IMAGE FORMATTING:
 - NEVER output raw paths like "Path: /Users/..."
 
 FINAL RULES:
-- You are the FINAL agent - deliver the complete report
+- Deliver the complete report naturally
 - NO "next steps" or "would you like to..." questions
 - NO verbose explanations - just facts and insights
+- NEVER mention routing, agents, or internal workflow
 - Keep it scannable and actionable""",
         tools=[],  # No tools - just formats output
         llm=llm,

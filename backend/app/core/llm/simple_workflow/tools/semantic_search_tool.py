@@ -13,23 +13,27 @@ async def semantic_search_from_sql(ctx: Context, sql_query: str, query: str, dat
 
     Args:
         ctx: Context
-        sql_query: SQL query to execute
-        dataset_name: Name of the dataset to search on
+        sql_query: SQL query to execute (use table_name from get_user_datasets)
+        query: Semantic search query text
+        dataset_name: Name of the dataset to search on (use table_name from get_user_datasets)
 
+    Example:
     ```
+    # First get user datasets to find the table_name
+    datasets = await get_user_datasets(ctx)
+    table_name = datasets[0]["table_name"]  # e.g., "__user_123_customer_reviews"
+    
     semantic_search_from_sql(
-        sql_query='''
+        sql_query=f'''
             SELECT
-                id,
-                company_id,
-                content,
-                sentiment_score,
-                1 - (embedding <=> '[PLACEHOLDER_QUERY_VECTOR]'::vector) AS similarity
-            FROM reviews
-            LIMIT 1000;
-        '''
+                *,
+                1 - (__embedding__ <=> '[PLACEHOLDER_QUERY_VECTOR]'::vector) AS __similarity_score__
+            FROM {table_name}
+            ORDER BY __similarity_score__ DESC
+            LIMIT 100;
+        ''',
         query="customer service issues",
-        dataset_name="reviews",
+        dataset_name=table_name,
     )
     ```
 
@@ -60,12 +64,18 @@ async def semantic_search_from_query(ctx: Context, query: str, dataset_name: str
     Args:
         ctx: Context
         query: semantic search query
-        dataset_name: Name of the dataset to search on
+        dataset_name: Name of the dataset to search on (use table_name from get_user_datasets)
+        top_n: Maximum number of results (-1 for all)
 
+    Example:
     ```
+    # First get user datasets to find the table_name
+    datasets = await get_user_datasets(ctx)
+    table_name = datasets[0]["table_name"]  # e.g., "__user_123_customer_reviews"
+    
     semantic_search_from_query(
         query="customer service issues",
-        dataset_name="reviews",
+        dataset_name=table_name,
         top_n=10
     )
     ```

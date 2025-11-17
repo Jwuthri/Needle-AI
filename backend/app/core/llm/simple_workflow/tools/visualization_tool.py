@@ -49,21 +49,21 @@ def _save_chart_png(fig: go.Figure, user_id: str, chart_type: str, title: str) -
 
 async def generate_bar_chart(
     ctx: Context,
-    data: List[Dict[str, Any]],
     title: str,
     x_label: str,
     y_label: str,
-    user_id: str
+    user_id: str,
+    data: List[Dict[str, Any]]
 ) -> Dict[str, Any]:
     """Generate bar chart PNG.
     
-    Args:
-        data: List of dicts with x and y keys (optional, will use context if not provided)
-        title: Chart title
-        x_label: X-axis label
-        y_label: Y-axis label
-        user_id: User ID for file path
-        context_key: Optional key to look up data in workflow context (e.g., "gap_analysis_data")
+    REQUIRED PARAMETERS:
+        title (str): Chart title - REQUIRED
+        x_label (str): X-axis label - REQUIRED
+        y_label (str): Y-axis label - REQUIRED
+        user_id (str): User ID for file path - REQUIRED
+        data (List[Dict[str, Any]]): List of dicts with x and y keys - REQUIRED
+            Example: [{"x": "Category A", "y": 10}, {"x": "Category B", "y": 20}]
         
     Returns:
         Dict with chart path and metadata
@@ -112,20 +112,21 @@ async def generate_bar_chart(
 
 async def generate_line_chart(
     ctx: Context,
-    data: List[Dict[str, Any]],
     title: str,
     x_label: str,
     y_label: str,
-    user_id: str
+    user_id: str,
+    data: List[Dict[str, Any]]
 ) -> Dict[str, Any]:
     """Generate line chart PNG.
     
-    Args:
-        data: List of dicts with x and y keys
-        title: Chart title
-        x_label: X-axis label
-        y_label: Y-axis label
-        user_id: User ID for file path
+    REQUIRED PARAMETERS:
+        title (str): Chart title - REQUIRED
+        x_label (str): X-axis label - REQUIRED
+        y_label (str): Y-axis label - REQUIRED
+        user_id (str): User ID for file path - REQUIRED
+        data (List[Dict[str, Any]]): List of dicts with x and y keys - REQUIRED
+            Example: [{"x": "2024-01", "y": 100}, {"x": "2024-02", "y": 150}]
         
     Returns:
         Dict with chart path and metadata
@@ -176,16 +177,17 @@ async def generate_line_chart(
 
 async def generate_pie_chart(
     ctx: Context,
-    data: List[Dict[str, Any]],
     title: str,
-    user_id: str
+    user_id: str,
+    data: List[Dict[str, Any]]
 ) -> Dict[str, Any]:
     """Generate pie chart PNG.
     
-    Args:
-        data: List of dicts with label and value keys
-        title: Chart title
-        user_id: User ID for file path
+    REQUIRED PARAMETERS:
+        title (str): Chart title - REQUIRED
+        user_id (str): User ID for file path - REQUIRED
+        data (List[Dict[str, Any]]): List of dicts with label and value keys - REQUIRED
+            Example: [{"label": "Positive", "value": 60}, {"label": "Negative", "value": 40}]
         
     Returns:
         Dict with chart path and metadata
@@ -229,16 +231,17 @@ async def generate_pie_chart(
 
 async def generate_heatmap(
     ctx: Context,
-    data: List[Dict[str, Any]],
     title: str,
-    user_id: str
+    user_id: str,
+    data: List[Dict[str, Any]]
 ) -> Dict[str, Any]:
     """Generate heatmap PNG.
     
-    Args:
-        data: List of dicts with x, y, and value keys
-        title: Chart title
-        user_id: User ID for file path
+    REQUIRED PARAMETERS:
+        title (str): Chart title - REQUIRED
+        user_id (str): User ID for file path - REQUIRED
+        data (List[Dict[str, Any]]): List of dicts with x, y, and value keys - REQUIRED
+            Example: [{"x": "Cat1", "y": "Metric1", "value": 10}, {"x": "Cat2", "y": "Metric1", "value": 20}]
         
     Returns:
         Dict with chart path and metadata

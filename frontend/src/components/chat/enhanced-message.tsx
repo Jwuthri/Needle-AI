@@ -174,26 +174,30 @@ const formatAssistantContent = (content: string) => {
     const trimmedLine = line.trim()
     
     // Detect markdown images: ![alt text](url)
-    const imageMatch = trimmedLine.match(/^!\[([^\]]*)\]\(([^)]+)\)$/)
+    const imageMatch = trimmedLine.match(/!\[([^\]]*)\]\(([^)]+)\)/)
     if (imageMatch) {
       flushSection()
       const altText = imageMatch[1]
       const imagePath = imageMatch[2]
       
       // Convert local file path to API endpoint
+      // Note: NEXT_PUBLIC_API_URL may or may not include /api/v1
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const apiBase = baseUrl.endsWith('/api/v1') ? baseUrl : `${baseUrl}/api/v1`
+      
       let imageUrl = imagePath
       if (imagePath.startsWith('/Users/') || imagePath.startsWith('/app/')) {
         // Extract filename from full path
         const filename = imagePath.split('/').pop()
-        imageUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/graphs/${filename}`
+        imageUrl = `${apiBase}/graphs/${filename}`
       } else if (imagePath.startsWith('/api/graphs/')) {
-        // Already in correct format from backend, just prepend base URL
+        // Fix path to include /v1/
         const filename = imagePath.replace('/api/graphs/', '')
-        imageUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/graphs/${filename}`
+        imageUrl = `${apiBase}/graphs/${filename}`
       } else if (!imagePath.startsWith('http')) {
         // Relative path - assume it's in graphs
         const filename = imagePath.split('/').pop()
-        imageUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/graphs/${filename}`
+        imageUrl = `${apiBase}/graphs/${filename}`
       }
       
       sections.push(

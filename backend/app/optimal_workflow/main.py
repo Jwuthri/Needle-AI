@@ -154,7 +154,7 @@ async def run_workflow_streaming(
     def stream_callback(event):
         """Callback to collect events for streaming."""
         try:
-            logger.info(f"Callback received event: {event.get('type', 'unknown')}")
+            # logger.info(f"Callback received event: {event.get('type', 'unknown')}")
             events.put_nowait(event)
         except Exception as e:
             logger.warning(f"Failed to queue event: {e}")

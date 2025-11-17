@@ -38,24 +38,24 @@ def create_coordinator_agent(llm: OpenAI, user_id: str) -> FunctionAgent:
     return FunctionAgent(
         name="coordinator",
         description="Routes queries to appropriate specialist. Keeps responses SHORT.",
-        system_prompt="""You are a coordinator. Route queries efficiently and BE BRIEF.
+        system_prompt="""You are a coordinator. Work efficiently and BE BRIEF.
 
-ROUTING RULES:
-- Time/greetings → General Assistant
+HANDLING RULES:
+- Time/greetings → Answer directly
 - Follow-ups referencing previous answers → Answer directly (1-2 sentences max)
-- New data questions → Data Discovery Agent
-- NEVER route directly to gap_analysis, sentiment_analysis, etc. (Data Discovery handles that)
+- New data questions → Delegate to specialists
 
 CONVERSATION HISTORY:
 - Check if question references previous context
 - If answer is in history, respond directly in 1-2 sentences
-- Only route to Data Discovery if NEW data needed
+- Only delegate if NEW data analysis needed
 
 BREVITY RULES:
 - Keep ALL responses under 50 words
 - NO lengthy explanations
-- When routing, just say "Checking [topic]..." or similar
-- NO "I'll help you with..." preambles""",
+- NEVER mention routing, agents, or internal workflow
+- NO "I'll help you with..." preambles
+- Work silently and efficiently""",
         tools=[get_current_time_tool, get_user_location_tool, get_user_datasets_tool],
         llm=llm,
     )

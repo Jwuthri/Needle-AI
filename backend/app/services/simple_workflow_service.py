@@ -152,7 +152,8 @@ class SimpleWorkflowService:
                                 tool_call={
                                     "tool_name": tool_name,
                                     "tool_kwargs": tool_kwargs
-                                }
+                                },
+                                status="pending"
                             )
                             await save_db.commit()
                             step_id = str(step.id)
@@ -189,30 +190,54 @@ class SimpleWorkflowService:
                     
                     logger.info(f"Tool Result: {tool_name} returned output")
                     
+                    # Convert output to string - use JSON for dicts/lists, str() for others
+                    if isinstance(tool_output, (dict, list)):
+                        import json
+                        output_str = json.dumps(tool_output, indent=2, default=str)
+                    else:
+                        output_str = str(tool_output)
+                    
                     # Check if output indicates an error
-                    output_str = str(tool_output)
-                    is_error = output_str.startswith("ERROR") or "error" in output_str.lower()[:100]
+                    is_error = output_str.startswith("ERROR")
+                    
+                    # Parse structured output if it's a dict or BaseModel
+                    structured_output = None
+                    prediction = None
+                    raw_output = output_str  # Store the raw output
+                    
+                    if isinstance(tool_output, dict):
+                        structured_output = tool_output
+                    elif hasattr(tool_output, 'model_dump'):
+                        # It's a Pydantic BaseModel
+                        structured_output = tool_output.model_dump()
+                    else:
+                        # Store as text prediction
+                        prediction = output_str
                     
                     # Update the last step with result
                     if agent_steps and agent_steps[-1].get("tool_name") == tool_name:
                         step_status = "error" if is_error else "completed"
                         agent_steps[-1]["status"] = step_status
                         agent_steps[-1]["tool_output"] = output_str[:500]  # Truncate large outputs
+                        agent_steps[-1]["raw_output"] = raw_output  # Store full raw output
                         
-                        # Update step status in database (use lowercase enum values)
+                        # Update step with result data in database
                         try:
                             from app.database.session import get_async_session
                             step_id = agent_steps[-1].get("step_id")
                             if step_id and not step_id.startswith("step-"):  # Only update if it's a real DB ID
                                 async with get_async_session() as save_db:
-                                    await ChatMessageStepRepository.update_status(
+                                    await ChatMessageStepRepository.update_with_result(
                                         db=save_db,
                                         step_id=step_id,
-                                        status="error" if is_error else "success"
+                                        status="error" if is_error else "success",
+                                        structured_output=structured_output,
+                                        prediction=prediction,
+                                        raw_output=raw_output
                                     )
                                     await save_db.commit()
                         except Exception as db_err:
-                            logger.error(f"Failed to update step status: {db_err}")
+                            logger.error(f"Failed to update step with result: {db_err}")
                     
                     # Yield tool_result event
                     yield {
@@ -220,7 +245,8 @@ class SimpleWorkflowService:
                         "data": {
                             "tool_name": tool_name,
                             "tool_kwargs": tool_kwargs,
-                            "output": output_str[:500],  # Truncate for streaming
+                            "output": output_str[:500],  # Truncate for streaming (deprecated, use raw_output)
+                            "raw_output": raw_output,  # Full raw output for markdown rendering
                             "is_error": is_error
                         }
                     }

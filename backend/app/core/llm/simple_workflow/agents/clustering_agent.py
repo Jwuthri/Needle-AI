@@ -43,8 +43,8 @@ BREVITY RULES:
 - Keep findings under 80 words
 - Use bullet points only
 - NO lengthy explanations
-- After analysis, route to Visualization → Report Writer
-- Example: "5 clusters found: [theme1], [theme2], [theme3]..." then route""",
+- NEVER mention routing, agents, or internal workflow
+- Example: "5 clusters found: [theme1], [theme2], [theme3]..." """,
         tools=[cuterize_dataset_tool, get_available_datasets_in_context_tool, semantic_search_from_sql_tool, semantic_search_from_query_tool],
         llm=llm,
     )

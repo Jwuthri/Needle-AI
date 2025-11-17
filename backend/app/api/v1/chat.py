@@ -446,9 +446,15 @@ async def list_sessions(
                 # Format steps for frontend
                 formatted_steps = []
                 for step in agent_steps:
-                    # Determine content based on available fields
+                    # Combine tool_call and structured_output into content
                     content = None
-                    if step.structured_output:
+                    if step.tool_call and step.structured_output:
+                        # Both call and result - merge them
+                        content = {
+                            **step.tool_call,
+                            "output": step.structured_output
+                        }
+                    elif step.structured_output:
                         content = step.structured_output
                     elif step.tool_call:
                         content = step.tool_call
@@ -461,8 +467,9 @@ async def list_sessions(
                         "content": content,
                         "is_structured": step.structured_output is not None or step.tool_call is not None,
                         "timestamp": step.created_at.isoformat() if step.created_at else None,
-                        "status": "completed",
-                        "step_order": step.step_order
+                        "status": step.status or "completed",
+                        "step_order": step.step_order,
+                        "raw_output": step.raw_output  # Include raw_output for markdown rendering
                     })
                 
                 # Add steps to metadata
@@ -546,9 +553,15 @@ async def get_session(
             # Format steps for frontend
             formatted_steps = []
             for step in agent_steps:
-                # Determine content based on available fields
+                # Combine tool_call and structured_output into content
                 content = None
-                if step.structured_output:
+                if step.tool_call and step.structured_output:
+                    # Both call and result - merge them
+                    content = {
+                        **step.tool_call,
+                        "output": step.structured_output
+                    }
+                elif step.structured_output:
                     content = step.structured_output
                 elif step.tool_call:
                     content = step.tool_call
@@ -561,8 +574,9 @@ async def get_session(
                     "content": content,
                     "is_structured": step.structured_output is not None or step.tool_call is not None,
                     "timestamp": step.created_at.isoformat() if step.created_at else None,
-                    "status": "completed",
-                    "step_order": step.step_order
+                    "status": step.status or "completed",
+                    "step_order": step.step_order,
+                    "raw_output": step.raw_output  # Include raw_output for markdown rendering
                 })
             
             # Add steps to metadata

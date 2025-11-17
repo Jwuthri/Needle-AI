@@ -40,11 +40,26 @@ async def get_user_datasets(ctx: Context, user_id: str, limit: int = 50, offset:
 
 async def get_dataset_data_from_sql(ctx: Context, sql_query: str, dataset_name: str) -> str:
     """Get dataset data from a SQL query.
+    
+    IMPORTANT: You can ONLY query user dataset tables (starting with __user_).
+    First call get_user_datasets to see available datasets and use the table_name field.
 
     Args:
         ctx: Context
-        sql_query: SQL query to execute
-        dataset_name: Name of the dataset to search on
+        sql_query: SQL query to execute (must use table_name from get_user_datasets)
+        dataset_name: Name of the dataset (use table_name from get_user_datasets)
+
+    Example:
+        # First get available datasets
+        datasets = await get_user_datasets(ctx)
+        table_name = datasets[0]["table_name"]  # e.g., "__user_123_customer_reviews"
+        
+        # Then query using the table_name
+        data = await get_dataset_data_from_sql(
+            ctx=ctx,
+            sql_query=f'SELECT id, content FROM "{table_name}" LIMIT 100',
+            dataset_name=table_name
+        )
 
     Returns:
         str: Dataset data as markdown table or error message for LLM to fix

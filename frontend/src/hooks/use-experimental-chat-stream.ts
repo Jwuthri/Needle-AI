@@ -187,29 +187,33 @@ export function useExperimentalChatStream(options: UseExperimentalChatStreamOpti
                     const toolResultData = update.data as {
                       tool_name: string;
                       tool_kwargs: any;
-                      output: any;
+                      output?: any;
+                      raw_output?: string;
                       is_error?: boolean;
                     };
-                    console.log('[Experimental Stream] Tool result:', toolResultData.tool_name, 'error:', toolResultData.is_error);
-                    
                     const resultStatus = toolResultData.is_error ? 'error' : 'completed';
                     
                     // Update tool execution tracking
                     setToolExecutions((prev) =>
                       prev.map((exec) =>
                         exec.tool_name === toolResultData.tool_name && exec.status === 'running'
-                          ? { ...exec, output: toolResultData.output, status: 'completed' }
+                          ? { ...exec, output: toolResultData.raw_output || toolResultData.output, status: 'completed' }
                           : exec
                       )
                     );
 
-                    // Update the last step status if it matches this tool
+                    // Update the last step with output and status
                     setAgentSteps((prev) => {
                       const lastStep = prev[prev.length - 1];
                       if (lastStep && lastStep.content?.tool_name === toolResultData.tool_name) {
                         return prev.slice(0, -1).concat({
                           ...lastStep,
                           status: resultStatus,
+                          content: {
+                            ...lastStep.content,
+                            type: 'tool_result'
+                          },
+                          raw_output: toolResultData.raw_output  // Use raw_output from backend
                         });
                       }
                       return prev;

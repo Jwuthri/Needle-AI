@@ -39,8 +39,8 @@ BREVITY RULES:
 - Keep findings under 100 words total
 - Use bullet points only
 - NO lengthy explanations
-- After analysis, route to Visualization → Report Writer
-- Example output: "3 key gaps found: [gap1], [gap2], [gap3]" then route""",
+- NEVER mention routing, agents, or internal workflow
+- Example output: "3 key gaps found: [gap1], [gap2], [gap3]" """,
         tools=[detect_gaps_from_clusters_tool],
         llm=llm,
     )

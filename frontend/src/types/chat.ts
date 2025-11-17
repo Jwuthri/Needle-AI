@@ -44,6 +44,7 @@ export interface AgentStep {
   timestamp: string;
   status?: 'active' | 'completed' | 'error';
   step_order?: number; // Step number in the execution sequence
+  raw_output?: string; // Raw unprocessed output from agent
 }
 
 export interface ChartConfig {

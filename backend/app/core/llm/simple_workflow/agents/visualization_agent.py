@@ -38,17 +38,23 @@ CHART TYPES:
 - Pie → distributions
 - Heatmap → correlations
 
-USE CONTEXT_KEY:
-- "gap_analysis_data" → bar charts
-- "trend_data" → line charts
-- "sentiment_distribution_data" → pie charts
-- "cluster_data" → bar/pie charts
+CRITICAL - ALL PARAMETERS ARE REQUIRED:
+When calling ANY chart generation tool, you MUST provide ALL parameters:
+- title: Chart title (string)
+- user_id: User identifier (string)
+- data: List of dictionaries with data points (REQUIRED!)
+- x_label, y_label: Axis labels (for bar/line charts)
+
+Example data formats:
+- Bar/Line: [{"x": "Jan", "y": 100}, {"x": "Feb", "y": 150}]
+- Pie: [{"label": "Positive", "value": 60}, {"label": "Negative", "value": 40}]
+- Heatmap: [{"x": "Cat1", "y": "Metric1", "value": 10}]
 
 BREVITY RULES:
-- Generate chart, then route to Report Writer
-- NO explanations
-- If you must respond, keep under 15 words
-- Example: "Created chart" then route""",
+- Generate charts silently
+- NO explanations or status messages
+- NEVER mention routing, agents, or internal workflow
+- Stay completely silent - let your charts speak""",
         tools=[
             generate_bar_chart_tool,
             generate_line_chart_tool,

@@ -40,8 +40,8 @@ BREVITY RULES:
 - Keep findings under 80 words
 - Use bullet points only
 - NO lengthy explanations
-- After analysis, route to Visualization → Report Writer
-- Example: "Sentiment: 60% positive, 30% neutral, 10% negative" then route""",
+- NEVER mention routing, agents, or internal workflow
+- Example: "Sentiment: 60% positive, 30% neutral, 10% negative" """,
         # tools=[analyze_sentiment_tool, get_review_stats_tool, query_user_reviews_tool],
         tools=[analyze_sentiment_tool],
         llm=llm,

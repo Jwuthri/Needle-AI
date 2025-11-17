@@ -15,9 +15,90 @@ import { useExperimentalChatStream } from '@/hooks/use-experimental-chat-stream'
 function StreamingMarkdown({ content }: { content: string }) {
   const lines = content.split('\n')
   const elements: JSX.Element[] = []
+  let inTable = false
+  let tableRows: string[] = []
+
+  const processTable = (rows: string[]) => {
+    if (rows.length < 2) return null
+    
+    const headers = rows[0].split('|').filter(cell => cell.trim())
+    const separator = rows[1]
+    const dataRows = rows.slice(2)
+    
+    return (
+      <div className="overflow-x-auto my-3">
+        <table className="min-w-full border border-gray-700">
+          <thead className="bg-gray-800">
+            <tr>
+              {headers.map((header, i) => (
+                <th key={i} className="px-3 py-2 text-left text-xs font-medium text-purple-300 border border-gray-700">
+                  {header.trim()}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {dataRows.map((row, i) => {
+              const cells = row.split('|').filter(cell => cell.trim())
+              return (
+                <tr key={i} className={i % 2 === 0 ? 'bg-gray-900/50' : 'bg-gray-800/30'}>
+                  {cells.map((cell, j) => (
+                    <td key={j} className="px-3 py-2 text-xs text-white/80 border border-gray-700 whitespace-nowrap">
+                      {cell.trim()}
+                    </td>
+                  ))}
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    )
+  }
 
   lines.forEach((line, i) => {
     const trimmed = line.trim()
+    
+    // Check for markdown images: ![alt text](url)
+    const imageMatch = trimmed.match(/^!\[([^\]]*)\]\(([^)]+)\)/)
+    if (imageMatch) {
+      const altText = imageMatch[1]
+      const imageUrl = imageMatch[2]
+      elements.push(
+        <div key={i} className="my-4">
+          <img 
+            src={imageUrl} 
+            alt={altText}
+            className="max-w-full h-auto rounded-lg border border-gray-700"
+            onError={(e) => {
+              console.error('Failed to load image:', imageUrl)
+              e.currentTarget.style.display = 'none'
+            }}
+          />
+          {altText && (
+            <p className="text-xs text-gray-400 mt-2 text-center italic">{altText}</p>
+          )}
+        </div>
+      )
+      return
+    }
+    
+    // Check for table rows (contains pipes)
+    if (trimmed.includes('|')) {
+      if (!inTable) {
+        inTable = true
+        tableRows = [trimmed]
+      } else {
+        tableRows.push(trimmed)
+      }
+      return
+    } else if (inTable) {
+      // End of table
+      const table = processTable(tableRows)
+      if (table) elements.push(<div key={`table-${i}`}>{table}</div>)
+      inTable = false
+      tableRows = []
+    }
     
     if (trimmed.startsWith('#')) {
       const match = trimmed.match(/^(#{1,6})\s+(.+)/)
@@ -73,11 +154,168 @@ function StreamingMarkdown({ content }: { content: string }) {
     }
   })
 
+  // Process any remaining table
+  if (inTable && tableRows.length > 0) {
+    const table = processTable(tableRows)
+    if (table) elements.push(<div key="table-final">{table}</div>)
+  }
+
   return <div>{elements}</div>
 }
 
+// Try to parse and format JSON/list objects nicely
+function formatRawOutput(rawOutput: string): JSX.Element {
+  console.log('[formatRawOutput] Input length:', rawOutput?.length, 'First 200 chars:', rawOutput?.substring(0, 200))
+  
+  // First, try to detect if this looks like a list/dict structure
+  const trimmed = rawOutput.trim()
+  
+  // Check if it starts with [ or { (JSON-like)
+  if ((trimmed.startsWith('[') || trimmed.startsWith('{')) && 
+      (trimmed.endsWith(']') || trimmed.endsWith('}'))) {
+    try {
+      // Try to parse as JSON first
+      const parsed = JSON.parse(rawOutput)
+      
+      // If it's an array, display as a formatted list or table
+      if (Array.isArray(parsed)) {
+        // If array of objects, try to render as table
+        if (parsed.length > 0 && typeof parsed[0] === 'object' && parsed[0] !== null) {
+          const keys = Object.keys(parsed[0])
+          return (
+            <div className="overflow-x-auto">
+              <table className="min-w-full border border-gray-700">
+                <thead className="bg-gray-800">
+                  <tr>
+                    {keys.map((key) => (
+                      <th key={key} className="px-3 py-2 text-left text-xs font-medium text-purple-300 border border-gray-700">
+                        {key}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {parsed.map((row, i) => (
+                    <tr key={i} className={i % 2 === 0 ? 'bg-gray-900/50' : 'bg-gray-800/30'}>
+                      {keys.map((key) => (
+                        <td key={key} className="px-3 py-2 text-xs text-white/80 border border-gray-700">
+                          {typeof row[key] === 'object' 
+                            ? JSON.stringify(row[key]) 
+                            : String(row[key])}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
+        }
+        
+        // Array of primitives - render as list
+        return (
+          <div className="space-y-1">
+            {parsed.map((item, i) => (
+              <div key={i} className="flex items-start">
+                <span className="text-purple-400 mr-2">•</span>
+                <span className="text-white/80">{String(item)}</span>
+              </div>
+            ))}
+          </div>
+        )
+      }
+      
+      // If it's an object, display as formatted JSON
+      if (typeof parsed === 'object' && parsed !== null) {
+        return (
+          <pre className="text-xs text-white/80 whitespace-pre-wrap font-mono">
+            {JSON.stringify(parsed, null, 2)}
+          </pre>
+        )
+      }
+      
+      // Primitive value
+      return <span className="text-white/80">{String(parsed)}</span>
+    } catch (jsonError) {
+      // JSON parse failed - try Python-style dict/list conversion
+      try {
+        // Replace Python-style syntax with JSON
+        let jsonStr = rawOutput
+          .replace(/'/g, '"')  // Replace single quotes with double quotes
+          .replace(/True/g, 'true')  // Replace Python True
+          .replace(/False/g, 'false')  // Replace Python False
+          .replace(/None/g, 'null')  // Replace Python None
+        
+        const parsed = JSON.parse(jsonStr)
+        
+        // Same rendering logic as above
+        if (Array.isArray(parsed)) {
+          if (parsed.length > 0 && typeof parsed[0] === 'object' && parsed[0] !== null) {
+            const keys = Object.keys(parsed[0])
+            return (
+              <div className="overflow-x-auto">
+                <table className="min-w-full border border-gray-700">
+                  <thead className="bg-gray-800">
+                    <tr>
+                      {keys.map((key) => (
+                        <th key={key} className="px-3 py-2 text-left text-xs font-medium text-purple-300 border border-gray-700">
+                          {key}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {parsed.map((row, i) => (
+                      <tr key={i} className={i % 2 === 0 ? 'bg-gray-900/50' : 'bg-gray-800/30'}>
+                        {keys.map((key) => (
+                          <td key={key} className="px-3 py-2 text-xs text-white/80 border border-gray-700 whitespace-pre-wrap">
+                            {typeof row[key] === 'object' 
+                              ? JSON.stringify(row[key]) 
+                              : String(row[key])}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+          }
+          
+          return (
+            <div className="space-y-1">
+              {parsed.map((item, i) => (
+                <div key={i} className="flex items-start">
+                  <span className="text-purple-400 mr-2">•</span>
+                  <span className="text-white/80">{String(item)}</span>
+                </div>
+              ))}
+            </div>
+          )
+        }
+        
+        if (typeof parsed === 'object' && parsed !== null) {
+          return (
+            <pre className="text-xs text-white/80 whitespace-pre-wrap font-mono">
+              {JSON.stringify(parsed, null, 2)}
+            </pre>
+          )
+        }
+        
+        return <span className="text-white/80">{String(parsed)}</span>
+      } catch (pythonError) {
+        // Both JSON and Python-style parsing failed - render as markdown
+        console.log('[formatRawOutput] Failed to parse as JSON or Python dict:', jsonError, pythonError)
+      }
+    }
+  }
+  
+  // Not structured data - render as markdown
+  return <StreamingMarkdown content={rawOutput} />
+}
+
 // Format tool call or result content
-function formatToolContent(content: any): JSX.Element {
+function formatToolContent(content: any, rawOutput?: string): JSX.Element {
   if (typeof content !== 'object') {
     return <span className="text-white/70">{String(content)}</span>
   }
@@ -118,12 +356,12 @@ function formatToolContent(content: any): JSX.Element {
         </div>
       )}
 
-      {/* Tool Output */}
-      {output && (
+      {/* Tool Output - Format nicely */}
+      {rawOutput && (
         <div className="pl-6">
           <div className="text-xs text-gray-400 mb-1">Output:</div>
-          <div className="bg-gray-800/50 rounded p-2 text-xs text-white/70 max-h-60 overflow-y-auto whitespace-pre-wrap break-words">
-            {String(output)}
+          <div className="bg-gray-800/50 rounded p-3 text-xs max-h-60 overflow-y-auto">
+            {formatRawOutput(rawOutput)}
           </div>
         </div>
       )}
@@ -417,7 +655,7 @@ export function ExperimentalChatView({
                               <div
                                 key={step.step_id}
                                 className={`bg-gray-800/40 border rounded-xl p-4 ${
-                                  step.status === 'error'
+                                  step.status?.toLowerCase() === 'error'
                                     ? 'border-red-500/40'
                                     : 'border-gray-700/40'
                                 }`}
@@ -446,7 +684,7 @@ export function ExperimentalChatView({
                                 </div>
                                 <div className="text-sm">
                                   {step.is_structured ? (
-                                    formatToolContent(step.content)
+                                    formatToolContent(step.content, (step as any).raw_output)
                                   ) : (
                                     <div className="text-white/80 whitespace-pre-wrap break-words">{step.content}</div>
                                   )}
@@ -546,23 +784,38 @@ export function ExperimentalChatView({
 
                             {/* Tool details */}
                             {step.is_structured && step.content && step.status !== 'active' && (
-                              <div className="bg-black/30 border border-purple-500/20 rounded-lg p-3 text-xs font-mono">
-                                <div className="flex items-center space-x-2 mb-2">
+                              <div className="bg-black/30 border border-purple-500/20 rounded-lg p-3 text-xs space-y-2">
+                                <div className="flex items-center space-x-2">
                                   <div className="w-2 h-2 bg-purple-500 rounded"></div>
-                                  <span className="text-purple-300">{step.content.tool_name}</span>
+                                  <span className="text-purple-300 font-mono">{step.content.tool_name}</span>
                                 </div>
+                                
+                                {/* Tool Arguments */}
                                 {step.content.tool_kwargs && (
-                                  <div className="text-gray-400 space-y-1 max-h-40 overflow-y-auto">
-                                    {Object.entries(step.content.tool_kwargs).map(([key, value]) => (
-                                      <div key={key} className="flex items-start space-x-2">
-                                        <span className="text-gray-500 flex-shrink-0">{key}:</span>
-                                        <span className="text-gray-300 break-words whitespace-pre-wrap">
-                                          {typeof value === 'string'
-                                            ? value
-                                            : JSON.stringify(value, null, 2)}
-                                        </span>
-                                      </div>
-                                    ))}
+                                  <div>
+                                    <div className="text-gray-500 text-xs mb-1">Arguments:</div>
+                                    <div className="text-gray-400 space-y-1 max-h-40 overflow-y-auto font-mono">
+                                      {Object.entries(step.content.tool_kwargs).map(([key, value]) => (
+                                        <div key={key} className="flex items-start space-x-2">
+                                          <span className="text-gray-500 flex-shrink-0">{key}:</span>
+                                          <span className="text-gray-300 break-words whitespace-pre-wrap">
+                                            {typeof value === 'string'
+                                              ? value
+                                              : JSON.stringify(value, null, 2)}
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                                
+                                {/* Tool Output - Format nicely */}
+                                {step.raw_output && (
+                                  <div>
+                                    <div className="text-gray-500 text-xs mb-1">Output:</div>
+                                    <div className="bg-gray-900/50 rounded p-2 max-h-60 overflow-y-auto">
+                                      {formatRawOutput(step.raw_output)}
+                                    </div>
                                   </div>
                                 )}
                               </div>

@@ -34,7 +34,8 @@ HANDLE:
 BREVITY RULES:
 - Keep ALL responses under 30 words
 - NO lengthy explanations
-- Answer directly, NO handoffs needed
+- NEVER mention routing, agents, or internal workflow
+- Answer directly and naturally
 - Example: "It's 3:45 PM on Monday, Nov 17, 2025" """,
         tools=[get_current_time_tool, format_date_tool],
         llm=llm,

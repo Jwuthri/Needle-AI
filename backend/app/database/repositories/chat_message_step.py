@@ -24,6 +24,7 @@ class ChatMessageStepRepository:
         tool_call: Optional[dict] = None,
         structured_output: Optional[dict] = None,
         prediction: Optional[str] = None,
+        raw_output: Optional[str] = None,
         **kwargs
     ) -> ChatMessageStep:
         """
@@ -37,6 +38,7 @@ class ChatMessageStepRepository:
             tool_call: Tool call data
             structured_output: Structured output (BaseModel serialized to dict)
             prediction: Text output
+            raw_output: Raw unprocessed output from agent
             **kwargs: Additional fields
             
         Returns:
@@ -49,6 +51,7 @@ class ChatMessageStepRepository:
             tool_call=tool_call,
             structured_output=structured_output,
             prediction=prediction,
+            raw_output=raw_output,
             **kwargs
         )
         db.add(step)
@@ -132,16 +135,53 @@ class ChatMessageStepRepository:
         Args:
             db: Database session
             step_id: Step ID
-            status: New status (success/error/pending)
+            status: New status (accepts any string - success/error/pending/SUCCESS/ERROR/PENDING)
             
         Returns:
             Updated ChatMessageStep instance or None if not found
         """
         step = await ChatMessageStepRepository.get_by_id(db, step_id)
         if step:
-            step.status = status
+            # Normalize to lowercase for consistency
+            step.status = status.lower() if status else 'success'
             await db.flush()
-            logger.debug(f"Updated step {step_id} status to {status}")
+            logger.debug(f"Updated step {step_id} status to {step.status}")
+        return step
+
+    @staticmethod
+    async def update_with_result(
+        db: AsyncSession,
+        step_id: str,
+        status: str,
+        structured_output: Optional[dict] = None,
+        prediction: Optional[str] = None,
+        raw_output: Optional[str] = None
+    ) -> Optional[ChatMessageStep]:
+        """
+        Update a chat message step with tool result data.
+        
+        Args:
+            db: Database session
+            step_id: Step ID
+            status: New status (success/error/pending)
+            structured_output: Structured output from tool (dict)
+            prediction: Text output from tool
+            raw_output: Raw unprocessed output from agent
+            
+        Returns:
+            Updated ChatMessageStep instance or None if not found
+        """
+        step = await ChatMessageStepRepository.get_by_id(db, step_id)
+        if step:
+            step.status = status.lower() if status else 'success'
+            if structured_output is not None:
+                step.structured_output = structured_output
+            if prediction is not None:
+                step.prediction = prediction
+            if raw_output is not None:
+                step.raw_output = raw_output
+            await db.flush()
+            logger.debug(f"Updated step {step_id} with result data")
         return step
 
     @staticmethod
@@ -156,7 +196,7 @@ class ChatMessageStepRepository:
         Args:
             db: Database session
             message_id: Chat message ID
-            steps: List of step data dicts with keys: agent_name, step_order, tool_call, structured_output, prediction
+            steps: List of step data dicts with keys: agent_name, step_order, tool_call, structured_output, prediction, raw_output
             
         Returns:
             List of created ChatMessageStep instances
@@ -171,6 +211,7 @@ class ChatMessageStepRepository:
                 tool_call=step_data.get('tool_call'),
                 structured_output=step_data.get('structured_output'),
                 prediction=step_data.get('prediction'),
+                raw_output=step_data.get('raw_output'),
                 status=step_data.get('status', 'success')
             )
             db.add(step)

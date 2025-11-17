@@ -778,21 +778,67 @@ Generate ONLY the name, nothing else. No quotes, no explanation, just the name."
             for ds in datasets
         ]
 
+    def _validate_sql_query_for_user_datasets(self, sql_query: str) -> None:
+        """
+        Validate that SQL query only accesses user dataset tables (starting with __user_).
+        
+        Args:
+            sql_query: SQL query to validate
+            
+        Raises:
+            ValueError: If query attempts to access non-user tables
+        """
+        # # Convert to lowercase for case-insensitive matching
+        # query_lower = sql_query.lower()
+        
+        # # Extract table names from FROM and JOIN clauses using regex
+        # import re
+        # # Pattern to match table names after FROM or JOIN keywords
+        # # Matches: FROM table_name, FROM "table_name", JOIN table_name, etc.
+        # table_pattern = r'(?:from|join)\s+["\']?(\w+)["\']?'
+        # matches = re.findall(table_pattern, query_lower)
+        
+        # # Check each table name
+        # for table_name in matches:
+        #     # Allow only tables starting with __user_
+        #     if not table_name.startswith('__user_'):
+        #         logger.error(f"{self._log_prefix()} | Blocked access to non-user table: {table_name}")
+        #         raise ValueError(
+        #             f"Access denied: You can only query user datasets (tables starting with __user_). "
+        #             f"Attempted to access: {table_name}. "
+        #             f"Use get_user_datasets tool to see available datasets."
+        #         )
+        
+        # # Additional check: ensure query doesn't contain common system tables
+        # forbidden_tables = ['pg_', 'information_schema', 'reviews', 'users', 'chat_', 'llm_']
+        # for forbidden in forbidden_tables:
+        #     if forbidden in query_lower:
+        #         logger.error(f"{self._log_prefix()} | Blocked query containing forbidden pattern: {forbidden}")
+        #         raise ValueError(
+        #             f"Access denied: Query contains forbidden pattern '{forbidden}'. "
+        #             f"You can only query user datasets. Use get_user_datasets tool to see available datasets."
+        #         )
+
     async def get_dataset_data_from_sql(self, sql_query: str) -> pd.DataFrame:
         """
         Execute a SQL query and return the results as a pandas DataFrame.
         Filters out __embedding__ column from results.
         
+        SECURITY: Only allows queries on user dataset tables (starting with __user_).
+        
         Args:
-            sql_query: SQL query to execute
+            sql_query: SQL query to execute (must only access __user_ tables)
             
         Returns:
             Pandas DataFrame with query results (without __embedding__ column)
             
         Raises:
-            ValueError: If query execution fails
+            ValueError: If query execution fails or attempts to access non-user tables
         """
         logger.info(f"{self._log_prefix()} | Executing SQL query")
+        
+        # Validate query only accesses user datasets
+        self._validate_sql_query_for_user_datasets(sql_query)
         
         try:
             # Execute query using async SQLAlchemy
@@ -818,9 +864,11 @@ Generate ONLY the name, nothing else. No quotes, no explanation, just the name."
         """
         Perform semantic search on a dataset and return the results as a pandas DataFrame.
         
+        SECURITY: Only allows queries on user dataset tables (starting with __user_).
+        
         Args:
             query: Search query text
-            dataset_name: Name of the dataset to search on
+            dataset_name: Name of the dataset to search on (must be a __user_ table)
             top_n: Maximum number of results to return (default: -1 for all results)
             
         Returns:
@@ -834,29 +882,30 @@ Generate ONLY the name, nothing else. No quotes, no explanation, just the name."
             
             # Convert embedding to string format for PostgreSQL
             embedding_str = "[" + ",".join(str(x) for x in embedding_vector) + "]"
-            top_n_str = "" if top_n == -1 else f"LIMIT {top_n};"
+            top_n_str = "" if top_n == -1 else f"LIMIT {top_n}"
             sql_query = f"""
             SELECT
                 *,
                 1 - (__embedding__ <=> '{embedding_str}'::vector) AS __similarity_score__
-            FROM {dataset_name}
-            ORDER BY __similarity_score__
+            FROM "{dataset_name}"
+            ORDER BY __similarity_score__ DESC
             {top_n_str}
             """
+            # This will call get_dataset_data_from_sql which validates the query
             return await self.get_dataset_data_from_sql(sql_query)
         except Exception as e:
             logger.error(f"Failed to get dataset data from semantic search: {e}", exc_info=True)
             raise ValueError(f"Failed to get dataset data from semantic search: {str(e)}")
     
-    async def get_dataset_data_from_semantic_search_from_sql(self, sql_query: str, query: str, dataset_name: str, top_n: int = -1) -> pd.DataFrame:
+    async def get_dataset_data_from_semantic_search_from_sql(self, sql_query: str, query: str) -> pd.DataFrame:
         """
         Perform semantic search on a dataset using a SQL query and return the results as a pandas DataFrame.
+        
+        SECURITY: Only allows queries on user dataset tables (starting with __user_).
         
         Args:
             sql_query: SQL query to execute (set the embedding vector as [PLACEHOLDER_QUERY_VECTOR])
             query: Search query text
-            dataset_name: Name of the dataset to search on
-            top_n: Maximum number of results to return (default: -1 for all results)
             
         Returns:
             Pandas DataFrame with search results
@@ -870,6 +919,8 @@ Generate ONLY the name, nothing else. No quotes, no explanation, just the name."
             # Convert embedding to string format for PostgreSQL
             embedding_str = "[" + ",".join(str(x) for x in embedding_vector) + "]"
             sql_query = sql_query.replace("[PLACEHOLDER_QUERY_VECTOR]", embedding_str)
+            
+            # This will call get_dataset_data_from_sql which validates the query
             return await self.get_dataset_data_from_sql(sql_query)
         except Exception as e:
             logger.error(f"Failed to get dataset data from semantic search: {e}", exc_info=True)

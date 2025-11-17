@@ -40,8 +40,8 @@ BREVITY RULES:
 - Keep findings under 80 words
 - Use bullet points only
 - NO lengthy explanations
-- After analysis, route to Visualization → Report Writer
-- Example: "Trend: increasing 15% monthly, stable volatility" then route""",
+- NEVER mention routing, agents, or internal workflow
+- Example: "Trend: increasing 15% monthly, stable volatility" """,
         tools=[analyze_trends_tool],
         llm=llm,
     )

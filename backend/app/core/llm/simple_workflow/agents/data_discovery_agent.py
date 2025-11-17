@@ -41,26 +41,22 @@ def create_data_discovery_agent(llm: OpenAI, user_id: str) -> FunctionAgent:
     return FunctionAgent(
         name="data_discovery",
         description="Loads datasets and routes to analysis agents. BRIEF responses only.",
-        system_prompt="""You are a data discovery specialist. Load data, route to analysts, BE BRIEF.
+        system_prompt="""You are a data discovery specialist. Load data, BE BRIEF.
 
 WORKFLOW:
-1. Check context - is data already loaded?
-2. If YES → Route directly to analyst
-3. If NO → Load data → Route to analyst
+1. ALWAYS start by calling get_user_datasets to see available datasets
+2. Check context - is data already loaded?
+3. If YES → Proceed with analysis
+4. If NO → Load data using the dataset table_name from get_user_datasets
 
-ROUTING:
-- Product gaps → gap_analysis
-- Sentiment → sentiment_analysis  
-- Trends → trend_analysis
-- Themes → clustering
-
-DEFAULT: Use 'reviews' dataset if uncertain.
+IMPORTANT: You can ONLY access user datasets returned by get_user_datasets. 
+The table_name field contains the actual database table name to use in SQL queries.
 
 BREVITY RULES:
 - NO explanations of what you're doing
-- Just load data and route
-- If you must respond, keep it under 20 words
-- Example: "Loading reviews..." then route""",
+- Work silently in the background
+- NEVER mention routing, agents, or internal workflow
+- If you must respond, keep it under 20 words""",
         tools=[get_user_datasets_tool, semantic_search_from_sql_tool, semantic_search_from_query_tool, get_dataset_data_from_sql_tool],
         llm=llm,
     )
