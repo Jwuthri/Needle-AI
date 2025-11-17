@@ -1,5 +1,6 @@
 """General Assistant Agent - Handles non-data queries"""
 
+from app.core.llm.simple_workflow.tools.forfeit_tool import forfeit_request
 from llama_index.core.agent.workflow import FunctionAgent
 from llama_index.core.tools import FunctionTool
 from llama_index.llms.openai import OpenAI
@@ -20,6 +21,7 @@ def create_general_assistant_agent(llm: OpenAI, user_id: str) -> FunctionAgent:
     """
     get_current_time_tool = FunctionTool.from_defaults(fn=review_analysis_tools.get_current_time)
     format_date_tool = FunctionTool.from_defaults(fn=review_analysis_tools.format_date)
+    forfeit_tool = FunctionTool.from_defaults(fn=forfeit_request)
     
     return FunctionAgent(
         name="general_assistant",
@@ -31,13 +33,18 @@ HANDLE:
 - General questions
 - Greetings
 
+FORFEIT WHEN:
+- Question requires specialized knowledge you don't have
+- Request is clearly outside your capabilities
+Call forfeit_request with clear reason.
+
 BREVITY RULES:
 - Keep ALL responses under 30 words
 - NO lengthy explanations
 - NEVER mention routing, agents, or internal workflow
 - Answer directly and naturally
 - Example: "It's 3:45 PM on Monday, Nov 17, 2025" """,
-        tools=[get_current_time_tool, format_date_tool],
+        tools=[get_current_time_tool, format_date_tool, forfeit_tool],
         llm=llm,
     )
 

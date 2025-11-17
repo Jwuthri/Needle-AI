@@ -13,6 +13,7 @@ from app.core.llm.simple_workflow.utils.context_persistence import (
     load_context_from_session,
     save_context_to_session,
 )
+from app.core.llm.simple_workflow.tools.forfeit_tool import ForfeitException
 from app.database.repositories.chat_message_step import ChatMessageStepRepository
 from app.models.chat import ChatRequest, ChatResponse
 from app.utils.logging import get_logger
@@ -294,9 +295,70 @@ class SimpleWorkflowService:
                         }
             
             # Get final result
-            result = await handler
-            
-            logger.info(f"Workflow completed with {len(agent_steps)} steps")
+            try:
+                result = await handler
+                logger.info(f"Workflow completed with {len(agent_steps)} steps")
+            except ForfeitException as forfeit_err:
+                # Agent forfeited - create helpful message for user
+                logger.warning(f"Workflow forfeited: {forfeit_err.reason}")
+                
+                forfeit_message = f"""I apologize, but I'm unable to complete this request.
+
+**Reason:** {forfeit_err.reason}
+
+**What I tried:**
+"""
+                for action in forfeit_err.attempted_actions:
+                    forfeit_message += f"- {action}\n"
+                
+                forfeit_message += "\nPlease try rephrasing your question or ensure your data contains the necessary information."
+                
+                accumulated_content = forfeit_message
+                
+                # Yield forfeit event
+                yield {
+                    "type": "forfeit",
+                    "data": {
+                        "reason": forfeit_err.reason,
+                        "attempted_actions": forfeit_err.attempted_actions,
+                        "message": forfeit_message
+                    }
+                }
+                
+                # Save forfeit message to database
+                from app.database.repositories.chat_message import ChatMessageRepository
+                from app.database.session import get_async_session
+                
+                try:
+                    async with get_async_session() as save_db:
+                        await ChatMessageRepository.update(
+                            db=save_db,
+                            message_id=assistant_message_id,
+                            content=forfeit_message,
+                            completed_at=datetime.utcnow()
+                        )
+                        await save_db.commit()
+                        logger.info(f"Saved forfeit message to database")
+                except Exception as db_err:
+                    logger.error(f"Failed to save forfeit message: {db_err}")
+                
+                # Yield completion with forfeit flag
+                yield {
+                    "type": "complete",
+                    "data": {
+                        "message": forfeit_message,
+                        "message_id": assistant_message_id,
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "agent_steps": agent_steps,
+                        "forfeited": True,
+                        "metadata": {
+                            "workflow_type": "simple_workflow",
+                            "total_steps": step_counter,
+                            "forfeit_reason": forfeit_err.reason
+                        }
+                    }
+                }
+                return
             
             # Update assistant message with final content - use separate session
             from app.database.repositories.chat_message import ChatMessageRepository

@@ -1,6 +1,8 @@
 """Report Writer Agent - Formats final markdown reports"""
 
+from app.core.llm.simple_workflow.tools.forfeit_tool import forfeit_request
 from llama_index.core.agent.workflow import FunctionAgent
+from llama_index.core.tools import FunctionTool
 from llama_index.llms.openai import OpenAI
 
 
@@ -15,6 +17,8 @@ def create_report_writer_agent(llm: OpenAI, user_id: str) -> FunctionAgent:
     Returns:
         FunctionAgent configured as report writer
     """
+    forfeit_tool = FunctionTool.from_defaults(fn=forfeit_request)
+    
     return FunctionAgent(
         name="report_writer",
         description="Formats concise markdown reports with embedded visualizations",
@@ -38,13 +42,19 @@ CRITICAL IMAGE FORMATTING:
 - Example: ![Sentiment Distribution](/api/graphs/20251116_210029_pie_Overall_Sentiment_Distribution.png)
 - NEVER output raw paths like "Path: /Users/..."
 
+FORFEIT WHEN:
+- No analysis results available to report
+- All previous agents failed
+- Insufficient data to create meaningful report
+Call forfeit_request with clear reason.
+
 FINAL RULES:
 - Deliver the complete report naturally
 - NO "next steps" or "would you like to..." questions
 - NO verbose explanations - just facts and insights
 - NEVER mention routing, agents, or internal workflow
 - Keep it scannable and actionable""",
-        tools=[],  # No tools - just formats output
+        tools=[forfeit_tool],  # Only forfeit tool
         llm=llm,
     )
 

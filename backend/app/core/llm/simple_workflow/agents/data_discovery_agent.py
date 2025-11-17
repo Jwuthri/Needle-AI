@@ -1,6 +1,7 @@
 """Data Discovery Agent - Discovers datasets and determines data sources"""
 from app.core.llm.simple_workflow.tools.semantic_search_tool import semantic_search_from_query, semantic_search_from_sql
 from app.core.llm.simple_workflow.tools.user_dataset_tool import get_available_datasets_in_context, get_dataset_data_from_sql, get_user_datasets
+from app.core.llm.simple_workflow.tools.forfeit_tool import forfeit_request
 from llama_index.core.agent.workflow import FunctionAgent
 from llama_index.core.tools import FunctionTool
 from llama_index.core.workflow import Context
@@ -36,6 +37,7 @@ def create_data_discovery_agent(llm: OpenAI, user_id: str) -> FunctionAgent:
     semantic_search_from_sql_tool = FunctionTool.from_defaults(fn=semantic_search_from_sql)
     semantic_search_from_query_tool = FunctionTool.from_defaults(fn=semantic_search_from_query)
     get_dataset_data_from_sql_tool = FunctionTool.from_defaults(fn=get_dataset_data_from_sql)
+    forfeit_tool = FunctionTool.from_defaults(fn=forfeit_request)
     # get_available_datasets_in_context_tool = FunctionTool.from_defaults(fn=get_available_datasets_in_context)
     
     return FunctionAgent(
@@ -52,11 +54,18 @@ WORKFLOW:
 IMPORTANT: You can ONLY access user datasets returned by get_user_datasets. 
 The table_name field contains the actual database table name to use in SQL queries.
 
+FORFEIT WHEN:
+- No datasets available for the user
+- Required data columns don't exist
+- SQL queries repeatedly fail
+- Data format is incompatible with analysis
+Call forfeit_request with clear reason and attempted actions.
+
 BREVITY RULES:
 - NO explanations of what you're doing
 - Work silently in the background
 - NEVER mention routing, agents, or internal workflow
 - If you must respond, keep it under 20 words""",
-        tools=[get_user_datasets_tool, semantic_search_from_sql_tool, semantic_search_from_query_tool, get_dataset_data_from_sql_tool],
+        tools=[get_user_datasets_tool, semantic_search_from_sql_tool, semantic_search_from_query_tool, get_dataset_data_from_sql_tool, forfeit_tool],
         llm=llm,
     )
