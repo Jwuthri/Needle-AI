@@ -9,10 +9,15 @@ from typing import AsyncGenerator, Dict, Optional
 
 from app.core.config.settings import get_settings
 from app.core.llm.simple_workflow.workflow import create_product_review_workflow
+from app.core.llm.simple_workflow.utils.context_persistence import (
+    load_context_from_session,
+    save_context_to_session,
+)
 from app.database.repositories.chat_message_step import ChatMessageStepRepository
 from app.models.chat import ChatRequest, ChatResponse
 from app.utils.logging import get_logger
 from llama_index.core.agent.workflow import ToolCall, ToolCallResult
+from llama_index.core.workflow import Context
 from llama_index.llms.openai import OpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -81,10 +86,35 @@ class SimpleWorkflowService:
                 "data": {"message": "Initializing workflow..."}
             }
             
-            # Start workflow execution with proper context (matching main.py pattern)
+            # Create Context and load previous state if available
+            ctx = Context(workflow)
+            await ctx.store.set("user_id", user_id or "default_user")
+            
+            # Load previous context state from session if available
+            if request.session_id:
+                from app.database.session import get_async_session
+                async with get_async_session() as load_db:
+                    context_loaded = await load_context_from_session(
+                        request.session_id, ctx, load_db
+                    )
+                    if context_loaded:
+                        logger.info(f"Restored context state from session {request.session_id}")
+                        yield {
+                            "type": "status",
+                            "data": {"message": "Restored previous context..."}
+                        }
+            
+            # Store conversation history in context for agents to access
+            if request.conversation_history:
+                await ctx.store.set("conversation_history", request.conversation_history)
+                logger.info(f"Added {len(request.conversation_history)} messages to context")
+            
+            # Start workflow execution with proper context and increased max iterations
             handler = workflow.run(
                 user_msg=request.message,
-                initial_state={"user_id": user_id or "default_user"}
+                initial_state={"user_id": user_id or "default_user"},
+                ctx=ctx,
+                max_iterations=50  # Increased from default 20 to handle SQL error retries
             )
             
             # Yield another status to confirm workflow started
@@ -159,10 +189,30 @@ class SimpleWorkflowService:
                     
                     logger.info(f"Tool Result: {tool_name} returned output")
                     
+                    # Check if output indicates an error
+                    output_str = str(tool_output)
+                    is_error = output_str.startswith("ERROR") or "error" in output_str.lower()[:100]
+                    
                     # Update the last step with result
                     if agent_steps and agent_steps[-1].get("tool_name") == tool_name:
-                        agent_steps[-1]["status"] = "completed"
-                        agent_steps[-1]["tool_output"] = str(tool_output)[:500]  # Truncate large outputs
+                        step_status = "error" if is_error else "completed"
+                        agent_steps[-1]["status"] = step_status
+                        agent_steps[-1]["tool_output"] = output_str[:500]  # Truncate large outputs
+                        
+                        # Update step status in database (use lowercase enum values)
+                        try:
+                            from app.database.session import get_async_session
+                            step_id = agent_steps[-1].get("step_id")
+                            if step_id and not step_id.startswith("step-"):  # Only update if it's a real DB ID
+                                async with get_async_session() as save_db:
+                                    await ChatMessageStepRepository.update_status(
+                                        db=save_db,
+                                        step_id=step_id,
+                                        status="error" if is_error else "success"
+                                    )
+                                    await save_db.commit()
+                        except Exception as db_err:
+                            logger.error(f"Failed to update step status: {db_err}")
                     
                     # Yield tool_result event
                     yield {
@@ -170,7 +220,8 @@ class SimpleWorkflowService:
                         "data": {
                             "tool_name": tool_name,
                             "tool_kwargs": tool_kwargs,
-                            "output": str(tool_output)[:500]  # Truncate for streaming
+                            "output": output_str[:500],  # Truncate for streaming
+                            "is_error": is_error
                         }
                     }
                 
@@ -227,6 +278,8 @@ class SimpleWorkflowService:
             
             final_content = accumulated_content or "No response generated"
             
+            logger.info(f"Saving final content to database: {len(final_content)} chars")
+            
             try:
                 async with get_async_session() as save_db:
                     await ChatMessageRepository.update(
@@ -236,8 +289,19 @@ class SimpleWorkflowService:
                         completed_at=datetime.utcnow()
                     )
                     await save_db.commit()
+                    logger.info(f"Successfully saved assistant message {assistant_message_id}")
             except Exception as db_err:
-                logger.error(f"Failed to update assistant message: {db_err}")
+                logger.error(f"Failed to update assistant message: {db_err}", exc_info=True)
+            
+            # Save context state to session for next message
+            if request.session_id:
+                try:
+                    async with get_async_session() as save_db:
+                        await save_context_to_session(request.session_id, ctx, save_db)
+                        await save_db.commit()
+                        logger.info(f"Saved context state to session {request.session_id}")
+                except Exception as ctx_err:
+                    logger.error(f"Failed to save context state: {ctx_err}")
             
             # Yield completion event
             yield {
@@ -256,6 +320,25 @@ class SimpleWorkflowService:
             
         except Exception as e:
             logger.error(f"Error in workflow processing: {e}", exc_info=True)
+            
+            # Try to save whatever content we have accumulated before the error
+            if accumulated_content:
+                logger.info(f"Attempting to save accumulated content despite error: {len(accumulated_content)} chars")
+                try:
+                    from app.database.repositories.chat_message import ChatMessageRepository
+                    from app.database.session import get_async_session
+                    
+                    async with get_async_session() as save_db:
+                        await ChatMessageRepository.update(
+                            db=save_db,
+                            message_id=assistant_message_id,
+                            content=accumulated_content,
+                            completed_at=datetime.utcnow()
+                        )
+                        await save_db.commit()
+                        logger.info(f"Successfully saved partial content for message {assistant_message_id}")
+                except Exception as save_err:
+                    logger.error(f"Failed to save partial content: {save_err}", exc_info=True)
             yield {
                 "type": "error",
                 "data": {"error": str(e)}

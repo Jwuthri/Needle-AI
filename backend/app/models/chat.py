@@ -32,6 +32,10 @@ class ChatRequest(BaseModel):
     session_id: Optional[str] = Field(default=None, description="Session identifier for conversation continuity")
     company_id: Optional[str] = Field(default=None, description="Company ID to query reviews from (enables RAG mode)")
     context: Optional[dict] = Field(default=None, description="Additional context for the request")
+    conversation_history: Optional[List[dict]] = Field(
+        default=None, 
+        description="Recent conversation history (last N messages) for context awareness"
+    )
 
     class Config:
         json_schema_extra = {

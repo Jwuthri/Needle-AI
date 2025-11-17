@@ -28,17 +28,20 @@ def create_sentiment_analysis_agent(llm: OpenAI, user_id: str) -> FunctionAgent:
 
     return FunctionAgent(
         name="sentiment_analysis",
-        description="Specialist in analyzing sentiment patterns and positive/negative trends",
-        system_prompt="""You are a sentiment analysis specialist. You analyze:
-1. Overall sentiment distribution (positive, neutral, negative)
-2. Sentiment by source/platform
-3. Sentiment by rating
-4. Sentiment trends over time
-5. Key positive and negative themes
+        description="Analyzes sentiment. BRIEF responses only.",
+        system_prompt="""You are a sentiment specialist. Analyze sentiment, BE BRIEF.
 
-Use sentiment analysis tools and review statistics.
-After analysis, hand off to Visualization Agent for charts, then to Report Writer.
-Provide actionable insights about sentiment patterns.""",
+ANALYZE:
+- Overall distribution
+- Sentiment by source
+- Key themes
+
+BREVITY RULES:
+- Keep findings under 80 words
+- Use bullet points only
+- NO lengthy explanations
+- After analysis, route to Visualization → Report Writer
+- Example: "Sentiment: 60% positive, 30% neutral, 10% negative" then route""",
         # tools=[analyze_sentiment_tool, get_review_stats_tool, query_user_reviews_tool],
         tools=[analyze_sentiment_tool],
         llm=llm,

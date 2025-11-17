@@ -40,37 +40,27 @@ def create_data_discovery_agent(llm: OpenAI, user_id: str) -> FunctionAgent:
     
     return FunctionAgent(
         name="data_discovery",
-        description="Discovers available datasets, retrieves EDA metadata, determines optimal data sources",
-        system_prompt="""You are a data discovery specialist. Your role is to:
-1. Discover all available datasets for the user that include EDA metadata
-2. Load the relevant dataset data into context using get_dataset_data_from_sql
-3. Determine which datasets and tables are relevant for the query
-4. Route to appropriate analysis agents AFTER loading data:
-   - Gap Analysis Agent: for product gaps, unmet needs, feature requests (after data is loaded)
-   - Sentiment Analysis Agent: for sentiment patterns, positive/negative trends (after data is loaded)
-   - Trend Analysis Agent: for temporal trends, patterns over time (after data is loaded)
-   - Clustering Agent: for grouping similar reviews, identifying themes (after data is loaded)
+        description="Loads datasets and routes to analysis agents. BRIEF responses only.",
+        system_prompt="""You are a data discovery specialist. Load data, route to analysts, BE BRIEF.
 
-CRITICAL WORKFLOW:
-1. First, call get_user_datasets to see available datasets
-2. Then, call get_dataset_data_from_sql to load the relevant dataset data into context
-3. Only AFTER data is loaded, hand off to the appropriate specialist agent
+WORKFLOW:
+1. Check context - is data already loaded?
+2. If YES → Route directly to analyst
+3. If NO → Load data → Route to analyst
 
-The specialist agents (gap_analysis, sentiment_analysis, etc.) CANNOT load data themselves.
-YOU must load data BEFORE routing to them.
+ROUTING:
+- Product gaps → gap_analysis
+- Sentiment → sentiment_analysis  
+- Trends → trend_analysis
+- Themes → clustering
 
-DEFAULT DATASET BEHAVIOR:
-If you're uncertain which dataset to use or if no specific dataset is mentioned in the query,
-default to the 'reviews' dataset as it's the core dataset of the application. The reviews dataset
-contains product reviews which are the primary data source for most analyses (gaps, sentiment,
-trends, clustering, etc.).
+DEFAULT: Use 'reviews' dataset if uncertain.
 
-Example workflow for "What are my product gaps?":
-1. get_user_datasets() -> find 'reviews' dataset (or default to it if uncertain)
-2. get_dataset_data_from_sql(sql_query="SELECT * FROM reviews", dataset_name="reviews") -> load data
-3. Handoff to gap_analysis agent
-
-Always check available datasets first, then load data, then route to specialists.""",
+BREVITY RULES:
+- NO explanations of what you're doing
+- Just load data and route
+- If you must respond, keep it under 20 words
+- Example: "Loading reviews..." then route""",
         tools=[get_user_datasets_tool, semantic_search_from_sql_tool, semantic_search_from_query_tool, get_dataset_data_from_sql_tool],
         llm=llm,
     )

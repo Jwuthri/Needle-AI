@@ -188,8 +188,11 @@ export function useExperimentalChatStream(options: UseExperimentalChatStreamOpti
                       tool_name: string;
                       tool_kwargs: any;
                       output: any;
+                      is_error?: boolean;
                     };
-                    console.log('[Experimental Stream] Tool result:', toolResultData.tool_name);
+                    console.log('[Experimental Stream] Tool result:', toolResultData.tool_name, 'error:', toolResultData.is_error);
+                    
+                    const resultStatus = toolResultData.is_error ? 'error' : 'completed';
                     
                     // Update tool execution tracking
                     setToolExecutions((prev) =>
@@ -200,25 +203,18 @@ export function useExperimentalChatStream(options: UseExperimentalChatStreamOpti
                       )
                     );
 
-                    // Add tool result as agent step
-                    const toolResultStepId = `tool-result-${Date.now()}-${stepCounter}`;
-                    setAgentSteps((prev) => [
-                      ...prev,
-                      {
-                        step_id: toolResultStepId,
-                        agent_name: currentAgent || 'workflow',
-                        content: {
-                          tool_name: toolResultData.tool_name,
-                          tool_kwargs: toolResultData.tool_kwargs,
-                          output: toolResultData.output,
-                          type: 'tool_result',
-                        },
-                        is_structured: true,
-                        timestamp: new Date().toISOString(),
-                        status: 'completed',
-                        step_order: stepCounter,
-                      },
-                    ]);
+                    // Update the last step status if it matches this tool
+                    setAgentSteps((prev) => {
+                      const lastStep = prev[prev.length - 1];
+                      if (lastStep && lastStep.content?.tool_name === toolResultData.tool_name) {
+                        return prev.slice(0, -1).concat({
+                          ...lastStep,
+                          status: resultStatus,
+                        });
+                      }
+                      return prev;
+                    });
+                    
                     stepCounter++;
                     break;
 

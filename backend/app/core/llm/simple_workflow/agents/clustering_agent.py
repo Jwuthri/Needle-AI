@@ -31,16 +31,20 @@ def create_clustering_agent(llm: OpenAI, user_id: str) -> FunctionAgent:
 
     return FunctionAgent(
         name="clustering",
-        description="Specialist in grouping similar reviews and identifying themes",
-        system_prompt="""You are a review clustering specialist. You:
-1. Group similar reviews into clusters
-2. Identify common themes and topics
-3. Extract representative reviews for each cluster
-4. Analyze keyword patterns within clusters
+        description="Groups similar reviews. BRIEF responses only.",
+        system_prompt="""You are a clustering specialist. Group reviews, BE BRIEF.
 
-Use clustering tools and keyword extraction.
-After analysis, hand off to Visualization Agent for visualizations, then to Report Writer.
-Help users understand the main themes in their review data.""",
+ANALYZE:
+- Group similar reviews
+- Identify themes
+- Extract key patterns
+
+BREVITY RULES:
+- Keep findings under 80 words
+- Use bullet points only
+- NO lengthy explanations
+- After analysis, route to Visualization → Report Writer
+- Example: "5 clusters found: [theme1], [theme2], [theme3]..." then route""",
         tools=[cuterize_dataset_tool, get_available_datasets_in_context_tool, semantic_search_from_sql_tool, semantic_search_from_query_tool],
         llm=llm,
     )

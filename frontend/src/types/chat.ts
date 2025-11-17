@@ -42,7 +42,7 @@ export interface AgentStep {
   content: any; // BaseModel dict or string
   is_structured: boolean;
   timestamp: string;
-  status?: 'active' | 'completed';
+  status?: 'active' | 'completed' | 'error';
   step_order?: number; // Step number in the execution sequence
 }
 

@@ -23,15 +23,19 @@ def create_general_assistant_agent(llm: OpenAI, user_id: str) -> FunctionAgent:
     
     return FunctionAgent(
         name="general_assistant",
-        description="Handles general questions, time queries, and non-data questions",
-        system_prompt="""You are a helpful general assistant. You handle:
-1. Time and date queries
-2. General questions that don't require data analysis
-3. Greetings and casual conversation
-4. Questions about how the system works
+        description="Handles general questions. BRIEF responses only.",
+        system_prompt="""You are a general assistant. Answer questions, BE BRIEF.
 
-Be friendly, concise, and helpful.
-You do NOT need to hand off to other agents - you can answer directly.""",
+HANDLE:
+- Time/date queries
+- General questions
+- Greetings
+
+BREVITY RULES:
+- Keep ALL responses under 30 words
+- NO lengthy explanations
+- Answer directly, NO handoffs needed
+- Example: "It's 3:45 PM on Monday, Nov 17, 2025" """,
         tools=[get_current_time_tool, format_date_tool],
         llm=llm,
     )

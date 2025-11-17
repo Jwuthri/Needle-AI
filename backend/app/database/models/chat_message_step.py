@@ -2,13 +2,23 @@
 Chat Message Step model for tracking agent execution steps.
 """
 
+import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Column, DateTime
+from sqlalchemy import Enum as SQLEnum
+from sqlalchemy import ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from ..base import Base
+
+
+class StepStatusEnum(str, enum.Enum):
+    """Status of a step execution."""
+    SUCCESS = "success"
+    ERROR = "error"
+    PENDING = "pending"
 
 
 class ChatMessageStep(Base):
@@ -31,6 +41,9 @@ class ChatMessageStep(Base):
     # Step ordering (0-indexed)
     step_order = Column(Integer, nullable=False)
     
+    # Step status (success/error/pending)
+    status = Column(SQLEnum(StepStatusEnum), nullable=False, default=StepStatusEnum.SUCCESS)
+    
     # Content storage - one of these will be populated
     tool_call = Column(JSON, nullable=True)  # For tool calls
     structured_output = Column(JSON, nullable=True)  # For structured outputs (BaseModel)
@@ -43,5 +56,5 @@ class ChatMessageStep(Base):
     message = relationship("ChatMessage", back_populates="steps")
 
     def __repr__(self):
-        return f"<ChatMessageStep(id={self.id}, message_id={self.message_id}, agent={self.agent_name}, order={self.step_order})>"
+        return f"<ChatMessageStep(id={self.id}, message_id={self.message_id}, agent={self.agent_name}, order={self.step_order}, status={self.status})>"
 

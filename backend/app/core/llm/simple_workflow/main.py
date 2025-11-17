@@ -54,9 +54,13 @@ class StreamingProductReviewWorkflow(Workflow):
     async def process_request(self, ev: StartEvent) -> StopEvent:
         """Process product review analysis request with detailed streaming"""
         user_msg = ev.get("user_msg")
+        conversation_history = ev.get("conversation_history", [])
+        session_id = ev.get("session_id")
         
         print(f"\n{'='*80}")
         print(f"🎯 User Query: {user_msg}")
+        if conversation_history:
+            print(f"📜 History: {len(conversation_history)} messages")
         print(f"{'='*80}\n")
         
         # Create LlamaIndex Context object for this workflow run
@@ -74,6 +78,21 @@ class StreamingProductReviewWorkflow(Workflow):
         ctx = Context(self.agent_workflow)
         await ctx.store.set("user_id", self.user_id)
         register_workflow_context(self.user_id, ctx)
+        
+        # Load previous context state from session if available
+        if session_id:
+            from app.core.llm.simple_workflow.utils.context_persistence import load_context_from_session
+            from app.database.session import get_async_session
+            
+            async with get_async_session() as db:
+                context_loaded = await load_context_from_session(session_id, ctx, db)
+                if context_loaded:
+                    print(f"✅ Restored context state from session {session_id}")
+        
+        # Store conversation history in context for agents to access
+        if conversation_history:
+            await ctx.store.set("conversation_history", conversation_history)
+            print(f"✅ Added {len(conversation_history)} messages to context")
         
         # Sync any data from sync store to Context
         from app.core.llm.workflow.tools.review_analysis_tools import _sync_context_store
@@ -144,6 +163,19 @@ class StreamingProductReviewWorkflow(Workflow):
         # Get final result
         result = await handler
         
+        # Save context state to session for next message
+        if session_id:
+            from app.core.llm.simple_workflow.utils.context_persistence import save_context_to_session
+            from app.database.session import get_async_session
+            
+            try:
+                async with get_async_session() as db:
+                    await save_context_to_session(session_id, ctx, db)
+                    await db.commit()
+                    print(f"✅ Saved context state to session {session_id}")
+            except Exception as e:
+                print(f"⚠️  Failed to save context state: {e}")
+        
         return StopEvent(result=result)
 
 
@@ -158,8 +190,8 @@ async def main():
     """
     # Get API key from settings
     api_key = settings.get_secret("openai_api_key")
-    # Initialize LLM
-    llm = OpenAI(model="gpt-5-mini", temperature=0.3, streaming=True, api_key=api_key)
+    # Initialize LLM with lower temperature for more concise responses
+    llm = OpenAI(model="gpt-5-mini", temperature=0.1, streaming=True, api_key=api_key)
     
     print("\n" + "="*80)
     print("LLAMAINDEX MULTI-AGENT PRODUCT REVIEW ANALYSIS SYSTEM")
@@ -185,11 +217,14 @@ async def main():
         verbose=True
     )
     
-    # Test scenarios
+    # Test scenarios with conversation history
+    test_session_id = "test_session_123"
+    conversation_history = []
+    
     test_queries = [
         "What time is it?",
         "What are my main product gaps?",
-        "Show me sentiment trends over time",
+        "What about sentiment?",  # Follow-up question - should reuse loaded data
     ]
     
     for i, query in enumerate(test_queries, 1):
@@ -197,8 +232,17 @@ async def main():
         print(f"TEST SCENARIO {i}/{len(test_queries)}")
         print(f"{'█'*80}")
         
-        # Run the workflow
-        result = await workflow.run(user_msg=query)
+        # Run the workflow with conversation history
+        result = await workflow.run(
+            user_msg=query,
+            conversation_history=conversation_history,
+            session_id=test_session_id
+        )
+        
+        # Add to conversation history for next iteration
+        conversation_history.append({"role": "user", "content": query})
+        # Note: In real usage, the assistant response would also be added
+        # For demo purposes, we're just tracking user messages
         
         # Pause between scenarios
         if i < len(test_queries):

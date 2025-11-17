@@ -26,7 +26,7 @@ function StreamingMarkdown({ content }: { content: string }) {
         const text = match[2]
         const className = level === 1 ? 'text-2xl' : level === 2 ? 'text-xl' : 'text-lg'
         elements.push(
-          <h3 key={i} className={`${className} font-semibold text-white mb-2 mt-2`}>
+          <h3 key={i} className={`${className} font-semibold text-white mb-3 mt-4`}>
             {text}
           </h3>
         )
@@ -47,18 +47,33 @@ function StreamingMarkdown({ content }: { content: string }) {
       }
     }
 
+    // Check for numbered lists
+    if (trimmed.match(/^\d+\.\s+/)) {
+      const numberMatch = trimmed.match(/^(\d+)\.\s+(.+)/)
+      if (numberMatch) {
+        elements.push(
+          <div key={i} className="flex items-start mb-2">
+            <span className="text-purple-400 mr-2 font-medium">{numberMatch[1]}.</span>
+            <span className="text-white/80">{numberMatch[2]}</span>
+          </div>
+        )
+        return
+      }
+    }
+
     if (trimmed) {
       elements.push(
-        <p key={i} className="text-white/80 mb-2">
+        <p key={i} className="text-white/80 mb-3 whitespace-pre-wrap">
           {line}
         </p>
       )
     } else {
-      elements.push(<br key={i} />)
+      // Empty line - add spacing
+      elements.push(<div key={i} className="h-3" />)
     }
   })
 
-  return <div className="space-y-1">{elements}</div>
+  return <div>{elements}</div>
 }
 
 // Format tool call or result content
@@ -107,9 +122,8 @@ function formatToolContent(content: any): JSX.Element {
       {output && (
         <div className="pl-6">
           <div className="text-xs text-gray-400 mb-1">Output:</div>
-          <div className="bg-gray-800/50 rounded p-2 text-xs text-white/70 max-h-40 overflow-y-auto">
-            {String(output).substring(0, 500)}
-            {String(output).length > 500 && '...'}
+          <div className="bg-gray-800/50 rounded p-2 text-xs text-white/70 max-h-60 overflow-y-auto whitespace-pre-wrap break-words">
+            {String(output)}
           </div>
         </div>
       )}
@@ -134,9 +148,11 @@ export function ExperimentalChatView({
   const [messages, setMessages] = useState<EnhancedChatMessage[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [expandedSteps, setExpandedSteps] = useState<Set<string>>(new Set())
+  const [streamingStepsExpanded, setStreamingStepsExpanded] = useState(true) // Auto-expand streaming steps
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const currentAgentStepsRef = useRef<any[]>([])
   const isSendingRef = useRef(false)
+  const sessionIdRef = useRef<string | undefined>(sessionId)
 
   // Use experimental streaming hook
   const {
@@ -157,7 +173,7 @@ export function ExperimentalChatView({
         content: step.content,
         is_structured: step.is_structured,
         step_order: step.step_order,
-        status: 'completed' as const,
+        status: step.status || 'completed' as const,
         timestamp: step.timestamp,
       }))
 
@@ -174,14 +190,14 @@ export function ExperimentalChatView({
       setMessages((prev) => [...prev, newMessage])
       setIsLoading(false)
 
-      // Auto-expand execution steps
-      if (formattedSteps.length > 0) {
-        setExpandedSteps((prev) => {
-          const next = new Set(prev)
-          next.add(response.message_id)
-          return next
-        })
-      }
+      // Don't auto-expand execution steps - let user choose
+      // if (formattedSteps.length > 0) {
+      //   setExpandedSteps((prev) => {
+      //     const next = new Set(prev)
+      //     next.add(response.message_id)
+      //     return next
+      //   })
+      // }
     },
     onError: (error) => {
       console.error('Streaming error:', error)
@@ -205,15 +221,32 @@ export function ExperimentalChatView({
   // Load messages when session changes
   useEffect(() => {
     const loadSession = async () => {
+      console.log('[ExperimentalChatView] useEffect triggered - sessionId:', sessionId, 'ref:', sessionIdRef.current)
+      
       if (!sessionId) {
+        // Don't clear messages if we're currently sending (session is being created)
+        if (isSendingRef.current || isLoading || isStreaming) {
+          console.log('[ExperimentalChatView] No sessionId but currently active - keeping messages')
+          return
+        }
+        console.log('[ExperimentalChatView] No sessionId, clearing messages')
         setMessages([])
         return
       }
 
       // Don't reload session while sending/streaming to prevent clearing current messages
-      if (isStreaming || isLoading || isSendingRef.current) {
+      // UNLESS the sessionId actually changed (user switched tabs)
+      const sessionChanged = sessionIdRef.current !== sessionId
+      console.log('[ExperimentalChatView] sessionChanged:', sessionChanged, 'isStreaming:', isStreaming, 'isLoading:', isLoading, 'isSending:', isSendingRef.current)
+      
+      if (!sessionChanged && (isStreaming || isLoading || isSendingRef.current)) {
+        console.log('[ExperimentalChatView] Blocking reload - same session and currently active')
         return
       }
+      
+      // Update session ref
+      sessionIdRef.current = sessionId
+      console.log('[ExperimentalChatView] Loading session messages...')
 
       try {
         const token = await getToken()
@@ -245,14 +278,18 @@ export function ExperimentalChatView({
     isSendingRef.current = true
     currentAgentStepsRef.current = []
 
-    // Add user message
+    // Add user message immediately so it's visible during streaming
     const userMessage: EnhancedChatMessage = {
       id: Date.now().toString(),
       content: message,
       role: 'user',
       timestamp: new Date().toISOString(),
     }
-    setMessages((prev) => [...prev, userMessage])
+    setMessages((prev) => {
+      const updated = [...prev, userMessage]
+      console.log('[ExperimentalChatView] Messages after adding user message:', updated.length)
+      return updated
+    })
     setIsLoading(true)
 
     try {
@@ -264,6 +301,8 @@ export function ExperimentalChatView({
       if (!currentSessionId) {
         const newSession = await api.createSession()
         currentSessionId = newSession.session_id
+        // Update the ref BEFORE calling onSessionIdChange to prevent reload
+        sessionIdRef.current = currentSessionId
         if (onSessionIdChange) {
           onSessionIdChange(currentSessionId)
         }
@@ -320,9 +359,13 @@ export function ExperimentalChatView({
             />
           )}
 
-          {/* Messages */}
-          {messages.length > 0 && (
+          {/* Messages - ALWAYS show if there are messages, even during loading */}
+          {messages.length > 0 ? (
             <div className="space-y-6">
+              {(() => {
+                console.log('[ExperimentalChatView] Rendering messages:', messages.length, 'isLoading:', isLoading, 'isStreaming:', isStreaming, 'messages:', messages.map(m => ({ role: m.role, content: m.content.substring(0, 50) })))
+                return null
+              })()}
               {messages.map((message) => (
                 <div key={message.id} className="space-y-3">
                   {/* Show execution steps above assistant messages */}
@@ -373,7 +416,11 @@ export function ExperimentalChatView({
                             {message.agent_steps.map((step, index) => (
                               <div
                                 key={step.step_id}
-                                className="bg-gray-800/40 border border-gray-700/40 rounded-xl p-4"
+                                className={`bg-gray-800/40 border rounded-xl p-4 ${
+                                  step.status === 'error'
+                                    ? 'border-red-500/40'
+                                    : 'border-gray-700/40'
+                                }`}
                               >
                                 <div className="flex items-start justify-between mb-3">
                                   <div className="flex items-center space-x-3">
@@ -384,12 +431,24 @@ export function ExperimentalChatView({
                                       {step.agent_name}
                                     </span>
                                   </div>
+                                  {/* Status indicator */}
+                                  <div className="flex items-center space-x-2">
+                                    {step.status === 'error' ? (
+                                      <span className="text-xs px-2 py-1 rounded-full bg-red-500/20 text-red-400 border border-red-500/30">
+                                        Error
+                                      </span>
+                                    ) : step.status === 'completed' ? (
+                                      <span className="text-xs px-2 py-1 rounded-full bg-green-500/20 text-green-400 border border-green-500/30">
+                                        Success
+                                      </span>
+                                    ) : null}
+                                  </div>
                                 </div>
                                 <div className="text-sm">
                                   {step.is_structured ? (
                                     formatToolContent(step.content)
                                   ) : (
-                                    <div className="text-white/80">{step.content}</div>
+                                    <div className="text-white/80 whitespace-pre-wrap break-words">{step.content}</div>
                                   )}
                                 </div>
                               </div>
@@ -404,7 +463,7 @@ export function ExperimentalChatView({
                 </div>
               ))}
             </div>
-          )}
+          ) : null}
 
           {/* AI Response Area - Streaming */}
           {(isLoading || isStreaming) && (
@@ -413,65 +472,127 @@ export function ExperimentalChatView({
               animate={{ opacity: 1, y: 0 }}
               className="space-y-3"
             >
-              {/* Workflow Pipeline - Clean minimal style */}
+              {/* Workflow Pipeline - Purple collapsible style matching completed messages */}
               {agentSteps.length > 0 && (
-                <div className="space-y-3">
-                  {agentSteps.map((step, index) => (
-                    <div key={step.step_id} className="flex items-start space-x-4">
-                      {/* Step number */}
-                      <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center">
-                        {step.status === 'active' ? (
-                          <Loader className="w-4 h-4 animate-spin text-gray-400" />
-                        ) : (
-                          <span className="text-sm text-gray-500 font-medium">{index + 1}</span>
-                        )}
+                <div className="bg-gradient-to-br from-purple-900/30 via-gray-900/50 to-blue-900/30 border border-purple-500/40 rounded-xl overflow-hidden">
+                  <button
+                    onClick={() => setStreamingStepsExpanded(!streamingStepsExpanded)}
+                    className="w-full px-6 py-4 flex items-center justify-between hover:bg-white/5 transition-colors"
+                  >
+                    <div className="flex items-center space-x-3">
+                      <div className="w-8 h-8 bg-purple-500/20 rounded-lg flex items-center justify-center">
+                        <Zap className="w-4 h-4 text-purple-400" />
                       </div>
-
-                      {/* Step content */}
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm text-gray-300 mb-2">
-                          {step.is_structured && step.content ? (
-                            (() => {
-                              const toolName = step.content.tool_name || step.agent_name;
-                              return `Running ${toolName.replace(/_/g, ' ')}...`;
-                            })()
-                          ) : (
-                            step.content || step.agent_name
-                          )}
+                      <div className="text-left">
+                        <div className="text-sm font-medium text-white">Workflow Execution</div>
+                        <div className="text-xs text-gray-400">
+                          {agentSteps.filter((s) => s.status !== 'active').length} / {agentSteps.length} steps
                         </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xs text-purple-400 font-medium">
+                        {agentSteps.length} steps
+                      </span>
+                      {streamingStepsExpanded ? (
+                        <ChevronUp className="w-4 h-4 text-gray-400" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4 text-gray-400" />
+                      )}
+                    </div>
+                  </button>
 
-                        {/* Tool details in code block style */}
-                        {step.is_structured && step.content && step.status !== 'active' && (
-                          <div className="bg-gray-900/50 border border-gray-800 rounded-lg p-3 text-xs font-mono">
-                            <div className="flex items-center space-x-2 mb-2">
-                              <div className="w-3 h-3 bg-gray-700 rounded"></div>
-                              <span className="text-gray-400">{step.content.tool_name}</span>
-                            </div>
-                            {step.content.tool_kwargs && (
-                              <div className="text-gray-500 space-y-1">
-                                {Object.entries(step.content.tool_kwargs).slice(0, 3).map(([key, value]) => (
-                                  <div key={key} className="flex items-start space-x-2">
-                                    <span className="text-gray-600">{key}:</span>
-                                    <span className="text-gray-400 truncate">
-                                      {typeof value === 'string' ? value.slice(0, 50) : JSON.stringify(value).slice(0, 50)}
-                                    </span>
-                                  </div>
-                                ))}
+                  {streamingStepsExpanded && (
+                    <div className="px-6 pb-4 space-y-3 border-t border-purple-500/20">
+                      {agentSteps.map((step, index) => (
+                        <div
+                          key={step.step_id}
+                          className="flex items-start space-x-3 py-3 border-b border-gray-800/50 last:border-0"
+                        >
+                          {/* Step indicator */}
+                          <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center">
+                            {step.status === 'active' ? (
+                              <Loader className="w-4 h-4 animate-spin text-purple-400" />
+                            ) : step.status === 'error' ? (
+                              <div className="w-5 h-5 bg-red-500/20 rounded-full flex items-center justify-center">
+                                <span className="text-xs text-red-400 font-medium">✕</span>
+                              </div>
+                            ) : (
+                              <div className="w-5 h-5 bg-green-500/20 rounded-full flex items-center justify-center">
+                                <span className="text-xs text-green-400 font-medium">✓</span>
                               </div>
                             )}
                           </div>
-                        )}
 
-                        {/* Timing indicator */}
-                        {step.status !== 'active' && step.timestamp && (
-                          <div className="flex items-center space-x-2 mt-2 text-xs text-gray-600">
-                            <CheckCircle className="w-3 h-3" />
-                            <span>Completed</span>
+                          {/* Step content */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="text-sm text-gray-200">
+                                {step.is_structured && step.content ? (
+                                  (() => {
+                                    const toolName = step.content.tool_name || step.agent_name;
+                                    return `Running ${toolName.replace(/_/g, ' ')}...`;
+                                  })()
+                                ) : (
+                                  step.content || step.agent_name
+                                )}
+                              </div>
+                              {step.status === 'error' && (
+                                <span className="text-xs px-2 py-1 rounded-full bg-red-500/20 text-red-400 border border-red-500/30">
+                                  Error
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Tool details */}
+                            {step.is_structured && step.content && step.status !== 'active' && (
+                              <div className="bg-black/30 border border-purple-500/20 rounded-lg p-3 text-xs font-mono">
+                                <div className="flex items-center space-x-2 mb-2">
+                                  <div className="w-2 h-2 bg-purple-500 rounded"></div>
+                                  <span className="text-purple-300">{step.content.tool_name}</span>
+                                </div>
+                                {step.content.tool_kwargs && (
+                                  <div className="text-gray-400 space-y-1 max-h-40 overflow-y-auto">
+                                    {Object.entries(step.content.tool_kwargs).map(([key, value]) => (
+                                      <div key={key} className="flex items-start space-x-2">
+                                        <span className="text-gray-500 flex-shrink-0">{key}:</span>
+                                        <span className="text-gray-300 break-words whitespace-pre-wrap">
+                                          {typeof value === 'string'
+                                            ? value
+                                            : JSON.stringify(value, null, 2)}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Completion indicator */}
+                            {step.status !== 'active' && step.timestamp && (
+                              <div className="flex items-center space-x-2 mt-2 text-xs text-purple-400">
+                                <CheckCircle className="w-3 h-3" />
+                                <span>Completed</span>
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
+                </div>
+              )}
+
+              {/* Workflow Status Indicator - Shows when workflow is running but no content yet */}
+              {isStreaming && !currentContent && agentSteps.length > 0 && (
+                <div className="flex items-center space-x-3 px-4 py-3 bg-purple-500/10 border border-purple-500/20 rounded-lg">
+                  <Loader className="w-4 h-4 animate-spin text-purple-400" />
+                  <div className="flex-1">
+                    <div className="text-sm text-purple-300 font-medium">Processing workflow...</div>
+                    <div className="text-xs text-gray-400 mt-1">
+                      {agentSteps.filter((s) => s.status !== 'active').length} of {agentSteps.length} steps completed
+                    </div>
+                  </div>
                 </div>
               )}
 

@@ -28,28 +28,20 @@ def create_trend_analysis_agent(llm: OpenAI, user_id: str) -> FunctionAgent:
 
     return FunctionAgent(
         name="trend_analysis",
-        description="Specialist in detecting temporal trends and patterns over time using Python/pandas",
-        system_prompt="""You are a trend analysis specialist. You analyze time-series data to detect:
-1. Temporal trends (increasing, decreasing, stable)
-2. Patterns over time (daily, weekly, monthly, quarterly, yearly)
-3. Seasonal variations and cyclical patterns
-4. Growth rates and velocity
-5. Volatility and anomalies
+        description="Detects trends. BRIEF responses only.",
+        system_prompt="""You are a trend specialist. Detect trends, BE BRIEF.
 
-Your tool uses Python/pandas for robust statistical analysis. You need to:
-- Identify the time/date column in the dataset
-- Specify which numeric columns to analyze (or let it auto-detect)
-- Choose appropriate time grouping (auto, day, week, month, quarter, year)
-- Select aggregation method (mean, sum, count, median)
+ANALYZE:
+- Trend direction (up/down/stable)
+- Key inflection points
+- Volatility
 
-Key insights to provide:
-- What is the overall trend direction?
-- Are there significant changes or inflection points?
-- Is the data volatile or stable?
-- What patterns emerge over different time periods?
-
-After analysis, you can hand off to Visualization Agent for line charts showing trends.
-Provide actionable insights about what trends mean for the business.""",
+BREVITY RULES:
+- Keep findings under 80 words
+- Use bullet points only
+- NO lengthy explanations
+- After analysis, route to Visualization → Report Writer
+- Example: "Trend: increasing 15% monthly, stable volatility" then route""",
         tools=[analyze_trends_tool],
         llm=llm,
     )

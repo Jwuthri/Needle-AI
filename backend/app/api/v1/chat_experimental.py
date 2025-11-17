@@ -71,24 +71,50 @@ async def send_message_stream_experimental(
                 )
                 await db.commit()
                 logger.info(f"Created experimental session {session_id}")
+            
+            # Fetch recent conversation history (last 10 messages = 5 exchanges)
+            messages = await ChatMessageRepository.get_recent_messages(db, session_id, limit=10)
+            conversation_history = [
+                {"role": msg.role.value, "content": msg.content}
+                for msg in reversed(messages)  # Reverse to get chronological order
+            ]
+            
+            # Get the last assistant message ID for parent_message_id
+            last_assistant_message_id = None
+            if messages:
+                # Find the most recent assistant message
+                for msg in messages:
+                    if msg.role == MessageRoleEnum.ASSISTANT:
+                        last_assistant_message_id = msg.id
+                        break
+            
+            # Add conversation history to request
+            if conversation_history:
+                request.conversation_history = conversation_history
+                logger.info(f"Added {len(conversation_history)} messages to conversation history")
 
-            # Save user message to database
+            # Save user message to database with parent_message_id
             user_message = await ChatMessageRepository.create(
-                db=db, session_id=session_id, content=request.message, role=MessageRoleEnum.USER
+                db=db, 
+                session_id=session_id, 
+                content=request.message, 
+                role=MessageRoleEnum.USER,
+                parent_message_id=last_assistant_message_id  # Link to previous assistant message
             )
             await db.commit()
-            logger.info(f"Saved user message {user_message.id} to database")
+            logger.info(f"Saved user message {user_message.id} to database (parent: {last_assistant_message_id})")
             
-            # Create assistant message placeholder
+            # Create assistant message placeholder with parent_message_id
             assistant_message = await ChatMessageRepository.create(
                 db=db,
                 session_id=session_id,
                 content="",
                 role=MessageRoleEnum.ASSISTANT,
+                parent_message_id=user_message.id  # Link to user message
             )
             await db.commit()
             assistant_message_id = assistant_message.id
-            logger.info(f"[CHAT EXPERIMENTAL] Created assistant message {assistant_message_id}")
+            logger.info(f"[CHAT EXPERIMENTAL] Created assistant message {assistant_message_id} (parent: {user_message.id})")
         
         # DB session is now closed before we start streaming
 

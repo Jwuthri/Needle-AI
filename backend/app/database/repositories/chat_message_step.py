@@ -121,6 +121,30 @@ class ChatMessageStepRepository:
         return count
 
     @staticmethod
+    async def update_status(
+        db: AsyncSession,
+        step_id: str,
+        status: str
+    ) -> Optional[ChatMessageStep]:
+        """
+        Update the status of a chat message step.
+        
+        Args:
+            db: Database session
+            step_id: Step ID
+            status: New status (success/error/pending)
+            
+        Returns:
+            Updated ChatMessageStep instance or None if not found
+        """
+        step = await ChatMessageStepRepository.get_by_id(db, step_id)
+        if step:
+            step.status = status
+            await db.flush()
+            logger.debug(f"Updated step {step_id} status to {status}")
+        return step
+
+    @staticmethod
     async def bulk_create(
         db: AsyncSession,
         message_id: str,
@@ -146,7 +170,8 @@ class ChatMessageStepRepository:
                 step_order=step_data['step_order'],
                 tool_call=step_data.get('tool_call'),
                 structured_output=step_data.get('structured_output'),
-                prediction=step_data.get('prediction')
+                prediction=step_data.get('prediction'),
+                status=step_data.get('status', 'success')
             )
             db.add(step)
             created_steps.append(step)

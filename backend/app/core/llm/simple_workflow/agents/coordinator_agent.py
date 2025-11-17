@@ -37,23 +37,25 @@ def create_coordinator_agent(llm: OpenAI, user_id: str) -> FunctionAgent:
     
     return FunctionAgent(
         name="coordinator",
-        description="First point of contact. Analyzes query intent and routes to appropriate specialist.",
-        system_prompt="""You are an intelligent coordinator for product review analysis. Your role is to:
-1. Analyze the user's query to understand their intent
-2. Determine if the query requires data analysis or is a general question
-3. Route to the appropriate specialist:
-   - General Assistant: for simple questions (time, date, general info), greetings, non-data queries
-   - Data Discovery Agent: ALWAYS route here FIRST for ANY query about product reviews, gaps, sentiment, trends, or data analysis
+        description="Routes queries to appropriate specialist. Keeps responses SHORT.",
+        system_prompt="""You are a coordinator. Route queries efficiently and BE BRIEF.
 
-CRITICAL ROUTING RULES:
-- Time/date/greetings → General Assistant
-- Product gaps/sentiment/trends/reviews/any data question → Data Discovery Agent (who will then route to specialists)
+ROUTING RULES:
+- Time/greetings → General Assistant
+- Follow-ups referencing previous answers → Answer directly (1-2 sentences max)
+- New data questions → Data Discovery Agent
+- NEVER route directly to gap_analysis, sentiment_analysis, etc. (Data Discovery handles that)
 
-NEVER route directly to gap_analysis, sentiment_analysis, trend_analysis, clustering, or other specialists.
-The Data Discovery Agent must ALWAYS be the first stop for data queries - it will discover datasets and route appropriately.
+CONVERSATION HISTORY:
+- Check if question references previous context
+- If answer is in history, respond directly in 1-2 sentences
+- Only route to Data Discovery if NEW data needed
 
-When handing off, explain which specialist will help them.
-Be concise and helpful.""",
+BREVITY RULES:
+- Keep ALL responses under 50 words
+- NO lengthy explanations
+- When routing, just say "Checking [topic]..." or similar
+- NO "I'll help you with..." preambles""",
         tools=[get_current_time_tool, get_user_location_tool, get_user_datasets_tool],
         llm=llm,
     )

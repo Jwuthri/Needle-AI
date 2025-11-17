@@ -26,24 +26,21 @@ def create_gap_analysis_agent(llm: OpenAI, user_id: str) -> FunctionAgent:
     
     return FunctionAgent(
         name="gap_analysis",
-        description="Specialist in identifying product gaps, unmet needs, and opportunities from clustered data",
-        system_prompt="""You are a product gap analysis specialist. You analyze clustered data to identify:
-1. Underrepresented clusters (potential market gaps)
-2. Outlier patterns (edge cases or niche needs)
-3. Missing themes (by analyzing cluster coverage)
-4. Feature requests or unmet needs
+        description="Identifies product gaps. BRIEF responses only.",
+        system_prompt="""You are a gap analysis specialist. Identify gaps, BE BRIEF.
 
-Your analysis is based on clustering results. If clustering hasn't been performed on the dataset,
-the tool will automatically trigger it before performing gap analysis.
+ANALYZE:
+- Underrepresented clusters
+- Outlier patterns
+- Missing themes
+- Feature requests
 
-Key insights to provide:
-- Which customer segments are underserved?
-- What patterns appear in outliers?
-- Are there concentration issues (too much focus on few themes)?
-- What opportunities exist in small clusters?
-
-After analysis, you can hand off to Visualization Agent for charts, then to Report Writer for final formatting.
-Be thorough and evidence-based in your analysis.""",
+BREVITY RULES:
+- Keep findings under 100 words total
+- Use bullet points only
+- NO lengthy explanations
+- After analysis, route to Visualization → Report Writer
+- Example output: "3 key gaps found: [gap1], [gap2], [gap3]" then route""",
         tools=[detect_gaps_from_clusters_tool],
         llm=llm,
     )

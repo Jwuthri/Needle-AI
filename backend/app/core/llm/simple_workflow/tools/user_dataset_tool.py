@@ -38,7 +38,7 @@ async def get_user_datasets(ctx: Context, user_id: str, limit: int = 50, offset:
             return {"error": str(e)}
 
 
-async def get_dataset_data_from_sql(ctx: Context, sql_query: str, dataset_name: str) -> pd.DataFrame:
+async def get_dataset_data_from_sql(ctx: Context, sql_query: str, dataset_name: str) -> str:
     """Get dataset data from a SQL query.
 
     Args:
@@ -47,24 +47,42 @@ async def get_dataset_data_from_sql(ctx: Context, sql_query: str, dataset_name: 
         dataset_name: Name of the dataset to search on
 
     Returns:
-        pd.DataFrame: Dataset data as markdown table
+        str: Dataset data as markdown table or error message for LLM to fix
     """
+    # Track SQL error retries to prevent infinite loops
+    ctx_state = await ctx.store.get_state()
+    sql_error_count = ctx_state.get("sql_error_count", 0)
+    
+    if sql_error_count >= 5:
+        return f"ERROR: Too many SQL query errors ({sql_error_count}). Please check the dataset schema using get_user_datasets tool first, then try a simpler query."
+    
     async with get_async_session() as db:
         try:    
             data = await UserDatasetService(db).get_dataset_data_from_sql(sql_query)
+            
+            # Reset error count on success
             async with ctx.store.edit_state() as ctx_state:
                 if "state" not in ctx_state:
                     ctx_state["state"] = {}
                 if "dataset_data" not in ctx_state["state"]:
                     ctx_state["state"]["dataset_data"] = {}
                 ctx_state["state"]["dataset_data"][dataset_name] = data
+                ctx_state["sql_error_count"] = 0  # Reset on success
+                
             ddata = data.copy()
             if "__embedding__" in ddata.columns:
                 ddata.drop(columns=["__embedding__"], inplace=True)
             return ddata.head(10).to_markdown()
         except Exception as e:
             logger.error(f"Error getting dataset data: {e}", exc_info=True)
-            return {"error": str(e)}
+            
+            # Increment error count
+            async with ctx.store.edit_state() as ctx_state:
+                ctx_state["sql_error_count"] = sql_error_count + 1
+            
+            # Return error message to LLM so it can fix the query
+            error_msg = str(e)
+            return f"ERROR executing SQL query (attempt {sql_error_count + 1}/5):\n{error_msg}\n\nPlease analyze the error and generate a corrected SQL query. Consider using get_user_datasets to check the available columns first."
 
 
 async def get_available_datasets_in_context(ctx: Context) -> list[str]:

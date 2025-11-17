@@ -123,7 +123,7 @@ const formatAssistantContent = (content: string) => {
     if (currentSection.length > 0) {
       sections.push(
         <div key={`section-${sectionIndex++}`} className="mb-4">
-          <p className="text-white/80">{parseInlineMarkdown(currentSection.join(' '))}</p>
+          <p className="text-white/80 whitespace-pre-wrap">{parseInlineMarkdown(currentSection.join('\n'))}</p>
         </div>
       )
       currentSection = []
@@ -172,6 +172,50 @@ const formatAssistantContent = (content: string) => {
 
   lines.forEach((line, idx) => {
     const trimmedLine = line.trim()
+    
+    // Detect markdown images: ![alt text](url)
+    const imageMatch = trimmedLine.match(/^!\[([^\]]*)\]\(([^)]+)\)$/)
+    if (imageMatch) {
+      flushSection()
+      const altText = imageMatch[1]
+      const imagePath = imageMatch[2]
+      
+      // Convert local file path to API endpoint
+      let imageUrl = imagePath
+      if (imagePath.startsWith('/Users/') || imagePath.startsWith('/app/')) {
+        // Extract filename from full path
+        const filename = imagePath.split('/').pop()
+        imageUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/graphs/${filename}`
+      } else if (imagePath.startsWith('/api/graphs/')) {
+        // Already in correct format from backend, just prepend base URL
+        const filename = imagePath.replace('/api/graphs/', '')
+        imageUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/graphs/${filename}`
+      } else if (!imagePath.startsWith('http')) {
+        // Relative path - assume it's in graphs
+        const filename = imagePath.split('/').pop()
+        imageUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/graphs/${filename}`
+      }
+      
+      sections.push(
+        <div key={`image-${idx}`} className="my-4 rounded-lg overflow-hidden border border-gray-700/30 bg-gray-900/30">
+          <img 
+            src={imageUrl} 
+            alt={altText}
+            className="w-full h-auto"
+            onError={(e) => {
+              console.error('Failed to load image:', imageUrl)
+              e.currentTarget.style.display = 'none'
+            }}
+          />
+          {altText && (
+            <div className="p-3 bg-gray-800/50 text-sm text-white/60 italic">
+              {altText}
+            </div>
+          )}
+        </div>
+      )
+      return
+    }
     
     // Detect markdown table rows
     if (trimmedLine.startsWith('|') && trimmedLine.endsWith('|')) {
