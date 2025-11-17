@@ -3,7 +3,6 @@
 from typing import Any, Dict, List, Optional
 
 from app.core.llm.simple_workflow.tools.visualization_tool import generate_bar_chart, generate_heatmap, generate_line_chart, generate_pie_chart
-from app.core.llm.simple_workflow.tools.forfeit_tool import forfeit_request
 from llama_index.core.agent.workflow import FunctionAgent
 from llama_index.core.tools import FunctionTool
 from llama_index.llms.openai import OpenAI
@@ -27,7 +26,6 @@ def create_visualization_agent(llm: OpenAI, user_id: str) -> FunctionAgent:
     generate_line_chart_tool = FunctionTool.from_defaults(fn=generate_line_chart)
     generate_pie_chart_tool = FunctionTool.from_defaults(fn=generate_pie_chart)
     generate_heatmap_tool = FunctionTool.from_defaults(fn=generate_heatmap)
-    forfeit_tool = FunctionTool.from_defaults(fn=forfeit_request)
     
     return FunctionAgent(
         name="visualization",
@@ -52,12 +50,6 @@ Example data formats:
 - Pie: [{"label": "Positive", "value": 60}, {"label": "Negative", "value": 40}]
 - Heatmap: [{"x": "Cat1", "y": "Metric1", "value": 10}]
 
-FORFEIT WHEN:
-- No data available for visualization
-- Data format incompatible with any chart type
-- Chart generation repeatedly fails
-Call forfeit_request with clear reason.
-
 BREVITY RULES:
 - Generate charts silently
 - NO explanations or status messages
@@ -68,7 +60,6 @@ BREVITY RULES:
             generate_line_chart_tool,
             generate_pie_chart_tool,
             generate_heatmap_tool,
-            forfeit_tool,
         ],
         llm=llm,
     )

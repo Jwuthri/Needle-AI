@@ -1,7 +1,6 @@
 """Gap Analysis Agent - Identifies product gaps and unmet needs"""
 
 from app.core.llm.simple_workflow.tools.user_dataset_tool import get_available_datasets_in_context
-from app.core.llm.simple_workflow.tools.forfeit_tool import forfeit_request
 from llama_index.core.agent.workflow import FunctionAgent
 from llama_index.core.tools import FunctionTool
 from llama_index.core.workflow import Context
@@ -23,7 +22,6 @@ def create_gap_analysis_agent(llm: OpenAI, user_id: str) -> FunctionAgent:
     """
     
     detect_gaps_from_clusters_tool = FunctionTool.from_defaults(fn=detect_gaps_from_clusters)
-    forfeit_tool = FunctionTool.from_defaults(fn=forfeit_request)
     # get_available_datasets_in_context_tool = FunctionTool.from_defaults(fn=get_available_datasets_in_context)
     
     return FunctionAgent(
@@ -37,18 +35,12 @@ ANALYZE:
 - Missing themes
 - Feature requests
 
-FORFEIT WHEN:
-- No cluster data available
-- Data quality too poor for gap analysis
-- Question requires data not present
-Call forfeit_request with clear reason.
-
 BREVITY RULES:
 - Keep findings under 100 words total
 - Use bullet points only
 - NO lengthy explanations
 - NEVER mention routing, agents, or internal workflow
 - Example output: "3 key gaps found: [gap1], [gap2], [gap3]" """,
-        tools=[detect_gaps_from_clusters_tool, forfeit_tool],
+        tools=[detect_gaps_from_clusters_tool],
         llm=llm,
     )

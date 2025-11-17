@@ -2,7 +2,6 @@
 
 from app.core.llm.simple_workflow.tools.user_dataset_tool import get_user_datasets
 from app.core.llm.simple_workflow.tools.utils_tool import get_current_time, get_user_location
-from app.core.llm.simple_workflow.tools.forfeit_tool import forfeit_request
 
 from llama_index.core.agent.workflow import FunctionAgent
 from llama_index.core.tools import FunctionTool
@@ -35,7 +34,6 @@ def create_coordinator_agent(llm: OpenAI, user_id: str) -> FunctionAgent:
     get_current_time_tool = FunctionTool.from_defaults(fn=get_current_time)
     get_user_location_tool = FunctionTool.from_defaults(fn=get_user_location)
     get_user_datasets_tool = FunctionTool.from_defaults(fn=_get_user_datasets)
-    forfeit_tool = FunctionTool.from_defaults(fn=forfeit_request)
     
     return FunctionAgent(
         name="coordinator",
@@ -52,18 +50,12 @@ CONVERSATION HISTORY:
 - If answer is in history, respond directly in 1-2 sentences
 - Only delegate if NEW data analysis needed
 
-FORFEIT WHEN STUCK:
-- If specialists repeatedly fail or return errors
-- If the question is clearly outside capabilities
-- Call forfeit_request with clear reason and what was attempted
-- Be honest and helpful about limitations
-
 BREVITY RULES:
 - Keep ALL responses under 50 words
 - NO lengthy explanations
 - NEVER mention routing, agents, or internal workflow
 - NO "I'll help you with..." preambles
 - Work silently and efficiently""",
-        tools=[get_current_time_tool, get_user_location_tool, get_user_datasets_tool, forfeit_tool],
+        tools=[get_current_time_tool, get_user_location_tool, get_user_datasets_tool],
         llm=llm,
     )
