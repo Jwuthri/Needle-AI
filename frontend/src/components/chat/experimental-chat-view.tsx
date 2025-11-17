@@ -413,70 +413,65 @@ export function ExperimentalChatView({
               animate={{ opacity: 1, y: 0 }}
               className="space-y-3"
             >
-              {/* Workflow Pipeline */}
+              {/* Workflow Pipeline - Clean minimal style */}
               {agentSteps.length > 0 && (
-                <div className="bg-gray-900/50 border border-purple-500/30 rounded-xl overflow-hidden">
-                  <div className="bg-purple-500/10 px-4 py-3 border-b border-purple-500/20">
-                    <div className="flex items-center space-x-2">
-                      <Play className="w-4 h-4 text-purple-400" />
-                      <span className="text-white font-medium">Live Workflow Execution</span>
-                    </div>
-                  </div>
+                <div className="space-y-3">
+                  {agentSteps.map((step, index) => (
+                    <div key={step.step_id} className="flex items-start space-x-4">
+                      {/* Step number */}
+                      <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center">
+                        {step.status === 'active' ? (
+                          <Loader className="w-4 h-4 animate-spin text-gray-400" />
+                        ) : (
+                          <span className="text-sm text-gray-500 font-medium">{index + 1}</span>
+                        )}
+                      </div>
 
-                  <div className="p-4 space-y-2 max-h-[400px] overflow-y-auto">
-                    {agentSteps.map((step) => (
-                      <div
-                        key={step.step_id}
-                        className={`p-3 rounded-lg transition-all ${
-                          step.status === 'active'
-                            ? 'bg-purple-500/10 border border-purple-500/30'
-                            : 'bg-gray-800/30 border border-gray-700/30'
-                        }`}
-                      >
-                        <div className="flex items-start space-x-3">
-                          <div
-                            className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold ${
-                              step.status === 'active'
-                                ? 'bg-purple-500/20 text-purple-400 ring-2 ring-purple-500/50'
-                                : 'bg-gray-700/20 text-gray-400'
-                            }`}
-                          >
-                            {(step.step_order ?? 0) + 1}
-                          </div>
-
-                          {step.status === 'active' ? (
-                            <Loader className="w-4 h-4 animate-spin text-purple-400 mt-1" />
+                      {/* Step content */}
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm text-gray-300 mb-2">
+                          {step.is_structured && step.content ? (
+                            (() => {
+                              const toolName = step.content.tool_name || step.agent_name;
+                              return `Running ${toolName.replace(/_/g, ' ')}...`;
+                            })()
                           ) : (
-                            <CheckCircle className="w-4 h-4 text-green-500 mt-1" />
+                            step.content || step.agent_name
                           )}
+                        </div>
 
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center space-x-2 mb-1">
-                              <span
-                                className={`text-sm font-mono ${
-                                  step.status === 'active'
-                                    ? 'text-purple-400'
-                                    : 'text-white/70'
-                                }`}
-                              >
-                                {step.agent_name}
-                              </span>
+                        {/* Tool details in code block style */}
+                        {step.is_structured && step.content && step.status !== 'active' && (
+                          <div className="bg-gray-900/50 border border-gray-800 rounded-lg p-3 text-xs font-mono">
+                            <div className="flex items-center space-x-2 mb-2">
+                              <div className="w-3 h-3 bg-gray-700 rounded"></div>
+                              <span className="text-gray-400">{step.content.tool_name}</span>
                             </div>
-
-                            {step.content && (
-                              <div className="text-xs mt-2">
-                                {step.is_structured ? (
-                                  formatToolContent(step.content)
-                                ) : (
-                                  <div className="text-white/70">{step.content}</div>
-                                )}
+                            {step.content.tool_kwargs && (
+                              <div className="text-gray-500 space-y-1">
+                                {Object.entries(step.content.tool_kwargs).slice(0, 3).map(([key, value]) => (
+                                  <div key={key} className="flex items-start space-x-2">
+                                    <span className="text-gray-600">{key}:</span>
+                                    <span className="text-gray-400 truncate">
+                                      {typeof value === 'string' ? value.slice(0, 50) : JSON.stringify(value).slice(0, 50)}
+                                    </span>
+                                  </div>
+                                ))}
                               </div>
                             )}
                           </div>
-                        </div>
+                        )}
+
+                        {/* Timing indicator */}
+                        {step.status !== 'active' && step.timestamp && (
+                          <div className="flex items-center space-x-2 mt-2 text-xs text-gray-600">
+                            <CheckCircle className="w-3 h-3" />
+                            <span>Completed</span>
+                          </div>
+                        )}
                       </div>
-                    ))}
-                  </div>
+                    </div>
+                  ))}
                 </div>
               )}
 
