@@ -35,6 +35,13 @@ def _serialize_value(value: Any) -> Any:
     
     # Handle pandas DataFrame
     if isinstance(value, pd.DataFrame):
+        # Convert DataFrame to dict, handling Timestamps
+        def df_to_serializable_dict(df: pd.DataFrame) -> list:
+            """Convert DataFrame to list of dicts with serializable values."""
+            records = df.to_dict(orient="records")
+            # Recursively serialize each record to handle Timestamps and other types
+            return [_serialize_value(record) for record in records]
+        
         # For large DataFrames, store only metadata to avoid bloat
         if len(value) > 1000:
             return {
@@ -42,14 +49,14 @@ def _serialize_value(value: Any) -> Any:
                 "shape": value.shape,
                 "columns": list(value.columns),
                 "dtypes": {col: str(dtype) for col, dtype in value.dtypes.items()},
-                "sample": value.head(5).to_dict(orient="records"),
+                "sample": df_to_serializable_dict(value.head(5)),
                 "note": "Large DataFrame - only metadata stored"
             }
         else:
             # For smaller DataFrames, store full data
             return {
                 "_type": "dataframe",
-                "data": value.to_dict(orient="records"),
+                "data": df_to_serializable_dict(value),
                 "columns": list(value.columns),
                 "dtypes": {col: str(dtype) for col, dtype in value.dtypes.items()}
             }
@@ -112,7 +119,9 @@ def _deserialize_value(value: Any) -> Any:
         type_marker = value["_type"]
         
         if type_marker == "dataframe":
-            df = pd.DataFrame(value["data"])
+            # Deserialize the data records first
+            deserialized_data = [_deserialize_value(record) for record in value["data"]]
+            df = pd.DataFrame(deserialized_data)
             # Restore dtypes if possible
             for col, dtype_str in value.get("dtypes", {}).items():
                 try:

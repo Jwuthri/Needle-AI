@@ -234,7 +234,9 @@ export function ChatView({ companyId, sessionId, onSessionIdChange, onCompanyCha
     currentContent,
     agentSteps,
     currentAgent,
-    status: streamStatus 
+    status: streamStatus,
+    thinkingText,
+    activeToolCalls 
   } = useChatStream({
     onComplete: (response) => {
       console.log('[ChatView] onComplete called with response:', response)
@@ -424,7 +426,7 @@ export function ChatView({ companyId, sessionId, onSessionIdChange, onCompanyCha
     }
   }
 
-  console.log('Rendering ChatView, messages count:', messages.length, 'isStreaming:', isStreaming, 'isLoading:', isLoading)
+  console.log('Rendering ChatView, messages count:', messages.length, 'isStreaming:', isStreaming, 'isLoading:', isLoading, 'activeToolCalls:', activeToolCalls.length, 'thinkingText:', thinkingText.length)
   
   return (
     <div className="h-full flex flex-col">
@@ -688,12 +690,65 @@ export function ChatView({ companyId, sessionId, onSessionIdChange, onCompanyCha
                 <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-green-600 rounded-full flex items-center justify-center flex-shrink-0">
                   <Sparkles className="w-4 h-4 text-white" />
                 </div>
-                <div className="flex-1">
+                <div className="flex-1 space-y-3">
                   {/* Status indicator when no agents yet */}
-                  {streamStatus && !agentSteps.length && (
+                  {streamStatus && !agentSteps.length && !thinkingText && !activeToolCalls.length && (
                     <div className="text-xs text-emerald-400 mb-2 flex items-center space-x-2">
                       <Loader className="w-3 h-3 animate-spin" />
                       <span>{streamStatus.message}</span>
+                    </div>
+                  )}
+                  
+                  {/* Thinking text streaming */}
+                  {thinkingText && (
+                    <div className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-3">
+                      <div className="flex items-center space-x-2 mb-2">
+                        <Loader className="w-3 h-3 animate-spin text-purple-400" />
+                        <span className="text-xs text-purple-300 font-semibold">Thinking...</span>
+                      </div>
+                      <div className="text-sm text-purple-200/80 font-mono whitespace-pre-wrap">
+                        {thinkingText}
+                        <span className="inline-block w-2 h-4 bg-purple-400 ml-1 animate-pulse"></span>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Active tool calls streaming */}
+                  {activeToolCalls.length > 0 && (
+                    <div className="space-y-2">
+                      {console.log('[ChatView] Rendering activeToolCalls:', activeToolCalls)}
+                      {activeToolCalls.map((toolCall) => (
+                        <div
+                          key={toolCall.tool_id}
+                          className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-3"
+                        >
+                          <div className="flex items-center space-x-2 mb-2">
+                            <Loader className="w-3 h-3 animate-spin text-blue-400" />
+                            <span className="text-xs text-blue-300 font-semibold font-mono">
+                              {toolCall.tool_name}(
+                            </span>
+                          </div>
+                          <div className="pl-5 space-y-1">
+                            {Object.entries(toolCall.params).map(([key, value]) => (
+                              <div key={key} className="text-xs font-mono">
+                                <span className="text-blue-400">{key}</span>
+                                <span className="text-white/60">=</span>
+                                <span className="text-emerald-300">
+                                  {value === null ? (
+                                    <span className="text-gray-400 italic">...</span>
+                                  ) : (
+                                    JSON.stringify(value)
+                                  )}
+                                </span>
+                              </div>
+                            ))}
+                            <div className="text-xs text-blue-300 font-mono">
+                              )
+                              <span className="inline-block w-2 h-3 bg-blue-400 ml-1 animate-pulse"></span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   )}
                   
@@ -703,7 +758,7 @@ export function ChatView({ companyId, sessionId, onSessionIdChange, onCompanyCha
                       <StreamingMarkdown content={currentContent} />
                       <span className="inline-block w-2 h-4 bg-emerald-400 ml-1 animate-pulse"></span>
                     </div>
-                  ) : !agentSteps.length && (
+                  ) : !agentSteps.length && !thinkingText && !activeToolCalls.length && (
                     <div className="flex space-x-1">
                       <div className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce"></div>
                       <div className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>

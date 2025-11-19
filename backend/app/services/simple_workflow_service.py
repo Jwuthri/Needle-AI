@@ -143,17 +143,73 @@ class SimpleWorkflowService:
             accumulated_content = ""
             step_counter = 0
             agent_steps = []
+            tool_call_streaming = {}  # Track streaming tool calls by tool_id
             
             # Stream events from workflow
             async for event in handler.stream_events():
                 event_type = type(event).__name__
                 
-                # Handle Tool Call events
+                # Handle AgentStream events for thinking and tool call streaming
+                from llama_index.core.agent.workflow import AgentStream, AgentStreamStructuredOutput
+                if isinstance(event, AgentStream):
+                    # Stream thinking deltas
+                    if event.thinking_delta:
+                        yield {
+                            "type": "thinking",
+                            "data": {"delta": event.thinking_delta}
+                        }
+                    
+                    # Stream tool calls as they're being built
+                    if event.tool_calls:
+                        for tool_call in event.tool_calls:
+                            tool_id = tool_call.tool_id
+                            tool_name = tool_call.tool_name
+                            tool_kwargs = tool_call.tool_kwargs
+                            
+                            # Check if this is a new tool call or an update
+                            if tool_id not in tool_call_streaming:
+                                # New tool call detected
+                                tool_call_streaming[tool_id] = {
+                                    'name': tool_name,
+                                    'kwargs': {},
+                                }
+                                
+                                # Yield tool_call_start event
+                                yield {
+                                    "type": "tool_call_start",
+                                    "data": {
+                                        "tool_id": tool_id,
+                                        "tool_name": tool_name,
+                                        "agent_name": current_agent
+                                    }
+                                }
+                            
+                            current_state = tool_call_streaming[tool_id]
+                            
+                            # Stream new or updated kwargs
+                            for key, value in tool_kwargs.items():
+                                if key not in current_state['kwargs'] or current_state['kwargs'][key] != value:
+                                    # New or updated parameter
+                                    yield {
+                                        "type": "tool_call_param",
+                                        "data": {
+                                            "tool_id": tool_id,
+                                            "param_name": key,
+                                            "param_value": value,
+                                            "is_complete": value is not None
+                                        }
+                                    }
+                                    current_state['kwargs'][key] = value
+                
+                # Handle Tool Call events (finalized tool call)
                 if isinstance(event, ToolCall):
                     tool_name = event.tool_name
                     tool_kwargs = event.tool_kwargs
                     
                     logger.info(f"Tool Call: {tool_name} with args: {tool_kwargs}")
+                    
+                    # Clear streaming state for this tool call (it's now finalized)
+                    tool_call_streaming.clear()
                     
                     # Save step to database
                     try:

@@ -165,8 +165,6 @@ function StreamingMarkdown({ content }: { content: string }) {
 
 // Try to parse and format JSON/list objects nicely
 function formatRawOutput(rawOutput: string): JSX.Element {
-  console.log('[formatRawOutput] Input length:', rawOutput?.length, 'First 200 chars:', rawOutput?.substring(0, 200))
-  
   // First, try to detect if this looks like a list/dict structure
   const trimmed = rawOutput.trim()
   
@@ -305,7 +303,6 @@ function formatRawOutput(rawOutput: string): JSX.Element {
         return <span className="text-white/80">{String(parsed)}</span>
       } catch (pythonError) {
         // Both JSON and Python-style parsing failed - render as markdown
-        console.log('[formatRawOutput] Failed to parse as JSON or Python dict:', jsonError, pythonError)
       }
     }
   }
@@ -401,10 +398,10 @@ export function ExperimentalChatView({
     currentAgent,
     status: streamStatus,
     toolExecutions,
+    thinkingText,
+    activeToolCalls,
   } = useExperimentalChatStream({
     onComplete: (response) => {
-      console.log('[ExperimentalChatView] onComplete called')
-
       const formattedSteps = currentAgentStepsRef.current.map((step) => ({
         step_id: step.step_id,
         agent_name: step.agent_name,
@@ -459,15 +456,11 @@ export function ExperimentalChatView({
   // Load messages when session changes
   useEffect(() => {
     const loadSession = async () => {
-      console.log('[ExperimentalChatView] useEffect triggered - sessionId:', sessionId, 'ref:', sessionIdRef.current)
-      
       if (!sessionId) {
         // Don't clear messages if we're currently sending (session is being created)
         if (isSendingRef.current || isLoading || isStreaming) {
-          console.log('[ExperimentalChatView] No sessionId but currently active - keeping messages')
           return
         }
-        console.log('[ExperimentalChatView] No sessionId, clearing messages')
         setMessages([])
         return
       }
@@ -475,16 +468,13 @@ export function ExperimentalChatView({
       // Don't reload session while sending/streaming to prevent clearing current messages
       // UNLESS the sessionId actually changed (user switched tabs)
       const sessionChanged = sessionIdRef.current !== sessionId
-      console.log('[ExperimentalChatView] sessionChanged:', sessionChanged, 'isStreaming:', isStreaming, 'isLoading:', isLoading, 'isSending:', isSendingRef.current)
       
       if (!sessionChanged && (isStreaming || isLoading || isSendingRef.current)) {
-        console.log('[ExperimentalChatView] Blocking reload - same session and currently active')
         return
       }
       
       // Update session ref
       sessionIdRef.current = sessionId
-      console.log('[ExperimentalChatView] Loading session messages...')
 
       try {
         const token = await getToken()
@@ -523,11 +513,7 @@ export function ExperimentalChatView({
       role: 'user',
       timestamp: new Date().toISOString(),
     }
-    setMessages((prev) => {
-      const updated = [...prev, userMessage]
-      console.log('[ExperimentalChatView] Messages after adding user message:', updated.length)
-      return updated
-    })
+    setMessages((prev) => [...prev, userMessage])
     setIsLoading(true)
 
     try {
@@ -600,10 +586,6 @@ export function ExperimentalChatView({
           {/* Messages - ALWAYS show if there are messages, even during loading */}
           {messages.length > 0 ? (
             <div className="space-y-6">
-              {(() => {
-                console.log('[ExperimentalChatView] Rendering messages:', messages.length, 'isLoading:', isLoading, 'isStreaming:', isStreaming, 'messages:', messages.map(m => ({ role: m.role, content: m.content.substring(0, 50) })))
-                return null
-              })()}
               {messages.map((message) => (
                 <div key={message.id} className="space-y-3">
                   {/* Show execution steps above assistant messages */}
@@ -836,8 +818,60 @@ export function ExperimentalChatView({
                 </div>
               )}
 
+              {/* Thinking text streaming */}
+              {thinkingText && (
+                <div className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-3">
+                  <div className="flex items-center space-x-2 mb-2">
+                    <Loader className="w-3 h-3 animate-spin text-purple-400" />
+                    <span className="text-xs text-purple-300 font-semibold">Thinking...</span>
+                  </div>
+                  <div className="text-sm text-purple-200/80 font-mono whitespace-pre-wrap">
+                    {thinkingText}
+                    <span className="inline-block w-2 h-4 bg-purple-400 ml-1 animate-pulse"></span>
+                  </div>
+                </div>
+              )}
+
+              {/* Active tool calls streaming */}
+              {activeToolCalls.length > 0 && (
+                <div className="space-y-2">
+                  {activeToolCalls.map((toolCall) => (
+                    <div
+                      key={toolCall.tool_id}
+                      className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-3"
+                    >
+                      <div className="flex items-center space-x-2 mb-2">
+                        <Loader className="w-3 h-3 animate-spin text-blue-400" />
+                        <span className="text-xs text-blue-300 font-semibold font-mono">
+                          {toolCall.tool_name}(
+                        </span>
+                      </div>
+                      <div className="pl-5 space-y-1">
+                        {Object.entries(toolCall.params).map(([key, value]) => (
+                          <div key={key} className="text-xs font-mono">
+                            <span className="text-blue-400">{key}</span>
+                            <span className="text-white/60">=</span>
+                            <span className="text-emerald-300">
+                              {value === null ? (
+                                <span className="text-gray-400 italic">...</span>
+                              ) : (
+                                JSON.stringify(value)
+                              )}
+                            </span>
+                          </div>
+                        ))}
+                        <div className="text-xs text-blue-300 font-mono">
+                          )
+                          <span className="inline-block w-2 h-3 bg-blue-400 ml-1 animate-pulse"></span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {/* Workflow Status Indicator - Shows when workflow is running but no content yet */}
-              {isStreaming && !currentContent && agentSteps.length > 0 && (
+              {isStreaming && !currentContent && agentSteps.length > 0 && !thinkingText && !activeToolCalls.length && (
                 <div className="flex items-center space-x-3 px-4 py-3 bg-purple-500/10 border border-purple-500/20 rounded-lg">
                   <Loader className="w-4 h-4 animate-spin text-purple-400" />
                   <div className="flex-1">

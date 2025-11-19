@@ -87,7 +87,7 @@ async def generate_bar_chart(
         title=title,
         xaxis_title=x_label,
         yaxis_title=y_label,
-        template="plotly_white",
+        template="plotly_dark",
     )
     
     # Save and return path
@@ -152,7 +152,7 @@ async def generate_line_chart(
         title=title,
         xaxis_title=x_label,
         yaxis_title=y_label,
-        template="plotly_white",
+        template="plotly_dark",
     )
     
     # Save and return path
@@ -207,7 +207,7 @@ async def generate_pie_chart(
         ]
     )
     
-    fig.update_layout(title=title, template="plotly_white")
+    fig.update_layout(title=title, template="plotly_dark")
     
     # Save and return path
     chart_path = _save_chart_png(fig, user_id, "pie", title)
@@ -273,7 +273,7 @@ async def generate_heatmap(
         )
     )
     
-    fig.update_layout(title=title, template="plotly_white")
+    fig.update_layout(title=title, template="plotly_dark")
     
     # Save and return path
     chart_path = _save_chart_png(fig, user_id, "heatmap", title)

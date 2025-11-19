@@ -2,7 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import { ChatRequest, ChatResponse, AgentStep } from '@/types/chat';
 
 interface StreamUpdate {
-  type: 'status' | 'agent' | 'tool_call' | 'tool_result' | 'content' | 'complete' | 'error';
+  type: 'status' | 'agent' | 'tool_call' | 'tool_result' | 'content' | 'complete' | 'error' | 'thinking' | 'tool_call_start' | 'tool_call_param';
   data: any;
 }
 
@@ -12,6 +12,13 @@ interface ToolExecution {
   output?: any;
   status: 'running' | 'completed';
   agent_name?: string;
+}
+
+interface ToolCallState {
+  tool_id: string;
+  tool_name: string;
+  agent_name: string | null;
+  params: Record<string, any>;
 }
 
 interface UseExperimentalChatStreamOptions {
@@ -28,6 +35,8 @@ export function useExperimentalChatStream(options: UseExperimentalChatStreamOpti
   const [currentAgent, setCurrentAgent] = useState<string | null>(null);
   const [status, setStatus] = useState<{ status: string; message: string } | null>(null);
   const [toolExecutions, setToolExecutions] = useState<ToolExecution[]>([]);
+  const [thinkingText, setThinkingText] = useState('');
+  const [activeToolCalls, setActiveToolCalls] = useState<ToolCallState[]>([]);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const sendMessage = useCallback(
@@ -38,6 +47,8 @@ export function useExperimentalChatStream(options: UseExperimentalChatStreamOpti
       setCurrentAgent(null);
       setStatus(null);
       setToolExecutions([]);
+      setThinkingText('');
+      setActiveToolCalls([]);
 
       // Create abort controller for cancellation
       abortControllerRef.current = new AbortController();
@@ -56,17 +67,12 @@ export function useExperimentalChatStream(options: UseExperimentalChatStreamOpti
         const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
         const streamUrl = `${API_BASE_URL}/chat-experimental/stream`;
 
-        console.log('[Experimental Stream] Initiating stream request to:', streamUrl);
-        console.log('[Experimental Stream] Request:', request);
-
         const response = await fetch(streamUrl, {
           method: 'POST',
           headers,
           body: JSON.stringify(request),
           signal: abortControllerRef.current.signal,
         });
-
-        console.log('[Experimental Stream] Response status:', response.status);
 
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
@@ -75,25 +81,19 @@ export function useExperimentalChatStream(options: UseExperimentalChatStreamOpti
         const reader = response.body?.getReader();
         const decoder = new TextDecoder();
 
-        console.log('[Experimental Stream] Starting to read stream...');
-
         if (!reader) {
           throw new Error('Response body is not readable');
         }
 
         let buffer = '';
-        let chunkCount = 0;
         let stepCounter = 0;
 
         while (true) {
           const { done, value } = await reader.read();
 
           if (done) {
-            console.log('[Experimental Stream] Stream ended. Total chunks received:', chunkCount);
             break;
           }
-
-          chunkCount++;
           // Decode chunk and add to buffer
           const decoded = decoder.decode(value, { stream: true });
           buffer += decoded;
@@ -111,7 +111,6 @@ export function useExperimentalChatStream(options: UseExperimentalChatStreamOpti
 
               try {
                 const update: StreamUpdate = JSON.parse(data);
-                console.log('[Experimental Stream] Received update:', update.type, update.data);
 
                 switch (update.type) {
                   case 'status':
@@ -123,7 +122,6 @@ export function useExperimentalChatStream(options: UseExperimentalChatStreamOpti
                   case 'agent':
                     const agentData = update.data as { agent_name: string };
                     const agentName = agentData.agent_name;
-                    console.log('[Experimental Stream] Agent transition:', agentName);
                     setCurrentAgent(agentName);
                     
                     // Add agent step
@@ -143,13 +141,50 @@ export function useExperimentalChatStream(options: UseExperimentalChatStreamOpti
                     stepCounter++;
                     break;
 
+                  case 'thinking':
+                    const thinkingDelta = update.data.delta;
+                    setThinkingText((prev) => prev + thinkingDelta);
+                    break;
+
+                  case 'tool_call_start':
+                    const toolCallStart = update.data;
+                    setActiveToolCalls((prev) => [
+                      ...prev,
+                      {
+                        tool_id: toolCallStart.tool_id,
+                        tool_name: toolCallStart.tool_name,
+                        agent_name: toolCallStart.agent_name,
+                        params: {},
+                      },
+                    ]);
+                    break;
+
+                  case 'tool_call_param':
+                    const paramUpdate = update.data;
+                    setActiveToolCalls((prev) =>
+                      prev.map((call) =>
+                        call.tool_id === paramUpdate.tool_id
+                          ? {
+                              ...call,
+                              params: {
+                                ...call.params,
+                                [paramUpdate.param_name]: paramUpdate.param_value,
+                              },
+                            }
+                          : call
+                      )
+                    );
+                    break;
+
                   case 'tool_call':
                     const toolCallData = update.data as {
                       tool_name: string;
                       tool_kwargs: any;
                       agent_name?: string;
                     };
-                    console.log('[Experimental Stream] Tool call:', toolCallData.tool_name);
+                    
+                    // Clear active tool calls (finalized)
+                    setActiveToolCalls([]);
                     
                     // Add tool execution tracking
                     setToolExecutions((prev) => [
@@ -224,7 +259,9 @@ export function useExperimentalChatStream(options: UseExperimentalChatStreamOpti
 
                   case 'content':
                     const chunk = update.data.content;
-                    console.log('[Experimental Stream] Content chunk:', chunk.length, 'chars');
+                    // Clear thinking and tool calls when final content starts
+                    setThinkingText('');
+                    setActiveToolCalls([]);
                     setCurrentContent((prev) => prev + chunk);
                     options.onContentChunk?.(chunk);
                     
@@ -238,7 +275,6 @@ export function useExperimentalChatStream(options: UseExperimentalChatStreamOpti
 
                   case 'complete':
                     const finalResponse = update.data as ChatResponse;
-                    console.log('[Experimental Stream] Complete:', finalResponse);
                     options.onComplete?.(finalResponse);
                     break;
 
@@ -286,6 +322,8 @@ export function useExperimentalChatStream(options: UseExperimentalChatStreamOpti
     currentAgent,
     status,
     toolExecutions,
+    thinkingText,
+    activeToolCalls,
   };
 }
 
