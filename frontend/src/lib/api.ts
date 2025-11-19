@@ -156,7 +156,11 @@ class ApiClient {
   }
 
   // Scraping endpoints
-  async listScrapingSources(): Promise<{ sources: any[] }> {
+  async listScrapingSources(): Promise<{ 
+    sources: any[]
+    real_sources: any[]
+    fake_sources: any[]
+  }> {
     return this.request('/scraping/sources')
   }
 

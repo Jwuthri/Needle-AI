@@ -10,7 +10,9 @@ from app.exceptions import ConfigurationError
 from app.services.scrapers import (
     BaseReviewScraper,
     CSVImporter,
+    G2Scraper,
     RedditScraper,
+    TrustpilotScraper,
     TwitterScraper,
 )
 from app.utils.logging import get_logger
@@ -37,8 +39,10 @@ class ScraperFactory:
         """Register built-in scrapers."""
         self.register_scraper(SourceTypeEnum.REDDIT, RedditScraper)
         self.register_scraper(SourceTypeEnum.TWITTER, TwitterScraper)
+        self.register_scraper(SourceTypeEnum.G2, G2Scraper)
+        self.register_scraper(SourceTypeEnum.TRUSTPILOT, TrustpilotScraper)
         self.register_scraper(SourceTypeEnum.CUSTOM_CSV, CSVImporter)
-        logger.info("Registered default scrapers: Reddit, Twitter, CSV")
+        logger.info("Registered default scrapers: Reddit, Twitter, G2, Trustpilot, CSV")
 
     def register_scraper(
         self,
@@ -96,6 +100,10 @@ class ScraperFactory:
                 cost = self.settings.reddit_review_cost
             elif source_type == SourceTypeEnum.TWITTER:
                 cost = self.settings.twitter_review_cost
+            elif source_type == SourceTypeEnum.G2:
+                cost = self.settings.g2_review_cost
+            elif source_type == SourceTypeEnum.TRUSTPILOT:
+                cost = self.settings.trustpilot_review_cost
             elif source_type == SourceTypeEnum.CUSTOM_CSV:
                 cost = self.settings.csv_review_cost
             else:

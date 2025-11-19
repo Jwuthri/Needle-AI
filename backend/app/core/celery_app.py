@@ -9,13 +9,37 @@ from app.core.config.settings import get_settings
 settings = get_settings()
 
 # Prepare broker and backend URLs
-redis_url = settings.redis_url if hasattr(settings, 'redis_url') else "redis://localhost:6379/0"
+valkey_url = settings.redis_url if hasattr(settings, 'redis_url') else "valkeys://localhost:6379/0"
+
+# Fix for macOS: rediss:// with kombu causes "Invalid argument" errors
+# We need to add SSL query parameters to the URL instead of using broker_use_ssl
+use_ssl = valkey_url.startswith("valkeys://") or valkey_url.startswith("rediss://")
+if use_ssl:
+    # Convert to redis:// and add SSL query parameters
+    valkey_url = valkey_url.replace("valkeys://", "redis://", 1).replace("rediss://", "redis://", 1)
+    # Add SSL parameters as query string
+    if "?" not in valkey_url:
+        valkey_url += "?ssl_cert_reqs=none"
+    else:
+        valkey_url += "&ssl_cert_reqs=none"
+elif valkey_url.startswith("valkey://"):
+    valkey_url = valkey_url.replace("valkey://", "redis://", 1)
+
+# Ensure proper database selection to avoid double slashes (//)
+if not any(valkey_url.endswith(f"/{i}") for i in range(16)) and "?" not in valkey_url:
+    valkey_url = valkey_url.rstrip("/") + "/0"
+elif "?" in valkey_url and "/0" not in valkey_url.split("?")[0]:
+    valkey_url = valkey_url.replace("?", "/0?")
+
+# Debug: Print cleaned URL (masking auth)
+safe_url = valkey_url.split("@")[-1] if "@" in valkey_url else valkey_url
+print(f"DEBUG: Using Celery URL: redis://***@{safe_url}")
 
 # Create celery app
 celery_app = Celery(
     "needleai",
-    broker=redis_url,
-    backend=redis_url
+    broker=valkey_url,
+    backend=valkey_url
 )
 
 # Configure celery
@@ -38,7 +62,7 @@ celery_config = {
     "broker_pool_limit": 10,
     "broker_heartbeat": 30,
     "broker_transport_options": {
-        "visibility_timeout": 3600,  # 1 hour
+        "visibility_timeout": 3600,
         "max_connections": 50,
         "socket_timeout": 30,
         "socket_connect_timeout": 30,
@@ -66,17 +90,6 @@ celery_config = {
     "task_reject_on_worker_lost": True,
     "worker_prefetch_multiplier": 1,
 }
-
-# Add SSL configuration if using rediss://
-if redis_url.startswith("rediss://"):
-    celery_config.update({
-        "broker_use_ssl": {
-            "ssl_cert_reqs": ssl.CERT_NONE,  # Skip SSL verification (or use CERT_REQUIRED with proper certs)
-        },
-        "redis_backend_use_ssl": {
-            "ssl_cert_reqs": ssl.CERT_NONE,
-        }
-    })
 
 celery_app.conf.update(celery_config)
 

@@ -295,7 +295,12 @@ export default function DataSourcesPage() {
         api.listScrapingJobs(selectedCompany || undefined),
       ])
 
-      setSources(sourcesData.sources || [])
+      // Combine real and fake sources
+      const allSources = [
+        ...(sourcesData.real_sources || []),
+        ...(sourcesData.fake_sources || [])
+      ]
+      setSources(allSources)
       setJobs(jobsData.jobs || jobsData)
     } catch (error) {
       console.error('Failed to fetch data:', error)
@@ -488,6 +493,7 @@ export default function DataSourcesPage() {
               className="bg-gray-900/50 border border-gray-800/50 rounded-xl p-6"
             >
               <h2 className="text-xl font-bold text-white mb-6">Import Data</h2>
+
               
               {/* Table Name Input */}
               <div className="mb-4">

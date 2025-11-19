@@ -107,8 +107,11 @@ async def create_scraping_job(
         await db.commit()
 
         # Determine if this is fake generation or real scraping
+        # Check config first, then fallback to name-based detection
+        source_config = source.config or {}
         is_fake_generation = (
             data.generation_mode == "fake" or
+            source_config.get("type") == "fake_generator" or
             "fake" in source.name.lower() or
             "llm" in source.name.lower()
         )
@@ -232,19 +235,38 @@ async def list_sources(
         # Get all active sources from database
         sources = await ReviewSourceRepository.list_active_sources(db)
         
+        # Group sources by type (real vs fake)
+        real_sources = []
+        fake_sources = []
+        
+        for source in sources:
+            source_dict = {
+                "id": source.id,
+                "name": source.name,
+                "source_type": source.source_type if isinstance(source.source_type, str) else source.source_type.value,
+                "description": source.description,
+                "cost_per_review": source.cost_per_review,
+                "is_active": source.is_active,
+                "config": source.config
+            }
+            
+            # Determine if fake or real based on config
+            source_config = source.config or {}
+            is_fake = (
+                source_config.get("type") == "fake_generator" or
+                "fake" in source.name.lower() or
+                "llm" in source.name.lower()
+            )
+            
+            if is_fake:
+                fake_sources.append(source_dict)
+            else:
+                real_sources.append(source_dict)
+        
         return {
-            "sources": [
-                {
-                    "id": source.id,
-                    "name": source.name,
-                    "source_type": source.source_type.value,
-                    "description": source.description,
-                    "cost_per_review": source.cost_per_review,
-                    "is_active": source.is_active,
-                    "config": source.config
-                }
-                for source in sources
-            ]
+            "sources": sources,  # All sources for backward compatibility
+            "real_sources": real_sources,
+            "fake_sources": fake_sources
         }
         
     except Exception as e:
