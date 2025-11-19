@@ -175,7 +175,7 @@ export default function DashboardPage() {
                   <span className="font-medium">Add New Company</span>
                 </button>
               </Link>
-              <Link href="/chat">
+              <Link href="/chat-experimental">
                 <button className="w-full flex items-center space-x-3 px-4 py-3 bg-gray-800/50 hover:bg-gray-800 border border-gray-700 rounded-xl text-white transition-colors">
                   <MessageSquare className="w-5 h-5" />
                   <span className="font-medium">Start Chat Session</span>

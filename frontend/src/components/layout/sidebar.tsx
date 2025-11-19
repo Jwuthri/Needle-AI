@@ -37,8 +37,8 @@ interface SidebarProps {
 
 const navItems = [
   { icon: Building2, label: 'Companies', href: '/companies' },
-  { icon: MessageSquare, label: 'Chat', href: '/chat' },
-  { icon: MessageSquare, label: 'Chat (Experimental)', href: '/chat-experimental', badge: 'NEW' },
+  // { icon: MessageSquare, label: 'Chat', href: '/chat' },
+  { icon: MessageSquare, label: 'Chat', href: '/chat-experimental', badge: 'NEW' },
   { icon: BarChart3, label: 'Analytics', href: '/analytics' },
   { icon: Database, label: 'Data Sources', href: '/data-sources' },
   { icon: Clock, label: 'Jobs', href: '/jobs' },
@@ -116,7 +116,7 @@ export function Sidebar({ conversations = [], onNewChat, onSelectSession, curren
     if (onNewChat) {
       onNewChat()
     } else {
-      router.push('/chat')
+      router.push('/chat-experimental')
     }
   }
 
@@ -142,7 +142,7 @@ export function Sidebar({ conversations = [], onNewChat, onSelectSession, curren
       
       // If deleting current session, navigate to new chat
       if (currentSessionId === sessionId) {
-        router.push('/chat')
+        router.push('/chat-experimental')
       }
     } catch (error) {
       console.error('Failed to delete session:', error)

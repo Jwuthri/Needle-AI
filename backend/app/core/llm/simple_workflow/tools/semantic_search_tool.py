@@ -11,6 +11,9 @@ logger = get_logger(__name__)
 async def semantic_search_from_sql(ctx: Context, sql_query: str, query: str, dataset_name: str) -> pd.DataFrame:
     """Perform semantic search on a dataset.
 
+    CRITICAL: ALWAYS use SELECT * in your queries - NEVER filter columns.
+    Filtering columns will break downstream analysis tools.
+
     Args:
         ctx: Context
         sql_query: SQL query to execute (use table_name from get_user_datasets)

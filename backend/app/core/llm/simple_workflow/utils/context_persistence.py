@@ -70,6 +70,10 @@ def _serialize_value(value: Any) -> Any:
     if isinstance(value, np.ndarray):
         return value.tolist()
     
+    # Handle pandas Timestamp (must come before datetime check)
+    if isinstance(value, pd.Timestamp):
+        return {"_type": "timestamp", "value": value.isoformat()}
+    
     # Handle datetime
     if isinstance(value, datetime):
         return {"_type": "datetime", "value": value.isoformat()}
@@ -126,6 +130,9 @@ def _deserialize_value(value: Any) -> Any:
         
         elif type_marker == "series":
             return pd.Series(value["data"], name=value.get("name"))
+        
+        elif type_marker == "timestamp":
+            return pd.Timestamp(value["value"])
         
         elif type_marker == "datetime":
             return datetime.fromisoformat(value["value"])

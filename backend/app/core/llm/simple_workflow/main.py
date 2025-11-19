@@ -29,6 +29,7 @@ from llama_index.core.agent.workflow import (
     ToolCall,
     ToolCallResult,
     AgentStream,
+    AgentStreamStructuredOutput
 )
 
 settings = get_settings()
@@ -109,12 +110,10 @@ class StreamingProductReviewWorkflow(Workflow):
         
         current_agent = None
         response_started = False
+        tool_call_streaming = {}  # Track streaming tool calls by tool_id
         
         # Stream events from the agent workflow
         async for event in handler.stream_events():
-            # Debug: Print event type and attributes
-            # event_attrs = [attr for attr in dir(event) if not attr.startswith('_')]
-            # print(f"\n[DEBUG] Event type: {type(event).__name__}, attrs: {event_attrs}")
             
             if isinstance(event, ToolCall):
                 print(f"🔨 Calling Tool: {event.tool_name}: With arguments: {event.tool_kwargs}")
@@ -128,24 +127,61 @@ class StreamingProductReviewWorkflow(Workflow):
                 current_agent = event.agent_name
                 print(f"\n🤖 Agent: {event.agent_name.upper()}")
             
-            # if hasattr(event, 'tool_call'):
-            #     tool_call = event.tool_call
-            #     print(f"   🔧 Tool: {tool_call.tool_name}")
-            #     if hasattr(tool_call, 'tool_kwargs'):
-            #         # Format kwargs nicely
-            #         kwargs_str = ", ".join(f"{k}={v}" for k, v in tool_call.tool_kwargs.items() if k != 'user_id')
-            #         print(f"   📝 Args: {kwargs_str}")
-            
-            # if hasattr(event, 'tool_output'):
-            #     output = event.tool_output.content if hasattr(event.tool_output, 'content') else str(event.tool_output)
-            #     # Truncate long outputs
-            #     output_str = str(output)[:200]
-            #     if len(str(output)) > 200:
-            #         output_str += "..."
-            #     print(f"   ✅ Result: {output_str}")
-            
+            if isinstance(event, AgentStream):
+                # Stream thinking deltas
+                if event.thinking_delta:
+                    print(event.thinking_delta, end="", flush=True)
+                
+                # Stream tool calls as they're being built
+                if event.tool_calls:
+                    for tool_call in event.tool_calls:
+                        tool_id = tool_call.tool_id
+                        tool_name = tool_call.tool_name
+                        tool_kwargs = tool_call.tool_kwargs
+                        
+                        # Check if this is a new tool call or an update
+                        if tool_id not in tool_call_streaming:
+                            # New tool call detected
+                            tool_call_streaming[tool_id] = {
+                                'name': tool_name,
+                                'kwargs': {},
+                                'printed_header': False
+                            }
+                        
+                        current_state = tool_call_streaming[tool_id]
+                        
+                        # Print header once when we first see the tool name
+                        if tool_name and not current_state['printed_header']:
+                            print(f"\n🔨 Tool Call: {tool_name}(", end="", flush=True)
+                            current_state['printed_header'] = True
+                        
+                        # Stream new or updated kwargs
+                        for key, value in tool_kwargs.items():
+                            if key not in current_state['kwargs'] or current_state['kwargs'][key] != value:
+                                # New or updated parameter
+                                if current_state['kwargs']:  # Add comma if not first param
+                                    print(", ", end="", flush=True)
+                                
+                                # Show the parameter as it's being built
+                                if value is None:
+                                    print(f"{key}=...", end="", flush=True)
+                                else:
+                                    print(f"{key}={repr(value)}", end="", flush=True)
+                                
+                                current_state['kwargs'][key] = value
+                
+            if isinstance(event, AgentStreamStructuredOutput):
+                print(f"\n📊 Structured Output: {event.output}", end="", flush=True)
+
             # Stream the actual response text
             if hasattr(event, 'delta'):
+                # Close any open tool call parentheses before starting response
+                if tool_call_streaming:
+                    for tool_id, state in tool_call_streaming.items():
+                        if state['printed_header']:
+                            print(")", flush=True)
+                    tool_call_streaming.clear()
+                
                 if not response_started:
                     print(f"\n   💬 Response: ", end='', flush=True)
                     response_started = True
@@ -207,7 +243,7 @@ async def main():
     # Create the agent workflow
     test_user_id = "user_33gDeY7n9vlwAzkUBRgdS1Yy4lS"
     
-    agent_workflow = create_product_review_workflow(llm, test_user_id)
+    agent_workflow = await create_product_review_workflow(llm, test_user_id)
     
     # Wrap it in our streaming workflow for better visibility
     workflow = StreamingProductReviewWorkflow(

@@ -8,7 +8,7 @@ from llama_index.core.workflow import Context
 logger = get_logger(__name__)
 
 
-async def get_user_datasets(ctx: Context, user_id: str, limit: int = 50, offset: int = 0) -> list[dict]:
+async def get_user_datasets(user_id: str, limit: int = 50, offset: int = 0, ctx: Context = None) -> list[dict]:
     """Get all the user's datasets information.
 
     Args:
@@ -27,10 +27,11 @@ async def get_user_datasets(ctx: Context, user_id: str, limit: int = 50, offset:
             # Store as dict with dataset names as keys for easy lookup
             datasets_dict = {ds.get("table_name"): ds for ds in datasets if ds.get("table_name")}
             
-            async with ctx.store.edit_state() as ctx_state:
-                if "state" not in ctx_state:
-                    ctx_state["state"] = {}
-                ctx_state["state"]["list_of_user_datasets"] = datasets_dict
+            if ctx:
+                async with ctx.store.edit_state() as ctx_state:
+                    if "state" not in ctx_state:
+                        ctx_state["state"] = {}
+                    ctx_state["state"]["list_of_user_datasets"] = datasets_dict
             
             return datasets
         except Exception as e:
@@ -41,12 +42,15 @@ async def get_user_datasets(ctx: Context, user_id: str, limit: int = 50, offset:
 async def get_dataset_data_from_sql(ctx: Context, sql_query: str, dataset_name: str) -> str:
     """Get dataset data from a SQL query.
     
+    CRITICAL: ALWAYS use SELECT * in your queries - NEVER filter columns.
+    Filtering columns will break downstream analysis tools.
+    
     IMPORTANT: You can ONLY query user dataset tables (starting with __user_).
     First call get_user_datasets to see available datasets and use the table_name field.
 
     Args:
         ctx: Context
-        sql_query: SQL query to execute (must use table_name from get_user_datasets)
+        sql_query: SQL query to execute (MUST use SELECT * and table_name from get_user_datasets)
         dataset_name: Name of the dataset (use table_name from get_user_datasets)
 
     Example:
@@ -54,16 +58,20 @@ async def get_dataset_data_from_sql(ctx: Context, sql_query: str, dataset_name: 
         datasets = await get_user_datasets(ctx)
         table_name = datasets[0]["table_name"]  # e.g., "__user_123_customer_reviews"
         
-        # Then query using the table_name
+        # Then query using SELECT * (REQUIRED!)
         data = await get_dataset_data_from_sql(
             ctx=ctx,
-            sql_query=f'SELECT id, content FROM "{table_name}" LIMIT 100',
+            sql_query=f'SELECT * FROM "{table_name}" LIMIT 100',
             dataset_name=table_name
         )
 
     Returns:
         str: Dataset data as markdown table or error message for LLM to fix
     """
+    # Validate that query uses SELECT *
+    sql_upper = sql_query.upper().strip()
+    if "SELECT" in sql_upper and "SELECT *" not in sql_upper:
+        return "ERROR: You MUST use 'SELECT *' in your query. Do NOT filter columns - this breaks downstream analysis. Example: SELECT * FROM table_name WHERE condition LIMIT 100"
     # Track SQL error retries to prevent infinite loops
     ctx_state = await ctx.store.get_state()
     sql_error_count = ctx_state.get("sql_error_count", 0)

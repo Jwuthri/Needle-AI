@@ -76,7 +76,7 @@ class SimpleWorkflowService:
             self._initialize_llm()
             
             # Create workflow with user_id pre-bound to tools
-            workflow = create_product_review_workflow(self.llm, user_id or "default_user")
+            workflow = await create_product_review_workflow(self.llm, user_id or "default_user")
             
             logger.info(f"Starting workflow for message: {request.message[:100]}")
             
@@ -109,9 +109,24 @@ class SimpleWorkflowService:
                 await ctx.store.set("conversation_history", request.conversation_history)
                 logger.info(f"Added {len(request.conversation_history)} messages to context")
             
+            # Prepend company context to the user message if company is selected
+            user_message = request.message
+            if request.company_id:
+                # Fetch company name from database
+                from app.database.repositories.company import CompanyRepository
+                from app.database.session import get_async_session
+                async with get_async_session() as company_db:
+                    company = await CompanyRepository.get_by_id(company_db, request.company_id)
+                    if company:
+                        company_name = company.name
+                        user_message = f"[Analyzing data for company: {company_name}]\n\nQuery: {request.message}"
+                        logger.info(f"Added company context to message: {company_name}")
+                    else:
+                        logger.warning(f"Company not found: {request.company_id}")
+            
             # Start workflow execution with proper context and increased max iterations
             handler = workflow.run(
-                user_msg=request.message,
+                user_msg=user_message,
                 initial_state={"user_id": user_id or "default_user"},
                 ctx=ctx,
                 max_iterations=50  # Increased from default 20 to handle SQL error retries

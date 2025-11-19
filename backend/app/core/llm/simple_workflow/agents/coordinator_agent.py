@@ -43,7 +43,13 @@ def create_coordinator_agent(llm: OpenAI, user_id: str) -> FunctionAgent:
 HANDLING RULES:
 - Time/greetings → Answer directly
 - Follow-ups referencing previous answers → Answer directly (1-2 sentences max)
-- New data questions → Delegate to specialists
+- ANY data/analysis questions → ALWAYS hand off to "data_discovery" agent
+
+CRITICAL ROUTING RULE:
+- For ANY question about data, reviews, sentiment, trends, gaps, clustering, or analysis:
+  → Hand off to "data_discovery" agent ONLY
+  → NEVER route directly to sentiment_analysis, trend_analysis, gap_analysis, clustering, or other specialists
+  → The data_discovery agent will load data and route to the correct specialist
 
 CONVERSATION HISTORY:
 - Check if question references previous context

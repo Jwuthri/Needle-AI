@@ -822,7 +822,7 @@ Generate ONLY the name, nothing else. No quotes, no explanation, just the name."
     async def get_dataset_data_from_sql(self, sql_query: str) -> pd.DataFrame:
         """
         Execute a SQL query and return the results as a pandas DataFrame.
-        Filters out __embedding__ column from results.
+        Includes __embedding__ column for semantic analysis.
         
         SECURITY: Only allows queries on user dataset tables (starting with __user_).
         
@@ -830,7 +830,7 @@ Generate ONLY the name, nothing else. No quotes, no explanation, just the name."
             sql_query: SQL query to execute (must only access __user_ tables)
             
         Returns:
-            Pandas DataFrame with query results (without __embedding__ column)
+            Pandas DataFrame with query results (includes __embedding__ column if present)
             
         Raises:
             ValueError: If query execution fails or attempts to access non-user tables
@@ -848,9 +848,7 @@ Generate ONLY the name, nothing else. No quotes, no explanation, just the name."
             # Convert to DataFrame
             if rows:
                 df = pd.DataFrame(rows, columns=result.keys())
-                # Drop __embedding__ column if it exists
-                if '__embedding__' in df.columns:
-                    df = df.drop(columns=['__embedding__'])
+                # Keep __embedding__ column for semantic analysis tools
             else:
                 df = pd.DataFrame()
             
