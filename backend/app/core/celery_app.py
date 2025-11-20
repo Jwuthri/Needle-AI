@@ -8,38 +8,39 @@ from app.core.config.settings import get_settings
 
 settings = get_settings()
 
-# Prepare broker and backend URLs
-valkey_url = settings.redis_url if hasattr(settings, 'redis_url') else "valkeys://localhost:6379/0"
+# Use Celery-specific settings if available, otherwise fall back to redis_url
+broker_url = getattr(settings, 'celery_broker_url', None) or settings.redis_url
+backend_url = getattr(settings, 'celery_result_backend', None) or settings.redis_url
 
-# Fix for macOS: rediss:// with kombu causes "Invalid argument" errors
-# We need to add SSL query parameters to the URL instead of using broker_use_ssl
-use_ssl = valkey_url.startswith("valkeys://") or valkey_url.startswith("rediss://")
-if use_ssl:
-    # Convert to redis:// and add SSL query parameters
-    valkey_url = valkey_url.replace("valkeys://", "redis://", 1).replace("rediss://", "redis://", 1)
-    # Add SSL parameters as query string
-    if "?" not in valkey_url:
-        valkey_url += "?ssl_cert_reqs=none"
-    else:
-        valkey_url += "&ssl_cert_reqs=none"
-elif valkey_url.startswith("valkey://"):
-    valkey_url = valkey_url.replace("valkey://", "redis://", 1)
+# Convert valkeys:// to rediss:// (Celery understands rediss://)
+if broker_url.startswith("valkeys://"):
+    broker_url = broker_url.replace("valkeys://", "rediss://", 1)
+elif broker_url.startswith("valkey://"):
+    broker_url = broker_url.replace("valkey://", "redis://", 1)
 
-# Ensure proper database selection to avoid double slashes (//)
-if not any(valkey_url.endswith(f"/{i}") for i in range(16)) and "?" not in valkey_url:
-    valkey_url = valkey_url.rstrip("/") + "/0"
-elif "?" in valkey_url and "/0" not in valkey_url.split("?")[0]:
-    valkey_url = valkey_url.replace("?", "/0?")
+if backend_url.startswith("valkeys://"):
+    backend_url = backend_url.replace("valkeys://", "rediss://", 1)
+elif backend_url.startswith("valkey://"):
+    backend_url = backend_url.replace("valkey://", "redis://", 1)
 
-# Debug: Print cleaned URL (masking auth)
-safe_url = valkey_url.split("@")[-1] if "@" in valkey_url else valkey_url
-print(f"DEBUG: Using Celery URL: redis://***@{safe_url}")
+# Check if SSL is needed
+use_ssl = broker_url.startswith("rediss://") or backend_url.startswith("rediss://")
+
+# Ensure proper database selection
+for url_var in ['broker_url', 'backend_url']:
+    url = locals()[url_var]
+    if not any(url.endswith(f"/{i}") for i in range(16)):
+        locals()[url_var] = url.rstrip("/") + "/0"
+
+# Debug
+safe_broker = broker_url.split("@")[-1] if "@" in broker_url else broker_url
+print(f"DEBUG: Using Celery with {broker_url.split('://')[0]}://***@{safe_broker}")
 
 # Create celery app
 celery_app = Celery(
     "needleai",
-    broker=valkey_url,
-    backend=valkey_url
+    broker=broker_url,
+    backend=backend_url
 )
 
 # Configure celery
@@ -67,13 +68,11 @@ celery_config = {
         "socket_timeout": 30,
         "socket_connect_timeout": 30,
         "socket_keepalive": True,
-        "socket_keepalive_options": {
-            1: 1,  # TCP_KEEPIDLE
-            2: 1,  # TCP_KEEPINTVL
-            3: 3,  # TCP_KEEPCNT
-        },
+        # Remove socket_keepalive_options - causes "Error 22" on macOS
         "health_check_interval": 30,
         "retry_on_timeout": True,
+        "ssl_cert_reqs": ssl.CERT_NONE if use_ssl else None,
+        "ssl_check_hostname": False if use_ssl else None,
     },
     # Result backend connection settings
     "result_backend_transport_options": {
@@ -83,6 +82,8 @@ celery_config = {
         "socket_keepalive": True,
         "health_check_interval": 30,
         "retry_on_timeout": True,
+        "ssl_cert_reqs": ssl.CERT_NONE if use_ssl else None,
+        "ssl_check_hostname": False if use_ssl else None,
     },
     # Worker settings for long-running tasks
     "worker_cancel_long_running_tasks_on_connection_loss": True,
@@ -91,5 +92,19 @@ celery_config = {
     "worker_prefetch_multiplier": 1,
 }
 
+# Add SSL configuration for rediss:// URLs
+if use_ssl:
+    print("DEBUG: Configuring SSL (CERT_NONE) for rediss:// connections")
+    celery_config["broker_use_ssl"] = {
+        "ssl_cert_reqs": ssl.CERT_NONE,
+        "ssl_check_hostname": False,
+    }
+    celery_config["redis_backend_use_ssl"] = {
+        "ssl_cert_reqs": ssl.CERT_NONE,
+        "ssl_check_hostname": False,
+    }
+
 celery_app.conf.update(celery_config)
+
+print(f"DEBUG: Celery configured - SSL in transport_options: {use_ssl}")
 

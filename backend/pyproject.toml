@@ -31,6 +31,8 @@ dependencies = [
     "websockets>=12.0",
     # Valkey for caching and session storage
     "valkey>=6.1.1",
+    # Redis for Celery (use 5.0.x for better SSL support on macOS)
+    "redis[hiredis]==5.0.8",
     # Database support (conditional)
     "asyncpg>=0.29.0",
     "psycopg2-binary>=2.9.7", # For sync operations
