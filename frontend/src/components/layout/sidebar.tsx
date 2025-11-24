@@ -17,6 +17,7 @@ import {
   Trash2,
   FileText,
   Clock,
+  Zap,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -36,14 +37,55 @@ interface SidebarProps {
 }
 
 const navItems = [
-  { icon: Building2, label: 'Companies', href: '/companies' },
-  // { icon: MessageSquare, label: 'Chat', href: '/chat' },
-  { icon: MessageSquare, label: 'Chat', href: '/chat-experimental', badge: 'NEW' },
-  { icon: BarChart3, label: 'Analytics', href: '/analytics' },
-  { icon: Database, label: 'Data Sources', href: '/data-sources' },
-  { icon: Clock, label: 'Jobs', href: '/jobs' },
-  { icon: FileText, label: 'Datasets', href: '/datasets' },
-  { icon: Coins, label: 'Credits', href: '/credits' },
+  {
+    name: 'Companies',
+    href: '/companies',
+    icon: Building2,
+    match: (pathname: string) => pathname.startsWith('/companies'),
+  },
+  {
+    name: 'Chat',
+    href: '/chat',
+    icon: MessageSquare,
+    match: (pathname: string) => pathname === '/chat' || pathname.startsWith('/chat/'),
+  },
+  {
+    name: 'Exp Chat',
+    href: '/chat-experimental',
+    icon: Zap,
+    match: (pathname: string) => pathname.startsWith('/chat-experimental'),
+    badge: 'NEW',
+  },
+  {
+    name: 'Analytics',
+    href: '/analytics',
+    icon: BarChart3,
+    match: (pathname: string) => pathname.startsWith('/analytics'),
+  },
+  {
+    name: 'Data Sources',
+    href: '/data-sources',
+    icon: Database,
+    match: (pathname: string) => pathname.startsWith('/data-sources'),
+  },
+  {
+    name: 'Jobs',
+    href: '/jobs',
+    icon: Clock,
+    match: (pathname: string) => pathname.startsWith('/jobs'),
+  },
+  {
+    name: 'Datasets',
+    href: '/datasets',
+    icon: FileText,
+    match: (pathname: string) => pathname.startsWith('/datasets'),
+  },
+  {
+    name: 'Credits',
+    href: '/credits',
+    icon: Coins,
+    match: (pathname: string) => pathname.startsWith('/credits'),
+  },
 ]
 
 export function Sidebar({ conversations = [], onNewChat, onSelectSession, currentSessionId }: SidebarProps) {
@@ -61,7 +103,7 @@ export function Sidebar({ conversations = [], onNewChat, onSelectSession, curren
   useEffect(() => {
     const fetchSessions = async () => {
       if (!isChatRoute) return
-      
+
       try {
         const token = await getToken()
         const api = createApiClient(token)
@@ -73,23 +115,23 @@ export function Sidebar({ conversations = [], onNewChat, onSelectSession, curren
     }
 
     fetchSessions()
-    
+
     // Smart polling: only poll when tab is active (every 30 seconds)
     let interval: NodeJS.Timeout | null = null
-    
+
     const startPolling = () => {
       if (!interval) {
         interval = setInterval(fetchSessions, 30000)
       }
     }
-    
+
     const stopPolling = () => {
       if (interval) {
         clearInterval(interval)
         interval = null
       }
     }
-    
+
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         fetchSessions() // Refresh immediately when tab becomes visible
@@ -98,14 +140,14 @@ export function Sidebar({ conversations = [], onNewChat, onSelectSession, curren
         stopPolling()
       }
     }
-    
+
     // Start polling if tab is already visible
     if (document.visibilityState === 'visible') {
       startPolling()
     }
-    
+
     document.addEventListener('visibilitychange', handleVisibilityChange)
-    
+
     return () => {
       stopPolling()
       document.removeEventListener('visibilitychange', handleVisibilityChange)
@@ -128,7 +170,7 @@ export function Sidebar({ conversations = [], onNewChat, onSelectSession, curren
 
   const handleDeleteSession = async (sessionId: string, event: React.MouseEvent) => {
     event.stopPropagation() // Prevent session selection
-    
+
     setDeletingSessionId(sessionId)
     setActiveMenu(null)
 
@@ -136,10 +178,10 @@ export function Sidebar({ conversations = [], onNewChat, onSelectSession, curren
       const token = await getToken()
       const api = createApiClient(token)
       await api.deleteSession(sessionId)
-      
+
       // Remove from local state
       setSessions(sessions.filter(s => s.session_id !== sessionId))
-      
+
       // If deleting current session, navigate to new chat
       if (currentSessionId === sessionId) {
         router.push('/chat-experimental')
@@ -213,17 +255,16 @@ export function Sidebar({ conversations = [], onNewChat, onSelectSession, curren
               <div
                 className={`
                   flex items-center space-x-3 px-4 py-3 rounded-lg transition-all
-                  ${
-                    isActive
-                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
-                      : 'text-gray-400 hover:text-white hover:bg-gray-800/50'
+                  ${isActive
+                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                    : 'text-gray-400 hover:text-white hover:bg-gray-800/50'
                   }
                 `}
               >
                 <Icon className="w-5 h-5 flex-shrink-0" />
                 {!isCollapsed && (
                   <span className="font-medium flex items-center gap-2">
-                    {item.label}
+                    {item.name}
                     {item.badge && (
                       <span className="px-1.5 py-0.5 text-[10px] bg-purple-500/20 text-purple-300 rounded border border-purple-500/30">
                         {item.badge}
@@ -261,7 +302,7 @@ export function Sidebar({ conversations = [], onNewChat, onSelectSession, curren
                     const isActive = currentSessionId === session.session_id
                     const isDeleting = deletingSessionId === session.session_id
                     const menuOpen = activeMenu === session.session_id
-                    
+
                     return (
                       <div key={session.session_id} className="relative">
                         <button
@@ -269,10 +310,9 @@ export function Sidebar({ conversations = [], onNewChat, onSelectSession, curren
                           disabled={isDeleting}
                           className={`
                             w-full text-left px-3 py-2 rounded-lg transition-all group
-                            ${
-                              isActive
-                                ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-400'
-                                : 'bg-gray-800/30 hover:bg-gray-800/50 text-gray-300 border border-transparent'
+                            ${isActive
+                              ? 'bg-emerald-500/20 border border-emerald-500/30 text-emerald-400'
+                              : 'bg-gray-800/30 hover:bg-gray-800/50 text-gray-300 border border-transparent'
                             }
                             ${isDeleting ? 'opacity-50 cursor-not-allowed' : ''}
                           `}
@@ -300,7 +340,7 @@ export function Sidebar({ conversations = [], onNewChat, onSelectSession, curren
                             </div>
                           </div>
                         </button>
-                        
+
                         {/* Dropdown Menu */}
                         <AnimatePresence>
                           {menuOpen && (
@@ -334,9 +374,8 @@ export function Sidebar({ conversations = [], onNewChat, onSelectSession, curren
       {/* User Profile */}
       <div className="p-4 border-t border-gray-800">
         <div
-          className={`flex items-center ${
-            isCollapsed ? 'justify-center' : 'space-x-3'
-          }`}
+          className={`flex items-center ${isCollapsed ? 'justify-center' : 'space-x-3'
+            }`}
         >
           <UserButton
             appearance={{

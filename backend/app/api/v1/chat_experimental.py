@@ -1,5 +1,5 @@
 """
-Experimental Chat endpoints using simple_workflow multi-agent system.
+Experimental Chat endpoints using LangGraph multi-agent system.
 
 This provides streaming chat with detailed agent execution visibility:
 - Tool calls and results in real-time
@@ -17,10 +17,12 @@ from app.database.repositories.chat_message import ChatMessageRepository
 from app.database.repositories.chat_session import ChatSessionRepository
 from app.database.models.chat_message import MessageRoleEnum
 from app.models.chat import ChatRequest
-from app.services.simple_workflow_service import SimpleWorkflowService
 from app.utils.logging import get_logger
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
+from langchain_core.messages import HumanMessage, AIMessage
+
+from app.core.llm.lg_workflow.graph import create_workflow
 
 logger = get_logger("chat_experimental_api")
 
@@ -64,9 +66,9 @@ async def send_message_stream_experimental(
                     user_id=user_id,
                     id=session_id,
                     extra_metadata=(
-                        {"company_id": request.company_id, "workflow_type": "simple_workflow"}
+                        {"company_id": request.company_id, "workflow_type": "lg_workflow"}
                         if request.company_id
-                        else {"workflow_type": "simple_workflow"}
+                        else {"workflow_type": "lg_workflow"}
                     ),
                 )
                 await db.commit()
@@ -79,42 +81,26 @@ async def send_message_stream_experimental(
                 for msg in reversed(messages)  # Reverse to get chronological order
             ]
             
-            # Get the last assistant message ID for parent_message_id
-            last_assistant_message_id = None
-            if messages:
-                # Find the most recent assistant message
-                for msg in messages:
-                    if msg.role == MessageRoleEnum.ASSISTANT:
-                        last_assistant_message_id = msg.id
-                        break
-            
-            # Add conversation history to request
-            if conversation_history:
-                request.conversation_history = conversation_history
-                logger.info(f"Added {len(conversation_history)} messages to conversation history")
-
-            # Save user message to database with parent_message_id
+            # Save user message to database
             user_message = await ChatMessageRepository.create(
                 db=db, 
                 session_id=session_id, 
                 content=request.message, 
                 role=MessageRoleEnum.USER,
-                parent_message_id=last_assistant_message_id  # Link to previous assistant message
             )
             await db.commit()
-            logger.info(f"Saved user message {user_message.id} to database (parent: {last_assistant_message_id})")
+            logger.info(f"Saved user message {user_message.id} to database")
             
-            # Create assistant message placeholder with parent_message_id
+            # Create assistant message placeholder
             assistant_message = await ChatMessageRepository.create(
                 db=db,
                 session_id=session_id,
                 content="",
                 role=MessageRoleEnum.ASSISTANT,
-                parent_message_id=user_message.id  # Link to user message
             )
             await db.commit()
             assistant_message_id = assistant_message.id
-            logger.info(f"[CHAT EXPERIMENTAL] Created assistant message {assistant_message_id} (parent: {user_message.id})")
+            logger.info(f"[CHAT EXPERIMENTAL] Created assistant message {assistant_message_id}")
         
         # DB session is now closed before we start streaming
 
@@ -146,34 +132,49 @@ async def send_message_stream_experimental(
             update_count = 0
 
             try:
-                # Initialize workflow service
-                workflow_service = SimpleWorkflowService()
+                # Initialize workflow
+                app = create_workflow(user_id)
+                
+                # Prepare input
+                inputs = {
+                    "messages": [HumanMessage(content=request.message)]
+                }
+                
+                # Config for checkpointing (optional, but good for history)
+                config = {"configurable": {"thread_id": session_id}}
 
-                # Process stream - workflow creates its own database sessions
-                async for update in workflow_service.process_message_stream(
-                    request=request, 
-                    user_id=user_id, 
-                    assistant_message_id=assistant_message_id, 
-                    db=None  # Service will create its own sessions
-                ):
-                    update_count += 1
+                # Stream events
+                async for event in app.astream_events(inputs, config=config, version="v1"):
+                    kind = event["event"]
+                    
+                    if kind == "on_chat_model_stream":
+                        content = event["data"]["chunk"].content
+                        if content:
+                            accumulated_content += content
+                            yield f"data: {json.dumps({'type': 'content', 'data': {'content': content}})}\n\n"
+                            
+                    elif kind == "on_tool_start":
+                        yield f"data: {json.dumps({'type': 'tool_call', 'data': {'tool': event['name'], 'input': event['data'].get('input')}})}\n\n"
+                        
+                    elif kind == "on_tool_end":
+                        yield f"data: {json.dumps({'type': 'tool_result', 'data': {'tool': event['name'], 'output': str(event['data'].get('output'))}})}\n\n"
+                        
+                    elif kind == "on_chain_start":
+                        # Could map to agent transitions if we check event['name']
+                        if event['name'] in ["DataLibrarian", "DataAnalyst", "Researcher", "Visualizer", "Reporter"]:
+                            yield f"data: {json.dumps({'type': 'agent', 'data': {'agent': event['name'], 'status': 'started'}})}\n\n"
 
-                    if update["type"] == "content":
-                        accumulated_content += update["data"]["content"]
-                        logger.debug(
-                            f"Streaming content update #{update_count}: {len(update['data']['content'])} chars"
-                        )
+                # Save final response
+                async with get_async_session() as db:
+                    await ChatMessageRepository.update(
+                        db, 
+                        assistant_message_id, 
+                        content=accumulated_content,
+                        completed_at=datetime.utcnow()
+                    )
+                    await db.commit()
 
-                    serializable_update = make_json_serializable(update)
-                    sse_data = f"data: {json.dumps(serializable_update)}\n\n"
-                    yield sse_data
-
-                    if update["type"] == "content":
-                        await asyncio.sleep(0.001)
-
-                logger.info(
-                    f"Stream completed: {update_count} updates sent, {len(accumulated_content)} chars total"
-                )
+                yield f"data: {json.dumps({'type': 'complete', 'data': {'content': accumulated_content}})}\n\n"
 
             except Exception as e:
                 logger.error(f"Stream error: {e}", exc_info=True)
@@ -195,4 +196,3 @@ async def send_message_stream_experimental(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Stream failed: {str(e)}"
         )
-
