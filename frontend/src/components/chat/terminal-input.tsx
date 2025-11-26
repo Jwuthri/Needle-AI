@@ -25,10 +25,10 @@ export function TerminalInput({ onSendMessage, disabled = false, companyId, onCo
   const [companies, setCompanies] = useState<Company[]>([])
   const [showCompanyDropdown, setShowCompanyDropdown] = useState(false)
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 })
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
-  
+
   const userEmail = user?.primaryEmailAddress?.emailAddress || 'user'
   const selectedCompany = companies.find(c => c.id === companyId)
 
@@ -68,7 +68,7 @@ export function TerminalInput({ onSendMessage, disabled = false, companyId, onCo
   // Close dropdown when clicking outside
   useEffect(() => {
     if (!showCompanyDropdown) return
-    
+
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setShowCompanyDropdown(false)
@@ -87,7 +87,7 @@ export function TerminalInput({ onSendMessage, disabled = false, companyId, onCo
     return () => clearInterval(interval)
   }, [])
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent | React.KeyboardEvent) => {
     e.preventDefault()
     if (input.trim() && !disabled) {
       setHistory((prev) => [...prev, input])
@@ -97,28 +97,46 @@ export function TerminalInput({ onSendMessage, disabled = false, companyId, onCo
     }
   }
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSubmit(e)
+      return
+    }
+
     if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      if (history.length > 0) {
-        const newIndex = historyIndex === -1 ? history.length - 1 : Math.max(0, historyIndex - 1)
-        setHistoryIndex(newIndex)
-        setInput(history[newIndex])
-      }
-    } else if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      if (historyIndex !== -1) {
-        const newIndex = Math.min(history.length - 1, historyIndex + 1)
-        if (newIndex === history.length - 1 && historyIndex === history.length - 1) {
-          setHistoryIndex(-1)
-          setInput('')
-        } else {
+      if (inputRef.current && inputRef.current.selectionStart === 0 && inputRef.current.selectionEnd === 0) {
+        e.preventDefault()
+        if (history.length > 0) {
+          const newIndex = historyIndex === -1 ? history.length - 1 : Math.max(0, historyIndex - 1)
           setHistoryIndex(newIndex)
           setInput(history[newIndex])
         }
       }
+    } else if (e.key === 'ArrowDown') {
+      if (inputRef.current && inputRef.current.selectionStart === input.length && inputRef.current.selectionEnd === input.length) {
+        e.preventDefault()
+        if (historyIndex !== -1) {
+          const newIndex = Math.min(history.length - 1, historyIndex + 1)
+          if (newIndex === history.length - 1 && historyIndex === history.length - 1) {
+            setHistoryIndex(-1)
+            setInput('')
+          } else {
+            setHistoryIndex(newIndex)
+            setInput(history[newIndex])
+          }
+        }
+      }
     }
   }
+
+  // Auto-resize textarea
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto'
+      inputRef.current.style.height = inputRef.current.scrollHeight + 'px'
+    }
+  }, [input])
 
   return (
     <form onSubmit={handleSubmit} className="w-full">
@@ -133,7 +151,7 @@ export function TerminalInput({ onSendMessage, disabled = false, companyId, onCo
               {userEmail.split('@')[0]} ~ $
             </span>
           </div>
-          
+
           {/* Company Selector */}
           <div className="relative" ref={dropdownRef}>
             <button
@@ -152,10 +170,10 @@ export function TerminalInput({ onSendMessage, disabled = false, companyId, onCo
               <span className="text-white/90 group-hover:text-white font-medium truncate max-w-[120px]">
                 {selectedCompany ? selectedCompany.name : 'Company'}
               </span>
-              <svg 
+              <svg
                 className={`w-3 h-3 text-gray-400 transition-transform ${showCompanyDropdown ? 'rotate-180' : ''}`}
-                fill="none" 
-                stroke="currentColor" 
+                fill="none"
+                stroke="currentColor"
                 viewBox="0 0 24 24"
               >
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -164,23 +182,23 @@ export function TerminalInput({ onSendMessage, disabled = false, companyId, onCo
           </div>
         </div>
 
-        <div 
-          className="flex items-center cursor-text"
+        <div
+          className="flex items-end cursor-text"
           onClick={() => inputRef.current?.focus()}
         >
-          <input
+          <textarea
             ref={inputRef}
-            type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             disabled={disabled}
             placeholder="Type your query..."
-            className="flex-1 px-4 py-4 bg-transparent text-white placeholder-gray-500 focus:outline-none font-mono disabled:opacity-50 disabled:cursor-not-allowed cursor-text"
+            rows={1}
+            className="flex-1 px-4 py-4 bg-transparent text-white placeholder-gray-500 focus:outline-none font-mono disabled:opacity-50 disabled:cursor-not-allowed cursor-text resize-none overflow-hidden"
             maxLength={1000}
           />
           {!disabled && input && showCursor && (
-            <span className="text-emerald-400 font-mono animate-pulse">▋</span>
+            <span className="text-emerald-400 font-mono animate-pulse mb-4">▋</span>
           )}
 
           <motion.button
@@ -203,6 +221,10 @@ export function TerminalInput({ onSendMessage, disabled = false, companyId, onCo
             <span>history</span>
           </span>
           <span className="flex items-center gap-1.5">
+            <kbd className="px-1.5 py-0.5 bg-gray-800/50 border border-gray-700/50 rounded text-gray-400">Shift + Enter</kbd>
+            <span>new line</span>
+          </span>
+          <span className="flex items-center gap-1.5">
             <kbd className="px-1.5 py-0.5 bg-gray-800/50 border border-gray-700/50 rounded text-gray-400">Enter</kbd>
             <span>send</span>
           </span>
@@ -216,11 +238,11 @@ export function TerminalInput({ onSendMessage, disabled = false, companyId, onCo
       {typeof window !== 'undefined' && showCompanyDropdown && createPortal(
         <>
           {/* Backdrop */}
-          <div 
+          <div
             className="fixed inset-0 z-[9998]"
             onClick={() => setShowCompanyDropdown(false)}
           />
-          
+
           {/* Dropdown */}
           <div
             ref={dropdownRef}
@@ -247,16 +269,15 @@ export function TerminalInput({ onSendMessage, disabled = false, companyId, onCo
                   }
                   setShowCompanyDropdown(false)
                 }}
-                className={`w-full text-left px-3 py-2 rounded text-sm flex items-center justify-between transition-colors ${
-                  !companyId ? 'bg-emerald-500/20 text-emerald-400' : 'text-gray-300 hover:bg-gray-800'
-                }`}
+                className={`w-full text-left px-3 py-2 rounded text-sm flex items-center justify-between transition-colors ${!companyId ? 'bg-emerald-500/20 text-emerald-400' : 'text-gray-300 hover:bg-gray-800'
+                  }`}
               >
                 <span>No company</span>
                 {!companyId && <Check className="w-4 h-4" />}
               </button>
-              
+
               {companies.length > 0 && <div className="my-1 h-px bg-gray-800" />}
-              
+
               {/* Companies */}
               {companies.map((company) => (
                 <button
@@ -271,9 +292,8 @@ export function TerminalInput({ onSendMessage, disabled = false, companyId, onCo
                     }
                     setShowCompanyDropdown(false)
                   }}
-                  className={`w-full text-left px-3 py-2 rounded text-sm flex items-center justify-between transition-colors ${
-                    companyId === company.id ? 'bg-emerald-500/20 text-emerald-400' : 'text-gray-300 hover:bg-gray-800'
-                  }`}
+                  className={`w-full text-left px-3 py-2 rounded text-sm flex items-center justify-between transition-colors ${companyId === company.id ? 'bg-emerald-500/20 text-emerald-400' : 'text-gray-300 hover:bg-gray-800'
+                    }`}
                 >
                   <span className="truncate">{company.name}</span>
                   {companyId === company.id && <Check className="w-4 h-4 flex-shrink-0" />}
