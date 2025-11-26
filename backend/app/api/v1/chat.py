@@ -473,7 +473,7 @@ async def list_sessions(
                     })
                 
                 # Add steps to metadata
-                metadata = msg.metadata if isinstance(msg.metadata, dict) else {}
+                metadata = msg.extra_metadata if isinstance(msg.extra_metadata, dict) else {}
                 if formatted_steps:
                     metadata['agent_steps'] = formatted_steps
                 
@@ -580,7 +580,7 @@ async def get_session(
                 })
             
             # Add steps to metadata
-            metadata = msg.metadata if isinstance(msg.metadata, dict) else {}
+            metadata = msg.extra_metadata if isinstance(msg.extra_metadata, dict) else {}
             if formatted_steps:
                 metadata['agent_steps'] = formatted_steps
             
@@ -588,9 +588,9 @@ async def get_session(
                 id=str(msg.id),
                 content=msg.content,
                 role=MessageRole(msg.role.value),
-                timestamp=msg.created_at if msg.created_at else datetime.utcnow(),
-                completed_at=msg.completed_at,  # ADD THIS LINE
-                metadata=metadata
+                timestamp=msg.created_at.isoformat() if msg.created_at else datetime.utcnow().isoformat(),
+                completed_at=msg.completed_at.isoformat() if msg.completed_at else None,
+                metadata=metadata,
             ))
         
         # Include title and company_id in metadata

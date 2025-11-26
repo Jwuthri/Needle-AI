@@ -38,6 +38,7 @@ export function useExperimentalChatStream(options: UseExperimentalChatStreamOpti
   const [thinkingText, setThinkingText] = useState('');
   const [activeToolCalls, setActiveToolCalls] = useState<ToolCallState[]>([]);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const currentContentRef = useRef<string>(''); // Track latest content value for closures
 
   const sendMessage = useCallback(
     async (request: ChatRequest, authToken?: string | null) => {
@@ -49,6 +50,7 @@ export function useExperimentalChatStream(options: UseExperimentalChatStreamOpti
       setToolExecutions([]);
       setThinkingText('');
       setActiveToolCalls([]);
+      currentContentRef.current = ''; // Clear ref
 
       // Create abort controller for cancellation
       abortControllerRef.current = new AbortController();
@@ -122,22 +124,38 @@ export function useExperimentalChatStream(options: UseExperimentalChatStreamOpti
                   case 'agent':
                     const agentData = update.data as { agent_name: string };
                     const agentName = agentData.agent_name;
-                    setCurrentAgent(agentName);
                     
-                    // Add agent step
-                    const agentStepId = `agent-${Date.now()}-${stepCounter}`;
-                    setAgentSteps((prev) => [
-                      ...prev,
-                      {
-                        step_id: agentStepId,
-                        agent_name: agentName,
-                        content: `Agent: ${agentName}`,
-                        is_structured: false,
-                        timestamp: new Date().toISOString(),
-                        status: 'active',
-                        step_order: stepCounter,
-                      },
-                    ]);
+                    // Save the latest content from ref before clearing
+                    const savedContent = currentContentRef.current;
+                    
+                    // When a new agent starts, save currentContent to the previous active step
+                    // and clear currentContent for the new agent
+                    setAgentSteps((prev) => {
+                      // Mark previous active steps as completed and save their content
+                      const completedPrev = prev.map(s => {
+                        if (s.status === 'active' && savedContent && !s.is_structured) {
+                          return { ...s, status: 'completed' as const, content: savedContent };
+                        }
+                        return s.status === 'active' ? { ...s, status: 'completed' as const } : s;
+                      });
+                      
+                      return [
+                        ...completedPrev,
+                        {
+                          step_id: `agent-${Date.now()}-${stepCounter}`,
+                          agent_name: agentName,
+                          content: '', // Will be filled as content streams
+                          is_structured: false,
+                          timestamp: new Date().toISOString(),
+                          status: 'active',
+                          step_order: stepCounter,
+                        },
+                      ];
+                    });
+                    
+                    setCurrentAgent(agentName);
+                    setCurrentContent(''); // Clear content for new agent
+                    currentContentRef.current = ''; // Clear ref
                     stepCounter++;
                     break;
 
@@ -237,19 +255,31 @@ export function useExperimentalChatStream(options: UseExperimentalChatStreamOpti
                       )
                     );
 
-                    // Update the last step with output and status
+                    // Update the last active tool step with output and status
                     setAgentSteps((prev) => {
-                      const lastStep = prev[prev.length - 1];
-                      if (lastStep && lastStep.content?.tool_name === toolResultData.tool_name) {
-                        return prev.slice(0, -1).concat({
-                          ...lastStep,
+                      // Find the last step that is active and matches the tool name
+                      // We search from the end because it's likely the most recent one
+                      let foundIndex = -1;
+                      for (let i = prev.length - 1; i >= 0; i--) {
+                        const step = prev[i];
+                        if (step.status === 'active' && step.content?.tool_name === toolResultData.tool_name) {
+                          foundIndex = i;
+                          break;
+                        }
+                      }
+
+                      if (foundIndex !== -1) {
+                        const newSteps = [...prev];
+                        newSteps[foundIndex] = {
+                          ...newSteps[foundIndex],
                           status: resultStatus,
                           content: {
-                            ...lastStep.content,
+                            ...newSteps[foundIndex].content,
                             type: 'tool_result'
                           },
-                          raw_output: toolResultData.raw_output  // Use raw_output from backend
-                        });
+                          raw_output: toolResultData.raw_output
+                        };
+                        return newSteps;
                       }
                       return prev;
                     });
@@ -259,22 +289,51 @@ export function useExperimentalChatStream(options: UseExperimentalChatStreamOpti
 
                   case 'content':
                     const chunk = update.data.content;
-                    // Clear thinking and tool calls when final content starts
+                    // Clear thinking and tool calls when content starts
                     setThinkingText('');
                     setActiveToolCalls([]);
-                    setCurrentContent((prev) => prev + chunk);
-                    options.onContentChunk?.(chunk);
                     
-                    // Mark all steps as completed when content starts streaming
-                    setAgentSteps((prev) =>
-                      prev.map((step) =>
-                        step.status === 'active' ? { ...step, status: 'completed' } : step
-                      )
-                    );
+                    // Accumulate content in both state and ref
+                    setCurrentContent((prev) => {
+                      const newContent = prev + chunk;
+                      currentContentRef.current = newContent; // Update ref
+                      
+                      // Update the active step's content in real-time
+                      setAgentSteps((prevSteps) => {
+                        const activeIndex = prevSteps.findIndex(s => s.status === 'active');
+                        if (activeIndex !== -1 && !prevSteps[activeIndex].is_structured) {
+                          const newSteps = [...prevSteps];
+                          newSteps[activeIndex] = {
+                            ...newSteps[activeIndex],
+                            content: newContent
+                          };
+                          return newSteps;
+                        }
+                        return prevSteps;
+                      });
+                      
+                      return newContent;
+                    });
+                    
+                    options.onContentChunk?.(chunk);
                     break;
 
                   case 'complete':
                     const finalResponse = update.data as ChatResponse;
+                    
+                    // Save the latest content from ref
+                    const finalContent = currentContentRef.current;
+                    
+                    // Before completing, save any remaining currentContent to the active step
+                    setAgentSteps((prev) => 
+                      prev.map((step) => {
+                        if (step.status === 'active' && finalContent && !step.is_structured) {
+                          return { ...step, status: 'completed' as const, content: finalContent };
+                        }
+                        return step.status === 'active' ? { ...step, status: 'completed' as const } : step;
+                      })
+                    );
+                    
                     options.onComplete?.(finalResponse);
                     break;
 

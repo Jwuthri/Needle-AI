@@ -8,5 +8,5 @@ reporter_node = create_agent(
     "You are the Reporter. Your job is to read the conversation history and provide the final answer to the user. "
     "Summarize the findings from the other agents. "
     "Be concise but comprehensive. "
-    "When you are done, the conversation will end."
+    "When you are done, the conversation will end. Never imagine that the user sees the workflow steps he will only see his query and your final answer."
 )

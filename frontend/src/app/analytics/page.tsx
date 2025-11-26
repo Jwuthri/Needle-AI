@@ -53,27 +53,27 @@ const BoxPlot = ({ x, y, width, height, data }: any) => {
   const boxWidth = Math.min(width * 0.6, 40)
   const centerX = x + width / 2
   const scale = height / 5 // Scale for 0-5 rating range
-  
+
   const minY = y + height - (data.min * scale)
   const q1Y = y + height - (data.q1 * scale)
   const medianY = y + height - (data.median * scale)
   const q3Y = y + height - (data.q3 * scale)
   const maxY = y + height - (data.max * scale)
   const meanY = y + height - (data.mean * scale)
-  
+
   return (
     <g>
       {/* Whiskers */}
       <line x1={centerX} y1={minY} x2={centerX} y2={q1Y} stroke="#9ca3af" strokeWidth={2} />
       <line x1={centerX} y1={q3Y} x2={centerX} y2={maxY} stroke="#9ca3af" strokeWidth={2} />
-      
+
       {/* Min/Max caps */}
-      <line x1={centerX - boxWidth/4} y1={minY} x2={centerX + boxWidth/4} y2={minY} stroke="#9ca3af" strokeWidth={2} />
-      <line x1={centerX - boxWidth/4} y1={maxY} x2={centerX + boxWidth/4} y2={maxY} stroke="#9ca3af" strokeWidth={2} />
-      
+      <line x1={centerX - boxWidth / 4} y1={minY} x2={centerX + boxWidth / 4} y2={minY} stroke="#9ca3af" strokeWidth={2} />
+      <line x1={centerX - boxWidth / 4} y1={maxY} x2={centerX + boxWidth / 4} y2={maxY} stroke="#9ca3af" strokeWidth={2} />
+
       {/* Box (IQR) */}
       <rect
-        x={centerX - boxWidth/2}
+        x={centerX - boxWidth / 2}
         y={q3Y}
         width={boxWidth}
         height={q1Y - q3Y}
@@ -82,30 +82,30 @@ const BoxPlot = ({ x, y, width, height, data }: any) => {
         stroke="#3b82f6"
         strokeWidth={2}
       />
-      
+
       {/* Median line */}
-      <line 
-        x1={centerX - boxWidth/2} 
-        y1={medianY} 
-        x2={centerX + boxWidth/2} 
-        y2={medianY} 
-        stroke="#fff" 
+      <line
+        x1={centerX - boxWidth / 2}
+        y1={medianY}
+        x2={centerX + boxWidth / 2}
+        y2={medianY}
+        stroke="#fff"
         strokeWidth={3}
       />
-      
+
       {/* Mean point */}
       <circle cx={centerX} cy={meanY} r={4} fill="#10b981" stroke="#fff" strokeWidth={2} />
-      
+
       {/* Outliers */}
       {data.outliers && data.outliers.map((outlier: number, idx: number) => {
         const outlierY = y + height - (outlier * scale)
         return (
-          <circle 
-            key={idx} 
-            cx={centerX} 
-            cy={outlierY} 
-            r={3} 
-            fill="#ef4444" 
+          <circle
+            key={idx}
+            cx={centerX}
+            cy={outlierY}
+            r={3}
+            fill="#ef4444"
             fillOpacity={0.6}
           />
         )
@@ -138,10 +138,10 @@ export default function AnalyticsPage() {
       }
 
       // Only show full loading when company/source changes
-      const isCompanyOrSourceChange = !analytics || 
+      const isCompanyOrSourceChange = !analytics ||
         analytics.company_name !== selectedCompany ||
         analytics.filtered_source !== selectedSource
-      
+
       if (isCompanyOrSourceChange) {
         setLoading(true)
       } else {
@@ -153,8 +153,8 @@ export default function AnalyticsPage() {
         const token = await getToken()
         const api = createApiClient(token)
         const data = await api.getUserReviewsStats(
-          selectedCompany, 
-          selectedSource || undefined, 
+          selectedCompany,
+          selectedSource || undefined,
           timePeriod
         )
         setAnalytics(data)
@@ -183,9 +183,9 @@ export default function AnalyticsPage() {
   // Calculate rating stats
   const avgRating = analytics?.rating_distribution.length
     ? (
-        analytics.rating_distribution.reduce((sum, item) => sum + item.rating * item.count, 0) /
-        analytics.rating_distribution.reduce((sum, item) => sum + item.count, 0)
-      ).toFixed(1)
+      analytics.rating_distribution.reduce((sum, item) => sum + item.rating * item.count, 0) /
+      analytics.rating_distribution.reduce((sum, item) => sum + item.count, 0)
+    ).toFixed(1)
     : '0.0'
 
   // Calculate sentiment stats from rating
@@ -230,7 +230,7 @@ export default function AnalyticsPage() {
         <div className="mb-8">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl">
             <div>
-              <label className="text-sm text-white/60 mb-2 block">Company</label>
+              {/* <label className="text-sm text-white/60 mb-2 block">Company</label> */}
               <CompanySelector
                 value={selectedCompany}
                 onChange={setSelectedCompany}
@@ -238,20 +238,30 @@ export default function AnalyticsPage() {
               />
             </div>
             <div>
-              <label className="text-sm text-white/60 mb-2 block">Filter by Source (Optional)</label>
-              <select
-                value={selectedSource || ''}
-                onChange={(e) => setSelectedSource(e.target.value || null)}
-                className="w-full px-4 py-2 bg-gray-900/50 border border-gray-800 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                disabled={!analytics}
-              >
-                <option value="">All Sources</option>
-                {analytics?.source_distribution.map((source) => (
-                  <option key={source.source} value={source.source}>
-                    {source.source} ({source.count})
-                  </option>
-                ))}
-              </select>
+              {/* <label className="text-sm text-white/60 mb-2 block">Filter by Source (Optional)</label> */}
+              <div className="relative">
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 flex-shrink-0 w-10 h-10 rounded-lg bg-emerald-500/10 ring-1 ring-emerald-500/30 flex items-center justify-center pointer-events-none">
+                  <BarChart3 className="w-5 h-5 text-emerald-400" />
+                </div>
+                <select
+                  value={selectedSource || ''}
+                  onChange={(e) => setSelectedSource(e.target.value || null)}
+                  className="w-full h-16 pl-[4.25rem] pr-12 bg-gray-800/80 hover:bg-gray-800 border border-gray-700/50 hover:border-emerald-500/50 rounded-xl text-white/90 hover:text-white font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed appearance-none"
+                  disabled={!analytics}
+                >
+                  <option value="">All Sources</option>
+                  {analytics?.source_distribution.map((source) => (
+                    <option key={source.source} value={source.source}>
+                      {source.source} ({source.count})
+                    </option>
+                  ))}
+                </select>
+                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
+                  <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -318,12 +328,12 @@ export default function AnalyticsPage() {
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={analytics.rating_distribution}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                    <XAxis 
-                      dataKey="rating" 
+                    <XAxis
+                      dataKey="rating"
                       stroke="#9ca3af"
                       label={{ value: 'Rating (Stars)', position: 'insideBottom', offset: -5, fill: '#9ca3af' }}
                     />
-                    <YAxis 
+                    <YAxis
                       stroke="#9ca3af"
                       label={{ value: 'Count', angle: -90, position: 'insideLeft', fill: '#9ca3af' }}
                     />
@@ -392,11 +402,10 @@ export default function AnalyticsPage() {
                             key={period}
                             onClick={() => setTimePeriod(period)}
                             disabled={trendLoading}
-                            className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-                              timePeriod === period
-                                ? 'bg-emerald-500 text-white'
-                                : 'text-white/60 hover:text-white'
-                            } ${trendLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            className={`px-3 py-1 rounded text-sm font-medium transition-colors ${timePeriod === period
+                              ? 'bg-emerald-500 text-white'
+                              : 'text-white/60 hover:text-white'
+                              } ${trendLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
                           >
                             {period.charAt(0).toUpperCase() + period.slice(1)}
                           </button>
@@ -416,17 +425,17 @@ export default function AnalyticsPage() {
                     <ResponsiveContainer width="100%" height={300}>
                       <LineChart data={analytics.sentiment_trend}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                        <XAxis 
-                          dataKey="date" 
+                        <XAxis
+                          dataKey="date"
                           stroke="#9ca3af"
-                          label={{ 
-                            value: timePeriod === 'day' ? 'Day' : timePeriod === 'week' ? 'Week' : timePeriod === 'month' ? 'Month' : 'Year', 
-                            position: 'insideBottom', 
-                            offset: -5, 
-                            fill: '#9ca3af' 
+                          label={{
+                            value: timePeriod === 'day' ? 'Day' : timePeriod === 'week' ? 'Week' : timePeriod === 'month' ? 'Month' : 'Year',
+                            position: 'insideBottom',
+                            offset: -5,
+                            fill: '#9ca3af'
                           }}
                         />
-                        <YAxis 
+                        <YAxis
                           stroke="#9ca3af"
                           domain={[-1, 1]}
                           label={{ value: 'Sentiment Score', angle: -90, position: 'insideLeft', fill: '#9ca3af' }}
@@ -436,10 +445,10 @@ export default function AnalyticsPage() {
                           labelStyle={{ color: '#fff' }}
                         />
                         <Legend />
-                        <Line 
-                          type="monotone" 
-                          dataKey="sentiment" 
-                          stroke="#10b981" 
+                        <Line
+                          type="monotone"
+                          dataKey="sentiment"
+                          stroke="#10b981"
                           strokeWidth={2}
                           dot={{ fill: '#10b981', r: 4 }}
                           activeDot={{ r: 6 }}
@@ -481,20 +490,20 @@ export default function AnalyticsPage() {
                     </div>
                   </div>
                   <ResponsiveContainer width="100%" height={300}>
-                    <BarChart 
+                    <BarChart
                       data={analytics.avg_rating_by_source}
                       margin={{ top: 20, right: 30, left: 20, bottom: 80 }}
                     >
                       <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                      <XAxis 
-                        dataKey="source" 
+                      <XAxis
+                        dataKey="source"
                         stroke="#9ca3af"
                         angle={-45}
                         textAnchor="end"
                         height={100}
                       />
-                      <YAxis 
-                        domain={[0, 5]} 
+                      <YAxis
+                        domain={[0, 5]}
                         stroke="#9ca3af"
                         label={{ value: 'Rating', angle: -90, position: 'insideLeft', fill: '#9ca3af' }}
                       />
@@ -522,8 +531,8 @@ export default function AnalyticsPage() {
                           return null
                         }}
                       />
-                      <Bar 
-                        dataKey="median" 
+                      <Bar
+                        dataKey="median"
                         shape={(props: any) => <BoxPlot {...props} data={props.payload} />}
                       />
                     </BarChart>

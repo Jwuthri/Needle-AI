@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Clock, CheckCircle, XCircle, Loader2, AlertCircle, Filter, RefreshCw } from 'lucide-react'
+import { Clock, CheckCircle, XCircle, Loader2, AlertCircle, RefreshCw } from 'lucide-react'
 import { useAuth } from '@clerk/nextjs'
 import { useJobPolling } from '@/hooks/use-job-polling'
 import { CompanySelector } from '@/components/ui/company-selector'
@@ -12,11 +12,10 @@ export default function JobsPage() {
   const router = useRouter()
   const { isLoaded, isSignedIn } = useAuth()
   const [selectedCompany, setSelectedCompany] = useState<string | null>(null)
-  const [filterMode, setFilterMode] = useState<'all' | 'company'>('all')
-  
+
   // Use job polling hook
   const { jobs, loading, error, refetch } = useJobPolling({
-    companyId: filterMode === 'company' ? selectedCompany || undefined : undefined,
+    companyId: selectedCompany || undefined,
     enabled: isSignedIn && isLoaded,
   })
 
@@ -75,13 +74,13 @@ export default function JobsPage() {
     const start = new Date(startedAt).getTime()
     const end = completedAt ? new Date(completedAt).getTime() : Date.now()
     const durationMs = end - start
-    
+
     // Handle negative durations (timezone issues or job hasn't truly started)
     if (durationMs < 0) return '0s'
-    
+
     const seconds = Math.floor(durationMs / 1000)
     const minutes = Math.floor(seconds / 60)
-    
+
     if (minutes > 0) {
       return `${minutes}m ${seconds % 60}s`
     }
@@ -99,52 +98,24 @@ export default function JobsPage() {
 
         {/* Filters */}
         <div className="mb-6 flex flex-col sm:flex-row gap-4">
-          {/* Filter Mode Toggle */}
-          <div className="flex gap-2">
-            <button
-              onClick={() => setFilterMode('all')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
-                filterMode === 'all'
-                  ? 'bg-emerald-500/20 border-2 border-emerald-500 text-emerald-400'
-                  : 'bg-gray-800 border-2 border-gray-700 text-gray-400 hover:border-gray-600'
-              }`}
-            >
-              <Filter className="w-4 h-4" />
-              <span className="font-medium">All Jobs</span>
-            </button>
-            <button
-              onClick={() => setFilterMode('company')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
-                filterMode === 'company'
-                  ? 'bg-emerald-500/20 border-2 border-emerald-500 text-emerald-400'
-                  : 'bg-gray-800 border-2 border-gray-700 text-gray-400 hover:border-gray-600'
-              }`}
-            >
-              <Filter className="w-4 h-4" />
-              <span className="font-medium">By Company</span>
-            </button>
+          {/* Company Selector */}
+          <div className="flex-1 max-w-md">
+            <CompanySelector
+              value={selectedCompany}
+              onChange={setSelectedCompany}
+              placeholder="Select a company..."
+            />
           </div>
 
-          {/* Company Selector (shown when filter mode is 'company') */}
-          {filterMode === 'company' && (
-            <div className="flex-1 max-w-md">
-              <CompanySelector
-                value={selectedCompany}
-                onChange={setSelectedCompany}
-                placeholder="Select a company..."
-              />
-            </div>
-          )}
-
           {/* Refresh Button */}
-          <button
+          {/* <button
             onClick={() => refetch()}
             disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed h-16"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             <span>Refresh</span>
-          </button>
+          </button> */}
         </div>
 
         {/* Error State */}
@@ -172,9 +143,9 @@ export default function JobsPage() {
             <Clock className="w-16 h-16 text-gray-600 mb-4" />
             <h3 className="text-xl font-semibold text-white mb-2">No Jobs Found</h3>
             <p className="text-white/60 text-center max-w-md">
-              {filterMode === 'company' && !selectedCompany
-                ? 'Select a company to view its jobs'
-                : 'No jobs have been created yet. Start by creating a new job from the data sources page.'}
+              {!selectedCompany
+                ? 'Select a company to view its jobs, or view all jobs by selecting "All Companies"'
+                : 'No jobs have been created yet for this company. Start by creating a new job from the data sources page.'}
             </p>
             <button
               onClick={() => router.push('/data-sources')}
@@ -232,13 +203,12 @@ export default function JobsPage() {
                       initial={{ width: 0 }}
                       animate={{ width: `${job.progress_percentage}%` }}
                       transition={{ duration: 0.5 }}
-                      className={`h-full transition-all duration-300 ${
-                        job.status === 'completed'
-                          ? 'bg-gradient-to-r from-green-500 to-emerald-500'
-                          : job.status === 'failed'
+                      className={`h-full transition-all duration-300 ${job.status === 'completed'
+                        ? 'bg-gradient-to-r from-green-500 to-emerald-500'
+                        : job.status === 'failed'
                           ? 'bg-red-500'
                           : 'bg-gradient-to-r from-blue-500 to-cyan-500'
-                      }`}
+                        }`}
                     />
                   </div>
                 </div>

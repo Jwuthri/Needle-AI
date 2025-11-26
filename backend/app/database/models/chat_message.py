@@ -30,7 +30,7 @@ class ChatMessage(Base):
 
     # Message content
     content = Column(Text, nullable=False)
-    role = Column(SQLEnum(MessageRoleEnum), nullable=False)
+    role = Column(SQLEnum(MessageRoleEnum, name="messageroleEnum"), nullable=False)
 
     # Message metadata
     model_name = Column(String(100), nullable=True)  # Model that generated this message (for assistant messages)

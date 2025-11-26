@@ -29,12 +29,12 @@ const highlightKeywords = (text: string) => {
       const regex = new RegExp(`\\b(${word})\\b`, 'gi')
       let match
       while ((match = regex.exec(text)) !== null) {
-        const color = 
+        const color =
           category === 'actions' ? 'text-blue-400' :
-          category === 'entities' ? 'text-emerald-400' :
-          category === 'methods' ? 'text-purple-400' :
-          'text-yellow-400'
-        
+            category === 'entities' ? 'text-emerald-400' :
+              category === 'methods' ? 'text-purple-400' :
+                'text-yellow-400'
+
         highlights.push({
           text: match[0],
           color,
@@ -113,6 +113,7 @@ const parseInlineMarkdown = (text: string): (string | JSX.Element)[] => {
 
 // Format assistant responses with structure
 const formatAssistantContent = (content: string) => {
+  if (!content) return []
   const lines = content.split('\n')
   const sections: JSX.Element[] = []
   let currentSection: string[] = []
@@ -135,7 +136,7 @@ const formatAssistantContent = (content: string) => {
       const tableLines = currentTable.filter(l => !l.match(/^\s*\|[\s-:|]+\|\s*$/)) // Remove separator lines
       if (tableLines.length > 0) {
         const headers = tableLines[0].split('|').map(h => h.trim()).filter(h => h)
-        const rows = tableLines.slice(1).map(row => 
+        const rows = tableLines.slice(1).map(row =>
           row.split('|').map(c => c.trim()).filter(c => c)
         ).filter(row => row.length > 0)
 
@@ -172,19 +173,19 @@ const formatAssistantContent = (content: string) => {
 
   lines.forEach((line, idx) => {
     const trimmedLine = line.trim()
-    
+
     // Detect markdown images: ![alt text](url)
     const imageMatch = trimmedLine.match(/!\[([^\]]*)\]\(([^)]+)\)/)
     if (imageMatch) {
       flushSection()
       const altText = imageMatch[1]
       const imagePath = imageMatch[2]
-      
+
       // Convert local file path to API endpoint
       // Note: NEXT_PUBLIC_API_URL may or may not include /api/v1
       const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
       const apiBase = baseUrl.endsWith('/api/v1') ? baseUrl : `${baseUrl}/api/v1`
-      
+
       let imageUrl = imagePath
       if (imagePath.startsWith('/Users/') || imagePath.startsWith('/app/')) {
         // Extract filename from full path
@@ -199,11 +200,11 @@ const formatAssistantContent = (content: string) => {
         const filename = imagePath.split('/').pop()
         imageUrl = `${apiBase}/graphs/${filename}`
       }
-      
+
       sections.push(
         <div key={`image-${idx}`} className="my-4 rounded-lg overflow-hidden border border-gray-700/30 bg-gray-900/30">
-          <img 
-            src={imageUrl} 
+          <img
+            src={imageUrl}
             alt={altText}
             className="w-full h-auto"
             onError={(e) => {
@@ -220,19 +221,19 @@ const formatAssistantContent = (content: string) => {
       )
       return
     }
-    
+
     // Detect markdown table rows
     if (trimmedLine.startsWith('|') && trimmedLine.endsWith('|')) {
       flushSection()
       currentTable.push(trimmedLine)
       return
     }
-    
+
     // If we were building a table and hit non-table line, flush it
     if (currentTable.length > 0) {
       flushTable()
     }
-    
+
     // Detect horizontal rules (----, ****, ____) - CHECK BEFORE bullets
     if (/^(\-{3,}|\*{3,}|_{3,})$/.test(trimmedLine)) {
       flushSection()
@@ -241,7 +242,7 @@ const formatAssistantContent = (content: string) => {
       )
       return
     }
-    
+
     // Detect underline-style headers (check if next line is === or ---)
     if (idx < lines.length - 1) {
       const nextLine = lines[idx + 1].trim()
@@ -266,25 +267,25 @@ const formatAssistantContent = (content: string) => {
         return
       }
     }
-    
+
     // Detect bullet points (markdown or unicode) - CHECK THIS AFTER horizontal rules
     if (trimmedLine.startsWith('-') || trimmedLine.startsWith('•') || trimmedLine.startsWith('*')) {
       // Make sure it's actually a bullet with content, not a horizontal rule
       const bulletMatch = trimmedLine.match(/^[-•*]\s+(.+)/)
       if (bulletMatch) {
         flushSection()
-        
+
         // Calculate indentation level (spaces before the bullet)
         const leadingSpaces = line.search(/\S/)
         const indentLevel = Math.floor(leadingSpaces / 2) // 2 spaces = 1 indent level
         const marginLeft = indentLevel > 0 ? `${indentLevel * 1.5}rem` : '0'
-        
+
         // Get content after the bullet
         let content = bulletMatch[1]
-        
+
         // If content ends with :, remove it (it's a bullet header, not a real header)
         if (content.endsWith(':')) content = content.slice(0, -1)
-        
+
         sections.push(
           <div key={`bullet-${idx}`} className="flex items-start mb-2" style={{ marginLeft }}>
             <span className="text-emerald-400 mr-2 flex-shrink-0">•</span>
@@ -297,13 +298,13 @@ const formatAssistantContent = (content: string) => {
     // Detect markdown headers (##, ###, etc.)
     else if (trimmedLine.startsWith('#')) {
       flushSection()
-      
+
       // Count # symbols to determine header level
       const headerMatch = trimmedLine.match(/^(#{1,6})\s+(.+)/)
       if (headerMatch) {
         const level = headerMatch[1].length
         const headerText = headerMatch[2]
-        
+
         // Different styling based on header level
         if (level === 1) {
           // H1: Most prominent with gradient and border
@@ -432,22 +433,22 @@ export function EnhancedMessage({ message, onQuestionClick }: EnhancedMessagePro
 
         <div className="flex-1">
           {/* Main Response */}
-          <div className={`rounded-2xl p-6 ${
-            message.error
-              ? 'bg-red-500/10 border border-red-500/30'
-              : 'bg-gray-800/50 border border-gray-700/50'
-          }`}>
+          <div className={`rounded-2xl p-6 ${message.error
+            ? 'bg-red-500/10 border border-red-500/30'
+            : 'bg-gray-800/50 border border-gray-700/50'
+            }`}>
             {/* Summary if first line is short and not a markdown header */}
-            {!message.error && 
-             !message.content.split('\n')[0].trim().startsWith('#') && 
-             message.content.split('\n')[0].length < 100 && 
-             message.content.split('\n')[0].length > 0 && (
-              <div className="mb-4 pb-4 border-b border-gray-700/30">
-                <p className="text-white/60 text-sm">
-                  {message.content.split('\n')[0]}
-                </p>
-              </div>
-            )}
+            {!message.error &&
+              message.content &&
+              !message.content.split('\n')[0].trim().startsWith('#') &&
+              message.content.split('\n')[0].length < 100 &&
+              message.content.split('\n')[0].length > 0 && (
+                <div className="mb-4 pb-4 border-b border-gray-700/30">
+                  <p className="text-white/60 text-sm">
+                    {message.content.split('\n')[0]}
+                  </p>
+                </div>
+              )}
 
             {/* Formatted content */}
             <div className="space-y-4">
@@ -492,11 +493,10 @@ export function EnhancedMessage({ message, onQuestionClick }: EnhancedMessagePro
                           <span className="text-white/90 text-sm font-medium">{source.author}</span>
                           <span className="text-white/30">•</span>
                           <span className="text-white/50 text-xs">{source.source}</span>
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                            source.sentiment > 0.5 ? 'bg-green-500/10 text-green-400' :
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${source.sentiment > 0.5 ? 'bg-green-500/10 text-green-400' :
                             source.sentiment < -0.5 ? 'bg-red-500/10 text-red-400' :
-                            'bg-yellow-500/10 text-yellow-400'
-                          }`}>
+                              'bg-yellow-500/10 text-yellow-400'
+                            }`}>
                             {getSentimentLabel(source.sentiment)}
                           </span>
                         </div>
@@ -569,7 +569,7 @@ export function EnhancedMessage({ message, onQuestionClick }: EnhancedMessagePro
                   <Copy className="w-4 h-4" />
                 </button>
               </div>
-              
+
               {/* Execution Time */}
               {(() => {
                 console.log('Message timing data:', {
@@ -578,13 +578,13 @@ export function EnhancedMessage({ message, onQuestionClick }: EnhancedMessagePro
                   completed_at: message.completed_at,
                   role: message.role
                 })
-                
+
                 if (message.completed_at && message.timestamp) {
                   const completedMs = new Date(message.completed_at).getTime()
                   const createdMs = new Date(message.timestamp).getTime()
                   const executionTimeMs = completedMs - createdMs
                   const executionTimeSec = (executionTimeMs / 1000).toFixed(2)
-                  
+
                   return (
                     <div className="flex items-center space-x-1">
                       <div className="w-1.5 h-1.5 rounded-full bg-emerald-400"></div>
