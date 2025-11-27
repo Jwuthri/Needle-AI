@@ -42,7 +42,7 @@ export interface AgentStep {
   content: any; // BaseModel dict or string
   is_structured: boolean;
   timestamp: string;
-  status?: 'active' | 'completed' | 'error';
+  status?: 'started' | 'active' | 'completed' | 'error';
   step_order?: number; // Step number in the execution sequence
   raw_output?: string; // Raw unprocessed output from agent
 }
@@ -97,9 +97,10 @@ export interface ChatRequest {
 
 export interface ChatResponse {
   message: string;
-  session_id: string;
-  message_id: string;
-  timestamp: string;
+  content?: string; // Alternative to message (some endpoints use this)
+  session_id?: string;
+  message_id?: string;
+  timestamp?: string;
   completed_at?: string;
   metadata?: Record<string, any>;
   query_type?: string;

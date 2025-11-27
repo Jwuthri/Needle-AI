@@ -132,6 +132,7 @@ async def send_message_stream_experimental(
             update_count = 0
             current_agent = None
             agent_steps = []  # Track agent execution steps
+            seen_agents = set()  # Track which agents we've already created boxes for
             
             try:
                 # Initialize workflow
@@ -161,20 +162,26 @@ async def send_message_stream_experimental(
                     kind = event.get("event")
                     name = event.get("name", "")
                     
-                    # Track agent transitions
+                    # Track agent transitions - NEVER create duplicate boxes for same agent
                     if kind == "on_chain_start":
                         if name in ["DataLibrarian", "DataAnalyst", "Researcher", "Visualizer", "Reporter"]:
-                            if current_agent != name:
+                            # Only emit agent event if we haven't seen this agent yet
+                            if name not in seen_agents:
+                                seen_agents.add(name)
                                 current_agent = name
-                                # Add to agent_steps
+                                # Add to agent_steps for persistence
                                 agent_steps.append({
                                     "step_id": f"step_{len(agent_steps)}",
                                     "agent_name": name,
-                                    "status": "started",
+                                    "status": "active",
                                     "content": "",
+                                    "is_structured": False,
                                     "timestamp": datetime.utcnow().isoformat()
                                 })
                                 yield f"data: {json.dumps({'type': 'agent', 'data': {'agent_name': name, 'status': 'started'}})}\n\n"
+                            else:
+                                # Just update current tracking without emitting new event
+                                current_agent = name
                     
                     # Stream content chunks from LLM
                     elif kind == "on_chat_model_stream":
@@ -182,27 +189,19 @@ async def send_message_stream_experimental(
                         if chunk and hasattr(chunk, 'content') and chunk.content:
                             content = chunk.content
                             
-                            # Filter out routing decisions - be precise to avoid removing spaces/formatting
+                            # Filter out routing decisions
                             import re
-                            # Only match exact JSON patterns: {"next":"AgentName"} or {'next':'AgentName'}
                             content = re.sub(r'\{\s*["\']next["\']\s*:\s*["\'][^"\']*["\']\s*\}', '', content)
                             
-                            if content:  # Only send if there's content after filtering
+                            if content:
                                 accumulated_content += content
-                                # Add to current agent step content
-                                if agent_steps and agent_steps[-1].get("agent_name") == current_agent:
-                                    if isinstance(agent_steps[-1].get("content"), str):
-                                        agent_steps[-1]["content"] += content
-                                    else:
-                                        # Last step was structured (tool), but we got text.
-                                        # Create a new text step for the same agent.
-                                        agent_steps.append({
-                                            "step_id": f"step_{len(agent_steps)}",
-                                            "agent_name": current_agent,
-                                            "status": "active",
-                                            "content": content,
-                                            "timestamp": datetime.utcnow().isoformat()
-                                        })
+                                # Update the current agent's step content
+                                for step in reversed(agent_steps):
+                                    if step.get("agent_name") == current_agent and not step.get("is_structured"):
+                                        if isinstance(step.get("content"), str):
+                                            step["content"] += content
+                                        break
+                                
                                 yield f"data: {json.dumps({'type': 'content', 'data': {'content': content}})}\n\n"
                     
                     # Tool execution tracking
@@ -210,79 +209,91 @@ async def send_message_stream_experimental(
                         tool_name = event.get("name", "")
                         tool_input = event.get("data", {}).get("input", {})
                         
+                        # Serialize tool input properly
+                        serializable_input = make_json_serializable(tool_input)
+                        
                         # Add a structured step for the tool call
                         agent_steps.append({
                             "step_id": f"step_{len(agent_steps)}",
-                            "agent_name": current_agent or tool_name, # Use current agent context
+                            "agent_name": current_agent or "workflow",
                             "status": "active",
-                            "content": {"tool_name": tool_name, "tool_kwargs": tool_input},
+                            "content": {"tool_name": tool_name, "tool_kwargs": serializable_input},
                             "is_structured": True,
                             "timestamp": datetime.utcnow().isoformat()
                         })
                         
-                        yield f"data: {json.dumps({'type': 'tool_call', 'data': {'tool': tool_name, 'input': tool_input}})}\n\n"
+                        yield f"data: {json.dumps({'type': 'tool_call', 'data': {'tool': tool_name, 'input': serializable_input}})}\n\n"
                         
                     elif kind == "on_tool_end":
                         tool_name = event.get("name", "")
                         tool_output = event.get("data", {}).get("output")
+                        output_str = str(tool_output) if tool_output else ""
                         
-                        # Update the last step (which should be the tool call)
-                        if agent_steps and agent_steps[-1].get("is_structured"):
-                            agent_steps[-1]["raw_output"] = str(tool_output)
-                            agent_steps[-1]["status"] = "completed"
+                        # Find and update the matching tool step
+                        for step in reversed(agent_steps):
+                            if step.get("is_structured") and step.get("status") == "active":
+                                if step.get("content", {}).get("tool_name") == tool_name:
+                                    step["raw_output"] = output_str
+                                    step["status"] = "completed"
+                                    break
                         
-                        yield f"data: {json.dumps({'type': 'tool_result', 'data': {'tool': tool_name, 'output': str(tool_output)}})}\n\n"
+                        yield f"data: {json.dumps({'type': 'tool_result', 'data': {'tool': tool_name, 'output': output_str}})}\n\n"
 
-                # Mark all steps as completed
+                import re
+                
+                # Mark all steps as completed and clean up content
                 for step in agent_steps:
-                    if step.get("status") == "started" or step.get("status") == "active":
+                    if step.get("status") in ("started", "active"):
                         step["status"] = "completed"
                     
-                    # CLEANUP: Remove routing JSON from step content that might have been missed during streaming
+                    # Clean routing JSON from text content
                     if step.get("content") and isinstance(step.get("content"), str):
-                        import re
-                        step["content"] = re.sub(r'\{\s*["\']next["\']\s*:\s*["\'][^"\']*["\']\s*\}', '', step["content"])
+                        step["content"] = re.sub(r'\{\s*["\']next["\']\s*:\s*["\'][^"\']*["\']\s*\}', '', step["content"]).strip()
                 
-                # Use only the last agent's content as the main message content to avoid duplication of history
-                # because accumulated_content contains everything
+                # Get Reporter's content as the final answer (prioritize Reporter)
                 final_content = ""
-                if agent_steps:
-                    # Find the last agent that actually produced content (and is text, not structured)
-                    for step in reversed(agent_steps):
+                reporter_step = None
+                for step in reversed(agent_steps):
+                    if step.get("agent_name", "").upper() == "REPORTER":
                         content = step.get("content")
                         if content and isinstance(content, str) and content.strip():
                             final_content = content
+                            reporter_step = step
                             break
-                    
-                    # Clean up routing JSON from final content too just in case
-                    import re
-                    final_content = re.sub(r'\{\s*["\']next["\']\s*:\s*["\'][^"\']*["\']\s*\}', '', final_content).strip()
                 
-                # Fallback to accumulated if steps failed for some reason
+                # Fallback to last text content if no Reporter
+                if not final_content:
+                    for step in reversed(agent_steps):
+                        content = step.get("content")
+                        if content and isinstance(content, str) and content.strip() and not step.get("is_structured"):
+                            final_content = content
+                            break
+                
+                # Final fallback to accumulated content
                 if not final_content and accumulated_content:
-                     final_content = re.sub(r'\{\s*["\']next["\']\s*:\s*["\'][^"\']*["\']\s*\}', '', accumulated_content).strip()
+                    final_content = re.sub(r'\{\s*["\']next["\']\s*:\s*["\'][^"\']*["\']\s*\}', '', accumulated_content).strip()
 
                 logger.info(f"Saving {len(agent_steps)} agent steps to message {assistant_message_id}")
-                logger.debug(f"Agent steps data: {agent_steps}")
                 
                 # Save final response with agent_steps in extra_metadata
+                completed_at = datetime.utcnow()
                 async with get_async_session() as db:
                     updated_msg = await ChatMessageRepository.update(
                         db, 
                         assistant_message_id, 
                         content=final_content,
-                        completed_at=datetime.utcnow(),
+                        completed_at=completed_at,
                         extra_metadata={"agent_steps": agent_steps}
                     )
                     await db.commit()
                     
-                    # Verify it was saved
                     if updated_msg:
-                        logger.info(f"Message updated. extra_metadata: {updated_msg.extra_metadata}")
+                        logger.info(f"Message updated successfully")
                     else:
                         logger.error(f"Failed to update message {assistant_message_id}")
 
-                yield f"data: {json.dumps({'type': 'complete', 'data': {'content': final_content}})}\n\n"
+                # Send complete event with full response structure
+                yield f"data: {json.dumps({'type': 'complete', 'data': {'message_id': str(assistant_message_id), 'message': final_content, 'timestamp': datetime.utcnow().isoformat(), 'completed_at': completed_at.isoformat(), 'metadata': {'agent_steps': agent_steps}}})}\n\n"
 
             except Exception as e:
                 logger.error(f"Stream error: {e}", exc_info=True)

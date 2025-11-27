@@ -47,17 +47,17 @@ export function WorkflowSteps({ steps, currentContent, expanded = true }: Workfl
 
   // Filter out REPORTER and steps with no meaningful content
   const meaningfulSteps = steps.filter(step => {
-    // Filter out REPORTER agent - it should only appear in answer area
-    // if (step.agent_name?.toUpperCase() === 'REPORTER') {
-    //   return false
-    // }
+    // Filter out REPORTER agent - it should only appear in answer area, not workflow
+    if (step.agent_name?.toUpperCase() === 'REPORTER') {
+      return false
+    }
     
     // Always show active steps (they're processing)
     if (step.status === 'active' || step.status === 'started') {
       return true
     }
     
-    // Show structured steps (tool calls)
+    // Show structured steps (tool calls) that have content
     if (step.is_structured && step.content) {
       return true
     }

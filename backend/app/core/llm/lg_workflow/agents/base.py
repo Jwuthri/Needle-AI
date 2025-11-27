@@ -6,8 +6,14 @@ from app.core.config.settings import get_settings
 # Initialize settings and LLM
 settings = get_settings()
 llm = ChatOpenAI(
+    model="gpt-5.1", 
+    temperature=0.1, 
+    api_key=settings.openai_api_key,
+    streaming=True  # Enable streaming for token-by-token output
+)
+cheap_llm = ChatOpenAI(
     model="gpt-4o-mini", 
-    temperature=0, 
+    temperature=0.1, 
     api_key=settings.openai_api_key,
     streaming=True  # Enable streaming for token-by-token output
 )

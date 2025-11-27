@@ -71,22 +71,32 @@ export function ExperimentalChatView({
     activeToolCalls,
   } = useExperimentalChatStream({
     onComplete: (response) => {
-      // Keep all steps including REPORTER for completed messages
-      const formattedSteps = currentAgentStepsRef.current.map((step) => ({
-        step_id: step.step_id,
-        agent_name: step.agent_name,
-        content: step.content,
-        is_structured: step.is_structured,
-        step_order: step.step_order,
-        status: step.status || 'completed' as const,
-        timestamp: step.timestamp,
-      }))
+      // Use steps from the hook (already tracked during streaming)
+      // Filter out empty steps and format them
+      const formattedSteps = currentAgentStepsRef.current
+        .filter(step => {
+          // Keep structured steps (tool calls)
+          if (step.is_structured && step.content) return true
+          // Keep text steps with actual content
+          if (step.content && typeof step.content === 'string' && step.content.trim()) return true
+          return false
+        })
+        .map((step, index) => ({
+          step_id: step.step_id || `step-${index}`,
+          agent_name: step.agent_name,
+          content: step.content,
+          is_structured: step.is_structured || false,
+          step_order: step.step_order ?? index,
+          status: 'completed' as const,
+          timestamp: step.timestamp,
+          raw_output: step.raw_output,
+        }))
 
       const newMessage: EnhancedChatMessage = {
-        id: response.message_id,
-        content: response.message,
+        id: response.message_id || Date.now().toString(),
+        content: response.message || response.content || '',
         role: 'assistant',
-        timestamp: response.timestamp,
+        timestamp: response.timestamp || new Date().toISOString(),
         completed_at: response.completed_at,
         metadata: response.metadata,
         agent_steps: formattedSteps,
@@ -94,15 +104,6 @@ export function ExperimentalChatView({
 
       setMessages((prev) => [...prev, newMessage])
       setIsLoading(false)
-
-      // Don't auto-expand execution steps - let user choose
-      // if (formattedSteps.length > 0) {
-      //   setExpandedSteps((prev) => {
-      //     const next = new Set(prev)
-      //     next.add(response.message_id)
-      //     return next
-      //   })
-      // }
     },
     onError: (error) => {
       console.error('Streaming error:', error)
@@ -264,12 +265,16 @@ export function ExperimentalChatView({
           {/* Messages - ALWAYS show if there are messages, even during loading */}
           {messages.length > 0 ? (
             <div className="space-y-6">
-              {messages.map((message) => (
-                <div key={message.id} className="space-y-3">
-                  {/* Show execution steps above assistant messages - WorkflowSteps filters REPORTER */}
-                  {message.role === 'assistant' &&
-                    message.agent_steps &&
-                    message.agent_steps.length > 0 && (
+              {messages.map((message) => {
+                // Filter out REPORTER steps for workflow display (count only non-REPORTER)
+                const workflowSteps = message.agent_steps?.filter(
+                  s => s.agent_name?.toUpperCase() !== 'REPORTER'
+                ) || []
+                
+                return (
+                  <div key={message.id} className="space-y-3">
+                    {/* Show execution steps above assistant messages - WorkflowSteps filters REPORTER */}
+                    {message.role === 'assistant' && workflowSteps.length > 0 && (
                       <div className="bg-gradient-to-br from-purple-900/30 via-gray-900/50 to-blue-900/30 border border-purple-500/40 rounded-xl overflow-hidden">
                         <button
                           onClick={() => {
@@ -289,7 +294,7 @@ export function ExperimentalChatView({
                             <div className="flex items-center space-x-3">
                               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500/30 to-blue-500/30 flex items-center justify-center border border-purple-400/40">
                                 <span className="text-sm font-bold text-purple-300">
-                                  {message.agent_steps.length}
+                                  {workflowSteps.length}
                                 </span>
                               </div>
                               <span className="text-white font-semibold">
@@ -298,7 +303,7 @@ export function ExperimentalChatView({
                             </div>
                             <div className="flex items-center space-x-2">
                               <span className="text-xs text-purple-300/70 font-mono">
-                                {message.agent_steps.length} steps
+                                {workflowSteps.length} steps
                               </span>
                               {expandedSteps.has(message.id) ? (
                                 <ChevronUp className="w-5 h-5 text-white/60" />
@@ -309,7 +314,7 @@ export function ExperimentalChatView({
                           </div>
                         </button>
 
-                        {/* Pass all steps including REPORTER */}
+                        {/* WorkflowSteps filters out REPORTER internally */}
                         <WorkflowSteps 
                           steps={message.agent_steps as any[]} 
                           expanded={expandedSteps.has(message.id)} 
@@ -317,10 +322,11 @@ export function ExperimentalChatView({
                       </div>
                     )}
 
-                  {/* Message */}
-                  <EnhancedMessage message={message} onQuestionClick={handleSendMessage} />
-                </div>
-              ))}
+                    {/* Message */}
+                    <EnhancedMessage message={message} onQuestionClick={handleSendMessage} />
+                  </div>
+                )
+              })}
             </div>
           ) : null}
 
@@ -331,8 +337,15 @@ export function ExperimentalChatView({
               animate={{ opacity: 1, y: 0 }}
               className="space-y-3"
             >
-              {/* Workflow Pipeline - Show whenever we have steps */}
-              {agentSteps.length > 0 && (
+              {/* Workflow Pipeline - Show whenever we have non-REPORTER steps */}
+              {(() => {
+                // Filter out REPORTER for display count (it shows in answer area)
+                const workflowSteps = agentSteps.filter(s => s.agent_name?.toUpperCase() !== 'REPORTER')
+                if (workflowSteps.length === 0) return null
+                
+                const completedCount = workflowSteps.filter(s => s.status === 'completed').length
+                
+                return (
                   <div className="bg-gradient-to-br from-purple-900/30 via-gray-900/50 to-blue-900/30 border border-purple-500/40 rounded-xl overflow-hidden">
                     <button
                       onClick={() => setStreamingStepsExpanded(!streamingStepsExpanded)}
@@ -345,14 +358,11 @@ export function ExperimentalChatView({
                         <div className="text-left">
                           <div className="text-sm font-medium text-white">Workflow Execution</div>
                           <div className="text-xs text-gray-400">
-                            {agentSteps.filter((s) => s.status === 'completed').length} / {agentSteps.length} steps
+                            {completedCount} / {workflowSteps.length} steps completed
                           </div>
                         </div>
                       </div>
                       <div className="flex items-center space-x-2">
-                        <span className="text-xs text-purple-400 font-medium">
-                          {agentSteps.length} steps
-                        </span>
                         {streamingStepsExpanded ? (
                           <ChevronUp className="w-4 h-4 text-gray-400" />
                         ) : (
@@ -361,14 +371,15 @@ export function ExperimentalChatView({
                       </div>
                     </button>
 
-                    {/* Pass all steps including REPORTER */}
+                    {/* WorkflowSteps filters out REPORTER internally */}
                     <WorkflowSteps 
                       steps={agentSteps as any[]} 
                       currentContent={currentContent}
                       expanded={streamingStepsExpanded} 
                     />
                   </div>
-                )}
+                )
+              })()}
 
               {/* Thinking text streaming */}
               {thinkingText && (
@@ -427,16 +438,17 @@ export function ExperimentalChatView({
                 // Show content in answer box when REPORTER is active
                 const currentAgentIsReporter = currentAgent?.toUpperCase() === 'REPORTER'
                 
-                // Find REPORTER step if it exists
-                const reporterStep = agentSteps.find(s => s.agent_name.toUpperCase() === 'REPORTER')
+                // Find REPORTER step if it exists and has text content
+                const reporterStep = agentSteps.find(s => 
+                  s.agent_name?.toUpperCase() === 'REPORTER' && 
+                  typeof s.content === 'string' && 
+                  s.content.trim()
+                )
                 
-                // Get string content only (not structured tool calls)
-                const reporterContent = reporterStep && typeof reporterStep.content === 'string' 
-                  ? reporterStep.content 
-                  : ''
-                
-                // Show if REPORTER is active with streaming content, or if REPORTER step exists with saved content
-                const contentToShow = currentAgentIsReporter ? currentContent : reporterContent
+                // Show Reporter content: use currentContent when Reporter is active, otherwise use saved step content
+                const contentToShow = currentAgentIsReporter 
+                  ? currentContent 
+                  : (reporterStep?.content as string || '')
                 
                 if (contentToShow) {
                   return (
@@ -448,7 +460,9 @@ export function ExperimentalChatView({
                         <div className="flex-1 min-w-0 max-w-full overflow-hidden">
                           <div className="text-white/90">
                             <MarkdownRenderer content={contentToShow} />
-                            {currentAgentIsReporter && <span className="inline-block w-2 h-4 bg-purple-400 ml-1 animate-pulse"></span>}
+                            {currentAgentIsReporter && isStreaming && (
+                              <span className="inline-block w-2 h-4 bg-purple-400 ml-1 animate-pulse"></span>
+                            )}
                           </div>
                         </div>
                       </div>

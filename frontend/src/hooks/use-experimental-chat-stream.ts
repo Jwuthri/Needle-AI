@@ -38,7 +38,9 @@ export function useExperimentalChatStream(options: UseExperimentalChatStreamOpti
   const [thinkingText, setThinkingText] = useState('');
   const [activeToolCalls, setActiveToolCalls] = useState<ToolCallState[]>([]);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const currentContentRef = useRef<string>(''); // Track latest content value for closures
+  const currentContentRef = useRef<string>('');
+  const seenAgentsRef = useRef<Set<string>>(new Set()); // Track agents we've seen to prevent duplicates
+  const currentAgentRef = useRef<string | null>(null); // Track current agent for tool attribution
 
   const sendMessage = useCallback(
     async (request: ChatRequest, authToken?: string | null) => {
@@ -50,7 +52,9 @@ export function useExperimentalChatStream(options: UseExperimentalChatStreamOpti
       setToolExecutions([]);
       setThinkingText('');
       setActiveToolCalls([]);
-      currentContentRef.current = ''; // Clear ref
+      currentContentRef.current = '';
+      seenAgentsRef.current = new Set(); // Reset seen agents for new message
+      currentAgentRef.current = null;
 
       // Create abort controller for cancellation
       abortControllerRef.current = new AbortController();
@@ -60,12 +64,10 @@ export function useExperimentalChatStream(options: UseExperimentalChatStreamOpti
           'Content-Type': 'application/json',
         };
 
-        // Add auth token if provided
         if (authToken) {
           headers['Authorization'] = `Bearer ${authToken}`;
         }
 
-        // Construct full URL for experimental endpoint
         const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
         const streamUrl = `${API_BASE_URL}/chat-experimental/stream`;
 
@@ -96,13 +98,12 @@ export function useExperimentalChatStream(options: UseExperimentalChatStreamOpti
           if (done) {
             break;
           }
-          // Decode chunk and add to buffer
+
           const decoded = decoder.decode(value, { stream: true });
           buffer += decoded;
 
-          // Process complete SSE messages
           const lines = buffer.split('\n');
-          buffer = lines.pop() || ''; // Keep incomplete line in buffer
+          buffer = lines.pop() || '';
 
           for (const line of lines) {
             if (line.startsWith('data: ')) {
@@ -122,40 +123,55 @@ export function useExperimentalChatStream(options: UseExperimentalChatStreamOpti
                     break;
 
                   case 'agent':
-                    const agentData = update.data as { agent_name: string };
+                    const agentData = update.data as { agent_name: string; status?: string };
                     const agentName = agentData.agent_name;
                     
-                    // Save the latest content from ref before clearing
+                    // Skip if we've already seen this agent (prevent duplicates)
+                    if (seenAgentsRef.current.has(agentName)) {
+                      // Just update current agent tracking without creating new step
+                      currentAgentRef.current = agentName;
+                      setCurrentAgent(agentName);
+                      break;
+                    }
+                    
+                    // Mark this agent as seen
+                    seenAgentsRef.current.add(agentName);
+                    
+                    // Save current content to previous active step before switching
                     const savedContent = currentContentRef.current;
                     
-                    // When a new agent starts, save currentContent to the previous active step
-                    // and clear currentContent for the new agent
                     setAgentSteps((prev) => {
-                      // Mark previous active steps as completed and save their content
+                      // Mark previous active text steps as completed with their content
                       const completedPrev = prev.map(s => {
-                        if (s.status === 'active' && savedContent && !s.is_structured) {
-                          return { ...s, status: 'completed' as const, content: savedContent };
+                        if (s.status === 'active' && !s.is_structured) {
+                          return { 
+                            ...s, 
+                            status: 'completed' as const, 
+                            content: s.content || savedContent || ''
+                          };
                         }
-                        return s.status === 'active' ? { ...s, status: 'completed' as const } : s;
+                        return s;
                       });
                       
+                      // Create new step for this agent
                       return [
                         ...completedPrev,
                         {
-                          step_id: `agent-${Date.now()}-${stepCounter}`,
+                          step_id: `agent-${agentName}-${Date.now()}`,
                           agent_name: agentName,
-                          content: '', // Will be filled as content streams
+                          content: '',
                           is_structured: false,
                           timestamp: new Date().toISOString(),
-                          status: 'active',
+                          status: 'active' as const,
                           step_order: stepCounter,
                         },
                       ];
                     });
                     
+                    currentAgentRef.current = agentName;
                     setCurrentAgent(agentName);
-                    setCurrentContent(''); // Clear content for new agent
-                    currentContentRef.current = ''; // Clear ref
+                    setCurrentContent('');
+                    currentContentRef.current = '';
                     stepCounter++;
                     break;
 
@@ -196,40 +212,38 @@ export function useExperimentalChatStream(options: UseExperimentalChatStreamOpti
 
                   case 'tool_call':
                     const toolCallData = update.data as {
-                      tool_name: string;
-                      tool_kwargs: any;
-                      agent_name?: string;
+                      tool: string;
+                      input: any;
                     };
                     
-                    // Clear active tool calls (finalized)
                     setActiveToolCalls([]);
                     
-                    // Add tool execution tracking
+                    const toolAgent = currentAgentRef.current || 'workflow';
+                    
                     setToolExecutions((prev) => [
                       ...prev,
                       {
-                        tool_name: toolCallData.tool_name,
-                        tool_kwargs: toolCallData.tool_kwargs,
-                        agent_name: toolCallData.agent_name,
+                        tool_name: toolCallData.tool,
+                        tool_kwargs: toolCallData.input,
+                        agent_name: toolAgent,
                         status: 'running',
                       },
                     ]);
 
-                    // Add tool call as agent step
-                    const toolCallStepId = `tool-call-${Date.now()}-${stepCounter}`;
+                    const toolCallStepId = `tool-${toolCallData.tool}-${Date.now()}`;
                     setAgentSteps((prev) => [
                       ...prev,
                       {
                         step_id: toolCallStepId,
-                        agent_name: toolCallData.agent_name || currentAgent || 'workflow',
+                        agent_name: toolAgent,
                         content: {
-                          tool_name: toolCallData.tool_name,
-                          tool_kwargs: toolCallData.tool_kwargs,
+                          tool_name: toolCallData.tool,
+                          tool_kwargs: toolCallData.input,
                           type: 'tool_call',
                         },
                         is_structured: true,
                         timestamp: new Date().toISOString(),
-                        status: 'active',
+                        status: 'active' as const,
                         step_order: stepCounter,
                       },
                     ]);
@@ -238,81 +252,65 @@ export function useExperimentalChatStream(options: UseExperimentalChatStreamOpti
 
                   case 'tool_result':
                     const toolResultData = update.data as {
-                      tool_name: string;
-                      tool_kwargs: any;
-                      output?: any;
-                      raw_output?: string;
-                      is_error?: boolean;
+                      tool: string;
+                      output?: string;
                     };
-                    const resultStatus = toolResultData.is_error ? 'error' : 'completed';
                     
-                    // Update tool execution tracking
                     setToolExecutions((prev) =>
                       prev.map((exec) =>
-                        exec.tool_name === toolResultData.tool_name && exec.status === 'running'
-                          ? { ...exec, output: toolResultData.raw_output || toolResultData.output, status: 'completed' }
+                        exec.tool_name === toolResultData.tool && exec.status === 'running'
+                          ? { ...exec, output: toolResultData.output, status: 'completed' }
                           : exec
                       )
                     );
 
-                    // Update the last active tool step with output and status
+                    // Find and update the matching tool call step
                     setAgentSteps((prev) => {
-                      // Find the last step that is active and matches the tool name
-                      // We search from the end because it's likely the most recent one
-                      let foundIndex = -1;
-                      for (let i = prev.length - 1; i >= 0; i--) {
-                        const step = prev[i];
-                        if (step.status === 'active' && step.content?.tool_name === toolResultData.tool_name) {
-                          foundIndex = i;
+                      const newSteps = [...prev];
+                      // Search from end for the most recent matching active tool
+                      for (let i = newSteps.length - 1; i >= 0; i--) {
+                        const step = newSteps[i];
+                        if (step.is_structured && 
+                            step.status === 'active' && 
+                            step.content?.tool_name === toolResultData.tool) {
+                          newSteps[i] = {
+                            ...step,
+                            status: 'completed' as const,
+                            raw_output: toolResultData.output,
+                          };
                           break;
                         }
                       }
-
-                      if (foundIndex !== -1) {
-                        const newSteps = [...prev];
-                        newSteps[foundIndex] = {
-                          ...newSteps[foundIndex],
-                          status: resultStatus,
-                          content: {
-                            ...newSteps[foundIndex].content,
-                            type: 'tool_result'
-                          },
-                          raw_output: toolResultData.raw_output
-                        };
-                        return newSteps;
-                      }
-                      return prev;
+                      return newSteps;
                     });
-                    
-                    stepCounter++;
                     break;
 
                   case 'content':
                     const chunk = update.data.content;
-                    // Clear thinking and tool calls when content starts
                     setThinkingText('');
                     setActiveToolCalls([]);
                     
-                    // Accumulate content in both state and ref
+                    // Accumulate content
                     setCurrentContent((prev) => {
                       const newContent = prev + chunk;
-                      currentContentRef.current = newContent; // Update ref
-                      
-                      // Update the active step's content in real-time
-                      setAgentSteps((prevSteps) => {
-                        const activeIndex = prevSteps.findIndex(s => s.status === 'active');
-                        if (activeIndex !== -1 && !prevSteps[activeIndex].is_structured) {
-                          const newSteps = [...prevSteps];
-                          newSteps[activeIndex] = {
-                            ...newSteps[activeIndex],
-                            content: newContent
-                          };
-                          return newSteps;
-                        }
-                        return prevSteps;
-                      });
-                      
+                      currentContentRef.current = newContent;
                       return newContent;
+                    });
+                    
+                    // Update the current agent's active step with content
+                    setAgentSteps((prevSteps) => {
+                      const newSteps = [...prevSteps];
+                      // Find the last active non-structured step
+                      for (let i = newSteps.length - 1; i >= 0; i--) {
+                        if (newSteps[i].status === 'active' && !newSteps[i].is_structured) {
+                          newSteps[i] = {
+                            ...newSteps[i],
+                            content: currentContentRef.current
+                          };
+                          break;
+                        }
+                      }
+                      return newSteps;
                     });
                     
                     options.onContentChunk?.(chunk);
@@ -320,17 +318,18 @@ export function useExperimentalChatStream(options: UseExperimentalChatStreamOpti
 
                   case 'complete':
                     const finalResponse = update.data as ChatResponse;
-                    
-                    // Save the latest content from ref
                     const finalContent = currentContentRef.current;
                     
-                    // Before completing, save any remaining currentContent to the active step
+                    // Mark all remaining active steps as completed
                     setAgentSteps((prev) => 
                       prev.map((step) => {
-                        if (step.status === 'active' && finalContent && !step.is_structured) {
-                          return { ...step, status: 'completed' as const, content: finalContent };
+                        if (step.status === 'active') {
+                          if (!step.is_structured && finalContent) {
+                            return { ...step, status: 'completed' as const, content: step.content || finalContent };
+                          }
+                          return { ...step, status: 'completed' as const };
                         }
-                        return step.status === 'active' ? { ...step, status: 'completed' as const } : step;
+                        return step;
                       })
                     );
                     
@@ -362,7 +361,7 @@ export function useExperimentalChatStream(options: UseExperimentalChatStreamOpti
         abortControllerRef.current = null;
       }
     },
-    [options, currentAgent]
+    [options]
   );
 
   const stopStreaming = useCallback(() => {

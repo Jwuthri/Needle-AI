@@ -79,7 +79,8 @@ class DataManager:
                 return pd.DataFrame()  # Return empty DataFrame if dataset not found
             
             service = UserDatasetService(db)
-            data_result = await service.get_dataset_data(str(dataset.id), user_id, limit=100_000)
+            # Include embeddings for ML tools (they won't display them to LLM)
+            data_result = await service.get_dataset_data(str(dataset.id), user_id, limit=100_000, include_embeddings=True)
             if not data_result or not data_result.get("data"):
                 return pd.DataFrame()
                 

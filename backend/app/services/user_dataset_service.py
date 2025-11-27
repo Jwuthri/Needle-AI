@@ -669,7 +669,8 @@ Generate ONLY the name, nothing else. No quotes, no explanation, just the name."
         dataset_id: str,
         user_id: str,
         limit: int = 100,
-        offset: int = 0
+        offset: int = 0,
+        include_embeddings: bool = False
     ) -> Dict[str, Any]:
         """
         Get data from a dataset's dynamic table.
@@ -679,6 +680,7 @@ Generate ONLY the name, nothing else. No quotes, no explanation, just the name."
             user_id: User ID for verification
             limit: Maximum number of rows to return
             offset: Number of rows to skip
+            include_embeddings: Whether to include __embedding__ column (default False to save tokens)
             
         Returns:
             Dict with data rows and pagination info
@@ -713,16 +715,16 @@ Generate ONLY the name, nothing else. No quotes, no explanation, just the name."
                 raise ValueError(f"Table '{table_name}' does not exist. Please re-upload the dataset.")
             raise
         
-        # Convert rows to dicts, filtering out __embedding__ column
+        # Convert rows to dicts, optionally filtering out __embedding__ column
         rows = []
-        columns = [col for col in data_result.keys() if col != '__embedding__']
         all_columns = list(data_result.keys())
+        columns = [col for col in all_columns if col != '__embedding__' or include_embeddings]
         
         for row in data_result.fetchall():
             row_dict = {}
             for i, col in enumerate(all_columns):
-                # Skip __embedding__ column
-                if col == '__embedding__':
+                # Skip __embedding__ column unless explicitly requested
+                if col == '__embedding__' and not include_embeddings:
                     continue
                     
                 value = row[i]

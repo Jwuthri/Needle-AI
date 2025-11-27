@@ -178,7 +178,7 @@ async def embedding_tool(table_name: str, text_column: str, user_id: str) -> str
         embeddings = await loop.run_in_executor(None, embeddings_model.embed_documents, texts)
         
         result_df = df.copy()
-        result_df['embedding'] = embeddings
+        result_df['__embedding__'] = embeddings
         
         success = await dm.update_dataset(table_name, result_df, user_id)
         if success:

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react'
 import { motion, useMotionValue, useSpring } from 'framer-motion'
-import { Target, MessageCircle, Trophy, Sparkles } from 'lucide-react'
+import { Target, MessageCircle, Trophy, Sparkles, Database } from 'lucide-react'
 
 interface NeedleWelcomeProps {
   onPromptSelect: (prompt: string) => void
@@ -14,6 +14,7 @@ const iconComponents = {
   MessageCircle,
   Trophy,
   Sparkles,
+  Database,
 }
 
 const prompts = [
@@ -21,6 +22,8 @@ const prompts = [
   { icon: 'MessageCircle', title: 'Sentiment', prompt: 'What is the overall sentiment of our reviews?' },
   { icon: 'Trophy', title: 'Competitors', prompt: 'Which competitors are mentioned most often?' },
   { icon: 'Sparkles', title: 'Features', prompt: 'What features are customers requesting?' },
+  { icon: 'Database', title: 'Data', prompt: 'What are my datasets?' },
+  { icon: 'Database', title: 'Data', prompt: 'Can you show me trends in my datasets' },
 ]
 
 export function NeedleWelcome({ onPromptSelect, companySelected }: NeedleWelcomeProps) {
