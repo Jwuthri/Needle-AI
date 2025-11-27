@@ -14,6 +14,7 @@ from typing import Optional
 from app.api.deps import check_rate_limit, get_db
 from app.core.security.clerk_auth import ClerkUser, get_current_user
 from app.database.repositories.chat_message import ChatMessageRepository
+from app.database.repositories.chat_message_step import ChatMessageStepRepository
 from app.database.repositories.chat_session import ChatSessionRepository
 from app.database.models.chat_message import MessageRoleEnum
 from app.models.chat import ChatRequest
@@ -275,16 +276,47 @@ async def send_message_stream_experimental(
 
                 logger.info(f"Saving {len(agent_steps)} agent steps to message {assistant_message_id}")
                 
-                # Save final response with agent_steps in extra_metadata
+                # Save final response
                 completed_at = datetime.utcnow()
                 async with get_async_session() as db:
+                    # Update the message content
                     updated_msg = await ChatMessageRepository.update(
                         db, 
                         assistant_message_id, 
                         content=final_content,
                         completed_at=completed_at,
-                        extra_metadata={"agent_steps": agent_steps}
                     )
+                    
+                    # Save agent steps to chat_message_steps table
+                    if agent_steps:
+                        # Convert agent_steps to proper format for bulk_create
+                        steps_to_save = []
+                        for idx, step in enumerate(agent_steps):
+                            step_data = {
+                                "agent_name": step.get("agent_name", "workflow"),
+                                "step_order": idx,
+                                "status": step.get("status", "success"),
+                            }
+                            
+                            # Handle structured content (tool calls)
+                            if step.get("is_structured") and isinstance(step.get("content"), dict):
+                                step_data["tool_call"] = step["content"]
+                                step_data["raw_output"] = step.get("raw_output")
+                            else:
+                                # Text content goes to prediction
+                                content = step.get("content")
+                                if content and isinstance(content, str):
+                                    step_data["prediction"] = content
+                            
+                            steps_to_save.append(step_data)
+                        
+                        await ChatMessageStepRepository.bulk_create(
+                            db=db,
+                            message_id=assistant_message_id,
+                            steps=steps_to_save
+                        )
+                        logger.info(f"Saved {len(steps_to_save)} steps to chat_message_steps")
+                    
                     await db.commit()
                     
                     if updated_msg:
