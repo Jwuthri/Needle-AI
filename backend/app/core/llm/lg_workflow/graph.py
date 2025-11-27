@@ -44,13 +44,20 @@ def summarize_conversation(state: AgentState):
     return {}
 
 # --- Graph Construction ---
-def create_workflow(user_id: str):
+def create_workflow(user_id: str, dataset_table_name: Optional[str] = None):
+    """
+    Create the multi-agent workflow.
+    
+    Args:
+        user_id: The user's ID for data access
+        dataset_table_name: Optional - if provided, agents will focus exclusively on this dataset
+    """
     workflow = StateGraph(AgentState)
     
-    # Create agent nodes with user_id bound to tools
-    librarian_node = create_librarian_node(user_id)
-    analyst_node = create_analyst_node(user_id)
-    visualizer_node = create_visualizer_node(user_id)
+    # Create agent nodes with user_id and optional focused dataset
+    librarian_node = create_librarian_node(user_id, dataset_table_name)
+    analyst_node = create_analyst_node(user_id, dataset_table_name)
+    visualizer_node = create_visualizer_node(user_id, dataset_table_name)
 
     workflow.add_node("Supervisor", supervisor_node)
     workflow.add_node("DataLibrarian", librarian_node)

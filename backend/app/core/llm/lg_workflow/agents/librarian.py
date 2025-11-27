@@ -1,28 +1,43 @@
 """Data Librarian Agent - helps users find the right datasets."""
+from typing import Optional
 from langchain_core.tools import tool
 from app.core.llm.lg_workflow.tools.base import list_datasets_tool, get_dataset_info_tool
 from .base import create_agent, llm
 
-def create_librarian_node(user_id: str):
-    """Create librarian agent with tools bound to user_id."""
+def create_librarian_node(user_id: str, dataset_table_name: Optional[str] = None):
+    """Create librarian agent with tools bound to user_id and optional focused dataset."""
     
     # Create wrapper tools with user_id bound
     @tool
     async def list_datasets() -> str:
-        """Lists all available datasets with their table names and descriptions."""
-        return await list_datasets_tool.coroutine(user_id=user_id)
+        """Lists available datasets with their table names and descriptions."""
+        result = await list_datasets_tool.coroutine(user_id=user_id)
+        
+        # If focused on a specific dataset, filter the results
+        if dataset_table_name:
+            lines = result.split('\n')
+            filtered = ["Focused Dataset:"]
+            for line in lines[1:]:  # Skip header
+                if f"Table: {dataset_table_name}" in line:
+                    filtered.append(line)
+                    break
+            if len(filtered) == 1:
+                # Dataset not found in list, return helpful message
+                filtered.append(f"- Table: {dataset_table_name} (use get_dataset_info for details)")
+            return '\n'.join(filtered)
+        return result
     
     @tool
     async def get_dataset_info(table_name: str) -> str:
         """Returns metadata and the first 5 rows of a dataset given its table name."""
-        return await get_dataset_info_tool.coroutine(table_name=table_name, user_id=user_id)
+        # If focused mode, override the table_name to ensure we use the focused dataset
+        actual_table = dataset_table_name if dataset_table_name else table_name
+        return await get_dataset_info_tool.coroutine(table_name=actual_table, user_id=user_id)
     
     librarian_tools = [list_datasets, get_dataset_info]
     
-    return create_agent(
-        llm, 
-        librarian_tools, 
-        """You are a Data Librarian - help users find datasets. BE VERY CONCISE.
+    # Build prompt with optional focused mode notice
+    base_prompt = """You are a Data Librarian - help users find datasets. BE VERY CONCISE.
 
 WORKFLOW:
 1. Call list_datasets OR get_dataset_info(table_name)
@@ -51,4 +66,15 @@ Tool returns schema + sample data
 You: "Dataset info retrieved."
 
 Remember: Tools are comprehensive. You stay minimal - 1 sentence max or nothing."""
-    )
+
+    if dataset_table_name:
+        focused_notice = f"""
+
+⚠️ FOCUSED MODE ACTIVE ⚠️
+You are working exclusively with dataset: '{dataset_table_name}'
+- list_datasets will only show this dataset
+- get_dataset_info will automatically use this dataset
+- Do NOT reference or suggest other datasets"""
+        base_prompt += focused_notice
+    
+    return create_agent(llm, librarian_tools, base_prompt)

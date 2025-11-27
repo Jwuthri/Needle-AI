@@ -135,8 +135,8 @@ async def send_message_stream_experimental(
             seen_agents = set()  # Track which agents we've already created boxes for
             
             try:
-                # Initialize workflow
-                app = create_workflow(user_id)
+                # Initialize workflow with optional focused dataset
+                app = create_workflow(user_id, dataset_table_name=request.dataset_table_name)
                 
                 # Prepare input with conversation history
                 # Convert history to LangChain message format
