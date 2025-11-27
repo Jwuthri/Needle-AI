@@ -21,16 +21,18 @@ interface WorkflowStepsProps {
   steps: AgentStep[]
   currentContent?: string | null // For streaming content override
   expanded?: boolean // Whether the whole container is expanded (passed from parent)
+  isStreaming?: boolean // Whether we're currently streaming (all steps expanded by default)
 }
 
-export function WorkflowSteps({ steps, currentContent, expanded = true }: WorkflowStepsProps) {
-  // Local state to track which individual steps are expanded
-  // We default to expanding active steps
-  const [expandedStepIds, setExpandedStepIds] = useState<Set<string>>(new Set())
+export function WorkflowSteps({ steps, currentContent, expanded = true, isStreaming = false }: WorkflowStepsProps) {
+  // Local state to track which individual steps user has manually collapsed
+  // During streaming, all steps are expanded by default - user can collapse them
+  // After streaming, all steps are collapsed by default - user can expand them
+  const [manuallyToggledIds, setManuallyToggledIds] = useState<Set<string>>(new Set())
 
   // Helper to toggle step expansion
   const toggleStep = (stepId: string) => {
-    setExpandedStepIds((prev) => {
+    setManuallyToggledIds((prev) => {
       const next = new Set(prev)
       if (next.has(stepId)) {
         next.delete(stepId)
@@ -44,6 +46,9 @@ export function WorkflowSteps({ steps, currentContent, expanded = true }: Workfl
   if (!expanded || steps.length === 0) {
     return null
   }
+
+  // Detect streaming mode: if currentContent is passed OR isStreaming prop is true
+  const inStreamingMode = isStreaming || currentContent !== undefined
 
   // Filter out REPORTER and steps with no meaningful content
   const meaningfulSteps = steps.filter(step => {
@@ -81,11 +86,16 @@ export function WorkflowSteps({ steps, currentContent, expanded = true }: Workfl
         // Determine if this step is "active" (currently streaming or processing)
         const isActive = step.status === 'active' || step.status === 'started'
         
-        // Determine if this step should be expanded
-        // Active steps are ALWAYS expanded to show real-time progress
-        // For completed steps, check if user manually expanded them
+        // Determine if this step should be expanded:
+        // - Active steps are ALWAYS expanded
+        // - During streaming: all steps expanded by default, user can collapse (toggle removes from set)
+        // - After streaming: all steps collapsed by default, user can expand (toggle adds to set)
         const stepId = step.step_id
-        const isExpanded = isActive || expandedStepIds.has(stepId)
+        const userToggled = manuallyToggledIds.has(stepId)
+        
+        // In streaming mode: expanded by default, toggle collapses
+        // In completed mode: collapsed by default, toggle expands
+        const isExpanded = isActive || (inStreamingMode ? !userToggled : userToggled)
 
         return (
           <div key={stepId}>

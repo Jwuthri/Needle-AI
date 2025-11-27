@@ -375,7 +375,8 @@ export function ExperimentalChatView({
                     <WorkflowSteps 
                       steps={agentSteps as any[]} 
                       currentContent={currentContent}
-                      expanded={streamingStepsExpanded} 
+                      expanded={streamingStepsExpanded}
+                      isStreaming={true}
                     />
                   </div>
                 )
