@@ -12,29 +12,51 @@ import { EnhancedChatMessage } from '@/types/chat'
 import { useExperimentalChatStream } from '@/hooks/use-experimental-chat-stream'
 import { MarkdownRenderer } from './markdown-renderer'
 import { WorkflowSteps } from './workflow-steps'
+import { UserDataset } from '@/types/user-dataset'
 
 interface ExperimentalChatViewProps {
   companyId: string | null
   sessionId?: string
   onSessionIdChange?: (sessionId: string) => void
   onCompanyChange?: (companyId: string | null) => void
+  datasetId?: string | null
+  onDatasetChange?: (datasetId: string | null) => void
 }
 
 export function ExperimentalChatView({
   companyId,
   sessionId,
   onSessionIdChange,
-  onCompanyChange
+  onCompanyChange,
+  datasetId,
+  onDatasetChange
 }: ExperimentalChatViewProps) {
   const { getToken } = useAuth()
   const [messages, setMessages] = useState<EnhancedChatMessage[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [expandedSteps, setExpandedSteps] = useState<Set<string>>(new Set())
   const [streamingStepsExpanded, setStreamingStepsExpanded] = useState(true)
+  const [datasets, setDatasets] = useState<UserDataset[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const currentAgentStepsRef = useRef<any[]>([])
   const isSendingRef = useRef(false)
   const sessionIdRef = useRef<string | undefined>(sessionId)
+
+  // Load datasets
+  useEffect(() => {
+    const fetchDatasets = async () => {
+      try {
+        const token = await getToken()
+        const api = createApiClient(token)
+        const datasetsData = await api.listUserDatasets()
+        setDatasets(datasetsData.datasets || [])
+      } catch (error) {
+        console.error('Failed to fetch datasets:', error)
+      }
+    }
+
+    fetchDatasets()
+  }, [getToken])
 
   // Use experimental streaming hook
   const {
@@ -184,11 +206,15 @@ export function ExperimentalChatView({
       }
 
       // Use experimental streaming
+      const selectedDataset = datasetId ? datasets.find(d => d.id === datasetId) : undefined
+      
       await sendStreamMessage(
         {
           message,
           session_id: currentSessionId,
           company_id: companyId || undefined,
+          dataset_id: datasetId || undefined,
+          dataset_table_name: selectedDataset?.table_name,
         },
         token
       )
@@ -414,14 +440,16 @@ export function ExperimentalChatView({
                 
                 if (contentToShow) {
                   return (
-                    <div className="bg-gray-800/50 border border-gray-700/50 rounded-2xl p-6">
+                    <div className="bg-gray-800/50 border border-gray-700/50 rounded-2xl p-6 max-h-[1000px] overflow-auto w-full">
                       <div className="flex items-start space-x-3">
                         <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
                           <Sparkles className="w-4 h-4 text-white" />
                         </div>
-                        <div className="flex-1 text-white/90">
-                          <MarkdownRenderer content={contentToShow} />
-                          {currentAgentIsReporter && <span className="inline-block w-2 h-4 bg-purple-400 ml-1 animate-pulse"></span>}
+                        <div className="flex-1 min-w-0 max-w-full overflow-hidden">
+                          <div className="text-white/90">
+                            <MarkdownRenderer content={contentToShow} />
+                            {currentAgentIsReporter && <span className="inline-block w-2 h-4 bg-purple-400 ml-1 animate-pulse"></span>}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -454,6 +482,8 @@ export function ExperimentalChatView({
             disabled={isLoading}
             companyId={companyId}
             onCompanyChange={onCompanyChange}
+            datasetId={datasetId}
+            onDatasetChange={onDatasetChange}
           />
         </div>
       </div>

@@ -82,11 +82,11 @@ async def cuterize_dataset(
     column: str | None = None
 ) -> str:
     """Perform clustering analysis on a dataset using UMAP + HDBSCAN.
-    
+
     This function uses the recommended approach from UMAP documentation:
     1. UMAP for non-linear dimension reduction (to 10D)
     2. HDBSCAN for density-based clustering on reduced data
-    
+
     This pipeline achieves 99%+ clustering coverage vs 17% with HDBSCAN alone
     on high-dimensional embeddings.
 

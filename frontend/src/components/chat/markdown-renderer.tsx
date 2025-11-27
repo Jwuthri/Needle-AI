@@ -78,12 +78,12 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
         ).filter(row => row.length > 0)
 
         sections.push(
-          <div key={`table-${sectionIndex++}`} className="mb-4 overflow-x-auto">
-            <table className="min-w-full border border-gray-700/30 rounded-lg overflow-hidden">
+          <div key={`table-${sectionIndex++}`} className="mb-4 overflow-x-auto max-w-full">
+            <table className="border border-gray-700/30 rounded-lg overflow-hidden">
               <thead className="bg-gray-800/50">
                 <tr>
                   {headers.map((header, i) => (
-                    <th key={i} className="px-4 py-2 text-left text-xs font-semibold text-emerald-400 border-b border-gray-700/30">
+                    <th key={i} className="px-4 py-2 text-left text-xs font-semibold text-emerald-400 border-b border-gray-700/30 whitespace-nowrap">
                       {parseInlineMarkdown(header)}
                     </th>
                   ))}
@@ -93,7 +93,7 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
                 {rows.map((row, i) => (
                   <tr key={i} className="border-b border-gray-700/20 hover:bg-gray-800/20">
                     {row.map((cell, j) => (
-                      <td key={j} className="px-4 py-2 text-sm text-white/80">
+                      <td key={j} className="px-4 py-2 text-sm text-white/80 whitespace-nowrap">
                         {parseInlineMarkdown(cell)}
                       </td>
                     ))}

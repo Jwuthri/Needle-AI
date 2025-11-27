@@ -90,6 +90,8 @@ export interface ChatRequest {
   message: string;
   session_id?: string;
   company_id?: string;
+  dataset_id?: string;
+  dataset_table_name?: string;
   context?: Record<string, any>;
 }
 

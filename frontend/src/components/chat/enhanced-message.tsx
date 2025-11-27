@@ -141,12 +141,12 @@ const formatAssistantContent = (content: string) => {
         ).filter(row => row.length > 0)
 
         sections.push(
-          <div key={`table-${sectionIndex++}`} className="mb-4 overflow-x-auto">
-            <table className="min-w-full border border-gray-700/30 rounded-lg overflow-hidden">
+          <div key={`table-${sectionIndex++}`} className="mb-4 overflow-x-auto w-full max-w-full">
+            <table className="border border-gray-700/30 rounded-lg overflow-hidden">
               <thead className="bg-gray-800/50">
                 <tr>
                   {headers.map((header, i) => (
-                    <th key={i} className="px-4 py-2 text-left text-xs font-semibold text-emerald-400 border-b border-gray-700/30">
+                    <th key={i} className="px-4 py-2 text-left text-xs font-semibold text-emerald-400 border-b border-gray-700/30 whitespace-nowrap">
                       {parseInlineMarkdown(header)}
                     </th>
                   ))}
@@ -156,7 +156,7 @@ const formatAssistantContent = (content: string) => {
                 {rows.map((row, i) => (
                   <tr key={i} className="border-b border-gray-700/20 hover:bg-gray-800/20">
                     {row.map((cell, j) => (
-                      <td key={j} className="px-4 py-2 text-sm text-white/80">
+                      <td key={j} className="px-4 py-2 text-sm text-white/80 whitespace-nowrap">
                         {parseInlineMarkdown(cell)}
                       </td>
                     ))}
@@ -431,9 +431,9 @@ export function EnhancedMessage({ message, onQuestionClick }: EnhancedMessagePro
           <Sparkles className="w-5 h-5 text-white" />
         </div>
 
-        <div className="flex-1">
+        <div className="flex-1 min-w-0 max-w-full overflow-hidden">
           {/* Main Response */}
-          <div className={`rounded-2xl p-6 ${message.error
+          <div className={`rounded-2xl p-6 max-h-[1000px] overflow-auto w-full ${message.error
             ? 'bg-red-500/10 border border-red-500/30'
             : 'bg-gray-800/50 border border-gray-700/50'
             }`}>

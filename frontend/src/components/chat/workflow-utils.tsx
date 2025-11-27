@@ -28,14 +28,42 @@ export function formatAgentName(name: string): string {
 // Try to parse and format JSON/list objects nicely
 export function formatRawOutput(rawOutput: string): JSX.Element {
   // First, try to detect if this looks like a list/dict structure
-  const trimmed = rawOutput.trim()
+  let trimmed = rawOutput.trim()
+
+  // Extract content from Python tool return format: content='...' name='...' tool_call_id='...'
+  // This handles LangChain/LangGraph tool output format
+  const contentMatch = trimmed.match(/^content=['"]([\s\S]*?)['"](?:\s+name=|\s+tool_call_id=|$)/)
+  if (contentMatch) {
+    // Unescape the content (Python escapes like \n, \t, etc.)
+    trimmed = contentMatch[1]
+      .replace(/\\n/g, '\n')
+      .replace(/\\t/g, '\t')
+      .replace(/\\'/g, "'")
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, '\\')
+  }
+
+  // Check if content contains markdown elements
+  // - Markdown tables look like: | col1 | col2 | or |:---|:---|
+  // - Markdown headings: # or ## or ###
+  // - Markdown lists: - or * or numbered
+  // - Code blocks: ``` or `
+  const hasMarkdownTable = trimmed.includes('|') && /\|[^|]+\|/.test(trimmed)
+  const hasMarkdownHeading = /^#{1,6}\s/m.test(trimmed)
+  const hasMarkdownList = /^[\s]*[-*+]\s/m.test(trimmed) || /^\d+\.\s/m.test(trimmed)
+  const hasCodeBlock = trimmed.includes('```') || /`[^`]+`/.test(trimmed)
+  
+  if (hasMarkdownTable || hasMarkdownHeading || hasMarkdownList || hasCodeBlock) {
+    // Render as markdown
+    return <MarkdownRenderer content={trimmed} />
+  }
 
   // Check if it starts with [ or { (JSON-like)
   if ((trimmed.startsWith('[') || trimmed.startsWith('{')) &&
     (trimmed.endsWith(']') || trimmed.endsWith('}'))) {
     try {
       // Try to parse as JSON first
-      const parsed = JSON.parse(rawOutput)
+      const parsed = JSON.parse(trimmed)
 
       // If it's an array, display as a formatted list or table
       if (Array.isArray(parsed)) {
@@ -43,12 +71,12 @@ export function formatRawOutput(rawOutput: string): JSX.Element {
         if (parsed.length > 0 && typeof parsed[0] === 'object' && parsed[0] !== null) {
           const keys = Object.keys(parsed[0])
           return (
-            <div className="overflow-x-auto">
-              <table className="min-w-full border border-gray-700">
+            <div className="overflow-x-auto w-full max-w-full">
+              <table className="border border-gray-700">
                 <thead className="bg-gray-800">
                   <tr>
                     {keys.map((key) => (
-                      <th key={key} className="px-3 py-2 text-left text-xs font-medium text-purple-300 border border-gray-700">
+                      <th key={key} className="px-3 py-2 text-left text-xs font-medium text-purple-300 border border-gray-700 whitespace-nowrap">
                         {key}
                       </th>
                     ))}
@@ -58,7 +86,7 @@ export function formatRawOutput(rawOutput: string): JSX.Element {
                   {parsed.map((row, i) => (
                     <tr key={i} className={i % 2 === 0 ? 'bg-gray-900/50' : 'bg-gray-800/30'}>
                       {keys.map((key) => (
-                        <td key={key} className="px-3 py-2 text-xs text-white/80 border border-gray-700">
+                        <td key={key} className="px-3 py-2 text-xs text-white/80 border border-gray-700 whitespace-nowrap">
                           {typeof row[key] === 'object'
                             ? JSON.stringify(row[key])
                             : String(row[key])}
@@ -100,7 +128,7 @@ export function formatRawOutput(rawOutput: string): JSX.Element {
       // JSON parse failed - try Python-style dict/list conversion
       try {
         // Replace Python-style syntax with JSON
-        let jsonStr = rawOutput
+        let jsonStr = trimmed
           .replace(/'/g, '"')  // Replace single quotes with double quotes
           .replace(/True/g, 'true')  // Replace Python True
           .replace(/False/g, 'false')  // Replace Python False
@@ -113,12 +141,12 @@ export function formatRawOutput(rawOutput: string): JSX.Element {
           if (parsed.length > 0 && typeof parsed[0] === 'object' && parsed[0] !== null) {
             const keys = Object.keys(parsed[0])
             return (
-              <div className="overflow-x-auto">
-                <table className="min-w-full border border-gray-700">
+              <div className="overflow-x-auto w-full max-w-full">
+                <table className="border border-gray-700">
                   <thead className="bg-gray-800">
                     <tr>
                       {keys.map((key) => (
-                        <th key={key} className="px-3 py-2 text-left text-xs font-medium text-purple-300 border border-gray-700">
+                        <th key={key} className="px-3 py-2 text-left text-xs font-medium text-purple-300 border border-gray-700 whitespace-nowrap">
                           {key}
                         </th>
                       ))}
@@ -128,7 +156,7 @@ export function formatRawOutput(rawOutput: string): JSX.Element {
                     {parsed.map((row, i) => (
                       <tr key={i} className={i % 2 === 0 ? 'bg-gray-900/50' : 'bg-gray-800/30'}>
                         {keys.map((key) => (
-                          <td key={key} className="px-3 py-2 text-xs text-white/80 border border-gray-700 whitespace-pre-wrap">
+                          <td key={key} className="px-3 py-2 text-xs text-white/80 border border-gray-700 whitespace-nowrap">
                             {typeof row[key] === 'object'
                               ? JSON.stringify(row[key])
                               : String(row[key])}

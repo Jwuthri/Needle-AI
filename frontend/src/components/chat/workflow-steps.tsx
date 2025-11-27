@@ -41,14 +41,43 @@ export function WorkflowSteps({ steps, currentContent, expanded = true }: Workfl
     })
   }
 
-  // Show all steps including REPORTER
   if (!expanded || steps.length === 0) {
+    return null
+  }
+
+  // Filter out REPORTER and steps with no meaningful content
+  const meaningfulSteps = steps.filter(step => {
+    // Filter out REPORTER agent - it should only appear in answer area
+    // if (step.agent_name?.toUpperCase() === 'REPORTER') {
+    //   return false
+    // }
+    
+    // Always show active steps (they're processing)
+    if (step.status === 'active' || step.status === 'started') {
+      return true
+    }
+    
+    // Show structured steps (tool calls)
+    if (step.is_structured && step.content) {
+      return true
+    }
+    
+    // Show steps with text content
+    if (step.content && typeof step.content === 'string' && step.content.trim()) {
+      return true
+    }
+    
+    // Hide steps with no meaningful content
+    return false
+  })
+
+  if (meaningfulSteps.length === 0) {
     return null
   }
 
   return (
     <div className="px-6 pb-4 space-y-4 border-t border-purple-500/20 pt-4">
-      {steps.map((step, index) => {
+      {meaningfulSteps.map((step, index) => {
         // Determine if this step is "active" (currently streaming or processing)
         const isActive = step.status === 'active' || step.status === 'started'
         
@@ -104,17 +133,20 @@ export function WorkflowSteps({ steps, currentContent, expanded = true }: Workfl
                 className="overflow-hidden"
               >
                 <div className="p-3 bg-black/20">
-                  {/* Show streaming content if this is the active step and we have override content */}
-                  {isActive && currentContent ? (
-                    <div className="text-sm text-gray-200 prose prose-invert prose-sm max-w-none">
-                      <MarkdownRenderer content={currentContent} />
-                      <span className="inline-block w-2 h-4 bg-purple-400 ml-1 animate-pulse"></span>
-                    </div>
-                  ) : isActive && !currentContent && !step.content ? (
-                    <div className="flex items-center space-x-2 text-purple-300">
-                      <Loader className="w-3 h-3 animate-spin" />
-                      <span className="text-xs italic">Processing...</span>
-                    </div>
+                  {/* For active (streaming) steps, show the content from step.content directly */}
+                  {isActive && !step.is_structured ? (
+                    // Text content streaming
+                    step.content && typeof step.content === 'string' && step.content.trim() ? (
+                      <div className="text-sm text-gray-200 prose prose-invert prose-sm max-w-none">
+                        <MarkdownRenderer content={step.content} />
+                        <span className="inline-block w-2 h-4 bg-purple-400 ml-1 animate-pulse"></span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center space-x-2 text-purple-300">
+                        <Loader className="w-3 h-3 animate-spin" />
+                        <span className="text-xs italic">Processing...</span>
+                      </div>
+                    )
                   ) : step.is_structured && step.content ? (
                     <div className="text-sm text-gray-200 prose prose-invert prose-sm max-w-none">
                       {(() => {
@@ -147,7 +179,7 @@ export function WorkflowSteps({ steps, currentContent, expanded = true }: Workfl
                         );
                       })()}
                     </div>
-                  ) : step.content ? (
+                  ) : step.content && typeof step.content === 'string' ? (
                     <div className="text-sm text-gray-200 prose prose-invert prose-sm max-w-none">
                       <MarkdownRenderer content={step.content} />
                     </div>

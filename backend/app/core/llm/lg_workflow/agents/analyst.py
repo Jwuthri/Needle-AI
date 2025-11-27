@@ -1,15 +1,95 @@
 """Data Analyst Agent - performs computations on datasets."""
+from langchain_core.tools import tool
 from app.core.llm.lg_workflow.tools.analytics import clustering_tool, tfidf_tool, describe_tool
-from app.core.llm.lg_workflow.tools.ml import sentiment_analysis_tool, embedding_tool, linear_regression_tool
+from app.core.llm.lg_workflow.tools.ml import sentiment_analysis_tool, embedding_tool, linear_regression_tool, trend_analysis_tool, product_gap_detection_tool
 from .base import create_agent, llm
 
-# Data Analyst Agent
-analyst_tools = [clustering_tool, tfidf_tool, describe_tool, sentiment_analysis_tool, embedding_tool, linear_regression_tool]
-analyst_node = create_agent(
-    llm, 
-    analyst_tools,
-    "You are a Data Analyst. Your goal is to perform computations on datasets. "
-    "You need `dataset_id`s to work. If you don't have them, ask the Librarian (via the supervisor). "
-    "Use your tools to analyze data. You can now perform Sentiment Analysis, generate Embeddings, and run Linear Regression. "
-    "Always report the result of your analysis and mention the new dataset ID if created."
-)
+def create_analyst_node(user_id: str):
+    """Create analyst agent with tools bound to user_id."""
+    
+    # Create wrapper tools with user_id bound
+    @tool
+    async def clustering(table_name: str, target_column: str, n_clusters: int = 3) -> str:
+        """Perform K-means clustering on a dataset."""
+        return await clustering_tool.coroutine(table_name=table_name, target_column=target_column, user_id=user_id, n_clusters=n_clusters)
+    
+    @tool
+    async def tfidf_analysis(table_name: str, text_column: str, max_features: int = 10) -> str:
+        """Perform TF-IDF analysis on a text column."""
+        return await tfidf_tool.coroutine(table_name=table_name, text_column=text_column, user_id=user_id, max_features=max_features)
+    
+    @tool
+    async def describe_dataset(table_name: str) -> str:
+        """Get descriptive statistics and metadata for a dataset."""
+        return await describe_tool.coroutine(table_name=table_name, user_id=user_id)
+    
+    @tool
+    async def sentiment_analysis(table_name: str, text_column: str) -> str:
+        """Perform sentiment analysis on a text column."""
+        return await sentiment_analysis_tool.coroutine(table_name=table_name, text_column=text_column, user_id=user_id)
+    
+    @tool
+    async def generate_embeddings(table_name: str, text_column: str) -> str:
+        """Generate embeddings for a text column."""
+        return await embedding_tool.coroutine(table_name=table_name, text_column=text_column, user_id=user_id)
+    
+    @tool
+    async def linear_regression(table_name: str, target_column: str, feature_columns: list[str]) -> str:
+        """Perform linear regression analysis."""
+        return await linear_regression_tool.coroutine(table_name=table_name, target_column=target_column, feature_columns=feature_columns, user_id=user_id)
+    
+    @tool
+    async def trend_analysis(table_name: str, date_column: str, value_column: str, period: str = "M") -> str:
+        """Analyze trends in time series data."""
+        return await trend_analysis_tool.coroutine(table_name=table_name, date_column=date_column, value_column=value_column, user_id=user_id, period=period)
+    
+    @tool
+    async def product_gap_detection(table_name: str, min_cluster_size: int = 5, eps: float = 0.3) -> str:
+        """Detect gaps in product catalog using clustering on embeddings."""
+        return await product_gap_detection_tool.coroutine(table_name=table_name, user_id=user_id, min_cluster_size=min_cluster_size, eps=eps)
+    
+    analyst_tools = [
+        clustering, tfidf_analysis, describe_dataset, 
+        sentiment_analysis, generate_embeddings, linear_regression,
+        trend_analysis, product_gap_detection
+    ]
+    
+    return create_agent(
+        llm, 
+        analyst_tools,
+        """You are a Data Analyst - perform analysis on datasets.
+
+AVAILABLE TOOLS:
+- sentiment_analysis - Analyze sentiment (adds sentiment_polarity, sentiment_subjectivity, sentiment_label)
+- clustering - K-means clustering
+- tfidf_analysis - Extract top keywords
+- trend_analysis - Time series analysis
+- describe_dataset - Statistical summary
+- linear_regression - Predictions
+- generate_embeddings - Vector embeddings
+- product_gap_detection - Product gaps
+
+WORKFLOW:
+1. Get table_name from conversation
+2. Call appropriate tool with correct parameters
+3. Tool returns comprehensive markdown report
+4. Pass it through naturally
+
+COLUMN HINTS:
+- Text: text, review, comment, content, description
+- Date: date, created_at, timestamp, time
+- Numeric: rating, score, price, amount, value
+
+CRITICAL RULES:
+- Tools return complete markdown reports with stats, insights, recommendations
+- DO NOT summarize or duplicate the tool output
+- Let tool output flow through naturally
+
+Example:
+User: "What's the sentiment?"
+You: [Call sentiment_analysis(table_name="reviews", text_column="text")]
+[Tool returns full sentiment report]
+Pass it through
+
+Remember: Tools do the heavy lifting. Just call them correctly."""
+    )

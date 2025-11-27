@@ -3,19 +3,29 @@
 import { useState, useRef, useEffect, KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
-import { Send, Terminal, Building2, Check } from 'lucide-react'
+import { Send, Terminal, Building2, Check, Database } from 'lucide-react'
 import { useUser, useAuth } from '@clerk/nextjs'
 import { createApiClient } from '@/lib/api'
 import { Company } from '@/types/company'
+import { UserDataset } from '@/types/user-dataset'
 
 interface TerminalInputProps {
   onSendMessage: (message: string) => void
   disabled?: boolean
   companyId?: string | null
   onCompanyChange?: (companyId: string | null) => void
+  datasetId?: string | null
+  onDatasetChange?: (datasetId: string | null) => void
 }
 
-export function TerminalInput({ onSendMessage, disabled = false, companyId, onCompanyChange }: TerminalInputProps) {
+export function TerminalInput({ 
+  onSendMessage, 
+  disabled = false, 
+  companyId, 
+  onCompanyChange,
+  datasetId,
+  onDatasetChange 
+}: TerminalInputProps) {
   const { user } = useUser()
   const { getToken } = useAuth()
   const [input, setInput] = useState('')
@@ -23,14 +33,26 @@ export function TerminalInput({ onSendMessage, disabled = false, companyId, onCo
   const [historyIndex, setHistoryIndex] = useState(-1)
   const [showCursor, setShowCursor] = useState(true)
   const [companies, setCompanies] = useState<Company[]>([])
+  const [datasets, setDatasets] = useState<UserDataset[]>([])
   const [showCompanyDropdown, setShowCompanyDropdown] = useState(false)
-  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 })
+  const [showDatasetDropdown, setShowDatasetDropdown] = useState(false)
+  const [companyDropdownPosition, setCompanyDropdownPosition] = useState({ top: 0, left: 0, width: 0 })
+  const [datasetDropdownPosition, setDatasetDropdownPosition] = useState({ top: 0, left: 0, width: 0 })
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  const dropdownRef = useRef<HTMLDivElement>(null)
-  const buttonRef = useRef<HTMLButtonElement>(null)
+  const companyDropdownRef = useRef<HTMLDivElement>(null)
+  const datasetDropdownRef = useRef<HTMLDivElement>(null)
+  const companyButtonRef = useRef<HTMLButtonElement>(null)
+  const datasetButtonRef = useRef<HTMLButtonElement>(null)
 
   const userEmail = user?.primaryEmailAddress?.emailAddress || 'user'
   const selectedCompany = companies.find(c => c.id === companyId)
+  const selectedDataset = datasets.find(d => d.id === datasetId)
+
+  // Helper to clean up table name for display
+  const cleanTableName = (tableName: string) => {
+    // Remove __user_user_{UUID}_ prefix (UUID can contain letters, numbers, and dashes)
+    return tableName.replace(/^__user_user_[^_]+_/, '')
+  }
 
   // Load companies
   useEffect(() => {
@@ -49,15 +71,32 @@ export function TerminalInput({ onSendMessage, disabled = false, companyId, onCo
     fetchCompanies()
   }, [getToken])
 
+  // Load datasets
+  useEffect(() => {
+    const fetchDatasets = async () => {
+      try {
+        const token = await getToken()
+        const api = createApiClient(token)
+        const datasetsData = await api.listUserDatasets()
+        console.log('[TerminalInput] Fetched datasets:', datasetsData)
+        setDatasets(datasetsData.datasets || [])
+      } catch (error) {
+        console.error('Failed to fetch datasets:', error)
+      }
+    }
+
+    fetchDatasets()
+  }, [getToken])
+
   useEffect(() => {
     console.log('[TerminalInput] Props:', { companyId, onCompanyChange: !!onCompanyChange, companiesCount: companies.length })
   }, [companyId, onCompanyChange, companies])
 
-  // Calculate dropdown position
-  const updateDropdownPosition = () => {
-    if (buttonRef.current) {
-      const rect = buttonRef.current.getBoundingClientRect()
-      setDropdownPosition({
+  // Calculate dropdown positions
+  const updateCompanyDropdownPosition = () => {
+    if (companyButtonRef.current) {
+      const rect = companyButtonRef.current.getBoundingClientRect()
+      setCompanyDropdownPosition({
         top: rect.top - 8,
         left: rect.left,
         width: 288 // w-72 = 18rem = 288px
@@ -65,12 +104,24 @@ export function TerminalInput({ onSendMessage, disabled = false, companyId, onCo
     }
   }
 
-  // Close dropdown when clicking outside
+  const updateDatasetDropdownPosition = () => {
+    if (datasetButtonRef.current) {
+      const rect = datasetButtonRef.current.getBoundingClientRect()
+      setDatasetDropdownPosition({
+        top: rect.top - 8,
+        left: rect.left,
+        width: 288 // w-72 = 18rem = 288px
+      })
+    }
+  }
+
+  // Close company dropdown when clicking outside
   useEffect(() => {
     if (!showCompanyDropdown) return
 
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      if (companyDropdownRef.current && !companyDropdownRef.current.contains(event.target as Node) &&
+          companyButtonRef.current && !companyButtonRef.current.contains(event.target as Node)) {
         setShowCompanyDropdown(false)
       }
     }
@@ -78,6 +129,21 @@ export function TerminalInput({ onSendMessage, disabled = false, companyId, onCo
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [showCompanyDropdown])
+
+  // Close dataset dropdown when clicking outside
+  useEffect(() => {
+    if (!showDatasetDropdown) return
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (datasetDropdownRef.current && !datasetDropdownRef.current.contains(event.target as Node) &&
+          datasetButtonRef.current && !datasetButtonRef.current.contains(event.target as Node)) {
+        setShowDatasetDropdown(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showDatasetDropdown])
 
   // Blinking cursor effect
   useEffect(() => {
@@ -152,33 +218,67 @@ export function TerminalInput({ onSendMessage, disabled = false, companyId, onCo
             </span>
           </div>
 
-          {/* Company Selector */}
-          <div className="relative" ref={dropdownRef}>
-            <button
-              ref={buttonRef}
-              type="button"
-              onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                console.log('[TerminalInput] Toggle dropdown, current state:', showCompanyDropdown)
-                updateDropdownPosition()
-                setShowCompanyDropdown(!showCompanyDropdown)
-              }}
-              className="group flex items-center gap-2 px-3 py-2 bg-gray-800/80 hover:bg-gray-800 border border-gray-700/50 hover:border-emerald-500/50 rounded-lg transition-all text-sm"
-            >
-              <Building2 className="w-4 h-4 text-emerald-400" />
-              <span className="text-white/90 group-hover:text-white font-medium truncate max-w-[120px]">
-                {selectedCompany ? selectedCompany.name : 'Company'}
-              </span>
-              <svg
-                className={`w-3 h-3 text-gray-400 transition-transform ${showCompanyDropdown ? 'rotate-180' : ''}`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
+          {/* Selectors */}
+          <div className="flex items-center gap-2">
+            {/* Company Selector */}
+            <div className="relative">
+              <button
+                ref={companyButtonRef}
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  console.log('[TerminalInput] Toggle company dropdown, current state:', showCompanyDropdown)
+                  updateCompanyDropdownPosition()
+                  setShowCompanyDropdown(!showCompanyDropdown)
+                  setShowDatasetDropdown(false)
+                }}
+                className="group flex items-center gap-2 px-3 py-2 bg-gray-800/80 hover:bg-gray-800 border border-gray-700/50 hover:border-emerald-500/50 rounded-lg transition-all text-sm"
               >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
+                <Building2 className="w-4 h-4 text-emerald-400" />
+                <span className="text-white/90 group-hover:text-white font-medium truncate max-w-[120px]">
+                  {selectedCompany ? selectedCompany.name : 'Company'}
+                </span>
+                <svg
+                  className={`w-3 h-3 text-gray-400 transition-transform ${showCompanyDropdown ? 'rotate-180' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Dataset Selector */}
+            <div className="relative">
+              <button
+                ref={datasetButtonRef}
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  console.log('[TerminalInput] Toggle dataset dropdown, current state:', showDatasetDropdown)
+                  updateDatasetDropdownPosition()
+                  setShowDatasetDropdown(!showDatasetDropdown)
+                  setShowCompanyDropdown(false)
+                }}
+                className="group flex items-center gap-2 px-3 py-2 bg-gray-800/80 hover:bg-gray-800 border border-gray-700/50 hover:border-blue-500/50 rounded-lg transition-all text-sm"
+              >
+                <Database className="w-4 h-4 text-blue-400" />
+                <span className="text-white/90 group-hover:text-white font-medium truncate max-w-[120px]">
+                  {selectedDataset ? cleanTableName(selectedDataset.table_name) : 'Dataset'}
+                </span>
+                <svg
+                  className={`w-3 h-3 text-gray-400 transition-transform ${showDatasetDropdown ? 'rotate-180' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -234,7 +334,7 @@ export function TerminalInput({ onSendMessage, disabled = false, companyId, onCo
         </span>
       </div>
 
-      {/* Dropdown Portal - renders outside terminal container */}
+      {/* Company Dropdown Portal */}
       {typeof window !== 'undefined' && showCompanyDropdown && createPortal(
         <>
           {/* Backdrop */}
@@ -245,12 +345,12 @@ export function TerminalInput({ onSendMessage, disabled = false, companyId, onCo
 
           {/* Dropdown */}
           <div
-            ref={dropdownRef}
+            ref={companyDropdownRef}
             style={{
               position: 'fixed',
-              top: `${dropdownPosition.top}px`,
-              left: `${dropdownPosition.left}px`,
-              width: `${dropdownPosition.width}px`,
+              top: `${companyDropdownPosition.top}px`,
+              left: `${companyDropdownPosition.left}px`,
+              width: `${companyDropdownPosition.width}px`,
               transform: 'translateY(-100%)',
               marginTop: '-8px',
             }}
@@ -297,6 +397,84 @@ export function TerminalInput({ onSendMessage, disabled = false, companyId, onCo
                 >
                   <span className="truncate">{company.name}</span>
                   {companyId === company.id && <Check className="w-4 h-4 flex-shrink-0" />}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>,
+        document.body
+      )}
+
+      {/* Dataset Dropdown Portal */}
+      {typeof window !== 'undefined' && showDatasetDropdown && createPortal(
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 z-[9998]"
+            onClick={() => setShowDatasetDropdown(false)}
+          />
+
+          {/* Dropdown */}
+          <div
+            ref={datasetDropdownRef}
+            style={{
+              position: 'fixed',
+              top: `${datasetDropdownPosition.top}px`,
+              left: `${datasetDropdownPosition.left}px`,
+              width: `${datasetDropdownPosition.width}px`,
+              transform: 'translateY(-100%)',
+              marginTop: '-8px',
+            }}
+            className="bg-gray-900 border border-gray-700 rounded-lg shadow-2xl overflow-hidden z-[9999]"
+          >
+            <div className="max-h-64 overflow-y-auto p-2">
+              {/* No Dataset */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  console.log('[TerminalInput] No dataset clicked, onDatasetChange exists:', !!onDatasetChange)
+                  if (onDatasetChange) {
+                    onDatasetChange(null)
+                  }
+                  setShowDatasetDropdown(false)
+                }}
+                className={`w-full text-left px-3 py-2 rounded text-sm flex items-center justify-between transition-colors ${!datasetId ? 'bg-blue-500/20 text-blue-400' : 'text-gray-300 hover:bg-gray-800'
+                  }`}
+              >
+                <span>No dataset</span>
+                {!datasetId && <Check className="w-4 h-4" />}
+              </button>
+
+              {datasets.length > 0 && <div className="my-1 h-px bg-gray-800" />}
+
+              {/* Datasets */}
+              {datasets.map((dataset) => (
+                <button
+                  key={dataset.id}
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    console.log('[TerminalInput] Dataset clicked:', dataset.id, 'onDatasetChange exists:', !!onDatasetChange)
+                    if (onDatasetChange) {
+                      onDatasetChange(dataset.id)
+                    }
+                    setShowDatasetDropdown(false)
+                  }}
+                  className={`w-full text-left px-3 py-2 rounded text-sm flex flex-col items-start transition-colors ${datasetId === dataset.id ? 'bg-blue-500/20 text-blue-400' : 'text-gray-300 hover:bg-gray-800'
+                    }`}
+                >
+                  <div className="w-full flex items-center justify-between">
+                    <span className="truncate font-medium">
+                      {cleanTableName(dataset.table_name)}
+                    </span>
+                    {datasetId === dataset.id && <Check className="w-4 h-4 flex-shrink-0 ml-2" />}
+                  </div>
+                  <span className="text-xs text-gray-500 truncate w-full">
+                    {dataset.row_count.toLocaleString()} rows
+                  </span>
                 </button>
               ))}
             </div>

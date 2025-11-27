@@ -47,6 +47,11 @@ async def send_message_stream(
     - error (if something goes wrong)
     
     Each event is JSON with {type, data} structure.
+    
+    Dataset Support:
+    - request.dataset_id: The ID of the selected user dataset
+    - request.dataset_table_name: The table name of the selected dataset (for SQL queries)
+    - Future: The backend will enforce dataset usage when a dataset is selected
     """
     try:
         from app.database.repositories.chat_session import ChatSessionRepository
@@ -193,6 +198,11 @@ async def send_message(
     - Generate visualizations when appropriate
     - Provide proper source citations
     - Track execution steps for UI visualization
+    
+    Dataset Support:
+    - request.dataset_id: The ID of the selected user dataset
+    - request.dataset_table_name: The table name of the selected dataset (for SQL queries)
+    - Future: The backend will enforce dataset usage when a dataset is selected
     """
     try:
         from app.database.repositories.chat_session import ChatSessionRepository

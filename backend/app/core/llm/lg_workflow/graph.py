@@ -7,11 +7,11 @@ from langgraph.graph.message import add_messages
 import dotenv
 from typing import Annotated, List, TypedDict, Union, Literal, Optional
 # Import agents from the agents module
+from app.core.llm.lg_workflow.agents.librarian import create_librarian_node
+from app.core.llm.lg_workflow.agents.analyst import create_analyst_node
+from app.core.llm.lg_workflow.agents.visualizer import create_visualizer_node
 from app.core.llm.lg_workflow.agents import (
-    librarian_node,
-    analyst_node,
     researcher_node,
-    visualizer_node,
     reporter_node,
     supervisor_node,
     members,
@@ -46,6 +46,11 @@ def summarize_conversation(state: AgentState):
 # --- Graph Construction ---
 def create_workflow(user_id: str):
     workflow = StateGraph(AgentState)
+    
+    # Create agent nodes with user_id bound to tools
+    librarian_node = create_librarian_node(user_id)
+    analyst_node = create_analyst_node(user_id)
+    visualizer_node = create_visualizer_node(user_id)
 
     workflow.add_node("Supervisor", supervisor_node)
     workflow.add_node("DataLibrarian", librarian_node)

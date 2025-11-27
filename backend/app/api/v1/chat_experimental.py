@@ -137,16 +137,27 @@ async def send_message_stream_experimental(
                 # Initialize workflow
                 app = create_workflow(user_id)
                 
-                # Prepare input
+                # Prepare input with conversation history
+                # Convert history to LangChain message format
+                history_messages = []
+                for msg in conversation_history:
+                    if msg["role"] == "user":
+                        history_messages.append(HumanMessage(content=msg["content"]))
+                    elif msg["role"] == "assistant":
+                        history_messages.append(AIMessage(content=msg["content"]))
+                
+                # Add current message
+                history_messages.append(HumanMessage(content=request.message))
+                
                 inputs = {
-                    "messages": [HumanMessage(content=request.message)]
+                    "messages": history_messages
                 }
                 
                 # Config for checkpointing (optional, but good for history)
                 config = {"configurable": {"thread_id": session_id}}
 
                 # Stream events using v2 for better event capture
-                async for event in app.astream_events(inputs, config=config, version="v2"):
+                async for event in app.astream_events(inputs, config=config, version="v2", recursion_limit=50):
                     kind = event.get("event")
                     name = event.get("name", "")
                     

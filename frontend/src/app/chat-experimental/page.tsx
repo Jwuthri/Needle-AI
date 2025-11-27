@@ -14,6 +14,9 @@ export default function ChatExperimentalPage() {
   const [selectedCompany, setSelectedCompany] = useState<string | null>(
     searchParams.get('company_id')
   )
+  const [selectedDataset, setSelectedDataset] = useState<string | null>(
+    searchParams.get('dataset_id')
+  )
 
   // Redirect to sign-in if not authenticated
   useEffect(() => {
@@ -38,6 +41,8 @@ export default function ChatExperimentalPage() {
         sessionId={chatContext?.currentSessionId}
         onSessionIdChange={chatContext?.setCurrentSessionId}
         onCompanyChange={setSelectedCompany}
+        datasetId={selectedDataset}
+        onDatasetChange={setSelectedDataset}
       />
     </div>
   )

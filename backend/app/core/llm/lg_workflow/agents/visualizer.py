@@ -1,21 +1,63 @@
 """Visualizer Agent - creates plots from datasets."""
+from langchain_core.tools import tool
 from app.core.llm.lg_workflow.tools.base import get_dataset_info_tool
 from app.core.llm.lg_workflow.tools.viz import generate_plot_tool
 from .base import create_agent, llm
 
-# Visualizer Agent
-visualizer_tools = [get_dataset_info_tool, generate_plot_tool]
-visualizer_node = create_agent(
-    llm,
-    visualizer_tools,
-    "You are a Visualizer. Your goal is to create plots from datasets. "
-    "IMPORTANT: You MUST follow this workflow:\\n"
-    "1. First, use `get_dataset_info_tool` to fetch the dataset's schema and see what columns are available.\\n"
-    "2. Then, intelligently map the user's request to the actual column names. For example:\\n"
-    "   - If user says 'sentiment polarity', look for columns like 'polarity', 'sentiment', 'compound', etc.\\n"
-    "   - If user says 'price', look for columns like 'price', 'amount', 'cost', etc.\\n"
-    "3. Finally, call `generate_plot_tool` with the correct dataset_id and actual column names.\\n"
-    "Look at the conversation history to find the `dataset_id`. "
-    "Infer the best `plot_type` (e.g., 'hist' for distributions, 'bar' for categorical data, 'scatter' for numerical relationships). "
-    "NEVER assume a column name exists - always check first with get_dataset_info_tool."
-)
+def create_visualizer_node(user_id: str):
+    """Create visualizer agent with tools bound to user_id."""
+    
+    # Create wrapper tools with user_id bound
+    @tool
+    async def get_dataset_info(table_name: str) -> str:
+        """Returns metadata and the first 5 rows of a dataset given its table name."""
+        return await get_dataset_info_tool.coroutine(table_name=table_name, user_id=user_id)
+    
+    @tool
+    async def generate_plot(table_name: str, x_column: str, y_column: str, plot_type: str = "scatter") -> str:
+        """Generate a high-quality plot for a dataset using Plotly."""
+        return await generate_plot_tool.coroutine(table_name=table_name, x_column=x_column, y_column=y_column, user_id=user_id, plot_type=plot_type)
+    
+    visualizer_tools = [get_dataset_info, generate_plot]
+    
+    return create_agent(
+        llm,
+        visualizer_tools,
+        """You are a Visualizer - create charts from datasets.
+
+TOOLS:
+- get_dataset_info - Get schema and sample data
+- generate_plot - Create high-quality chart
+
+WORKFLOW:
+1. Read conversation history for context (table name, columns, recent analysis)
+2. IF columns unclear: Call get_dataset_info(table_name)
+3. Call generate_plot(table_name, x_column, y_column, plot_type)
+4. Tool returns full markdown report with chart path
+
+CHART TYPES:
+- scatter, line, bar, histogram (y_column=""), pie (x_column=category, y_column=""), box
+
+COLUMN PATTERNS:
+- sentiment → sentiment_polarity, sentiment_label
+- rating → rating, score, stars
+- date → date, created_at, timestamp
+- text → text, review, comment
+
+PIE CHART RULE (for categorical data like sentiment):
+- x_column = category column name (e.g., "sentiment_label")
+- y_column = "" (empty string - triggers auto-count)
+
+CRITICAL RULES:
+- generate_plot returns complete markdown report with chart details
+- DO NOT add commentary or explanations
+- Just call the tool and pass output through
+
+Example:
+User: "Show sentiment as pie chart"
+You: [Call generate_plot(table="reviews", x_column="sentiment_label", y_column="", plot_type="pie")]
+[Tool returns full report]
+Pass it through
+
+Remember: Tool output is comprehensive. Just call it correctly."""
+    )
