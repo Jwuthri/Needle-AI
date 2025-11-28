@@ -2,7 +2,7 @@
 from typing import Optional
 from langchain_core.tools import tool
 from app.core.llm.lg_workflow.tools.analytics import clustering_tool, tfidf_tool, describe_tool
-from app.core.llm.lg_workflow.tools.ml import sentiment_analysis_tool, embedding_tool, linear_regression_tool, trend_analysis_tool, product_gap_detection_tool
+from app.core.llm.lg_workflow.tools.ml import sentiment_analysis_tool, embedding_tool, linear_regression_tool, trend_analysis_tool, product_gap_detection_tool, negative_review_gap_detector
 from .base import create_agent, llm
 
 def create_analyst_node(user_id: str, dataset_table_name: Optional[str] = None):
@@ -153,12 +153,52 @@ def create_analyst_node(user_id: str, dataset_table_name: Optional[str] = None):
         actual_table = dataset_table_name if dataset_table_name else table_name
         return await product_gap_detection_tool.coroutine(table_name=actual_table, user_id=user_id, min_cluster_size=min_cluster_size, eps=eps)
     
+    @tool
+    async def detect_gaps_from_negative_reviews(
+        table_name: str, 
+        text_column: str = "text",
+        rating_column: str = "rating",
+        max_clusters: int = 100,
+        min_rating: int = 1,
+        max_rating: int = 3
+    ) -> str:
+        """
+        Detects product gaps from negative reviews (1-3 stars) using clustering + LLM.
+        
+        Process:
+        1. Filters reviews with ratings 1-3 (configurable)
+        2. Clusters them into up to 100 groups
+        3. Finds the most representative review per cluster
+        4. Sends to LLM to extract actionable product gaps
+        
+        Note: Dataset must have '__embedding__' column. Use generate_embeddings first if needed.
+        
+        Args:
+            table_name: Name of the reviews dataset
+            text_column: Column with review text (default: "text")
+            rating_column: Column with ratings (default: "rating")
+            max_clusters: Maximum clusters to create (default: 100)
+            min_rating: Minimum rating to include (default: 1)
+            max_rating: Maximum rating to include (default: 3)
+        """
+        actual_table = dataset_table_name if dataset_table_name else table_name
+        return await negative_review_gap_detector.coroutine(
+            table_name=actual_table, 
+            user_id=user_id, 
+            text_column=text_column,
+            rating_column=rating_column,
+            max_clusters=max_clusters,
+            min_rating=min_rating,
+            max_rating=max_rating
+        )
+    
     analyst_tools = [
         clustering, tfidf_analysis, describe_dataset, 
         sentiment_analysis, generate_embeddings, linear_regression,
-        trend_analysis, product_gap_detection
+        trend_analysis, detect_gaps_from_negative_reviews # product_gap_detection
     ]
-    
+
+    # - product_gap_detection - Product gaps (DBSCAN-based)
     # Build prompt with optional focused mode notice
     base_prompt = """You are a Data Analyst - perform analysis on datasets.
 
@@ -170,7 +210,7 @@ AVAILABLE TOOLS:
 - describe_dataset - Statistical summary
 - linear_regression - Predictions
 - generate_embeddings - Vector embeddings
-- product_gap_detection - Product gaps
+- detect_gaps_from_negative_reviews - Extract product gaps from 1-3 star reviews using LLM
 
 WORKFLOW:
 1. Get table_name from conversation

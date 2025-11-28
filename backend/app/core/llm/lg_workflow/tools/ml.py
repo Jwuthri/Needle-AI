@@ -2,12 +2,15 @@ from langchain_core.tools import tool
 from app.core.llm.lg_workflow.data.manager import DataManager
 import pandas as pd
 from textblob import TextBlob
-from langchain_openai import OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score, mean_squared_error
+import hdbscan
 import numpy as np
 import os
 import asyncio
+from pydantic import BaseModel, Field
+from typing import List
 
 @tool
 async def sentiment_analysis_tool(table_name: str, text_column: str, user_id: str) -> str:
@@ -601,5 +604,235 @@ async def product_gap_detection_tool(
     loop = asyncio.get_running_loop()
     try:
         return await loop.run_in_executor(None, _detect_product_gaps)
+    except Exception as e:
+        return f"Error detecting product gaps: {str(e)}"
+
+
+class ProductGap(BaseModel):
+    """A single product gap extracted from reviews."""
+    title: str = Field(description="Short title for the gap (3-7 words)")
+    description: str = Field(description="Detailed description of the gap")
+    severity: str = Field(description="Severity level: critical, high, medium, low")
+    frequency_hint: str = Field(description="How often this issue seems to appear")
+    suggested_action: str = Field(description="Recommended action to address the gap")
+
+
+class ProductGapsExtraction(BaseModel):
+    """Structured extraction of product gaps from reviews."""
+    gaps: List[ProductGap] = Field(description="List of identified product gaps")
+    overall_summary: str = Field(description="Brief summary of the main pain points")
+
+
+@tool
+async def negative_review_gap_detector(
+    table_name: str,
+    user_id: str,
+    text_column: str = "text",
+    rating_column: str = "rating",
+    max_clusters: int = 100,
+    min_rating: int = 1,
+    max_rating: int = 3
+) -> str:
+    """
+    Detects product gaps from negative reviews (1-3 stars) using HDBSCAN clustering + LLM analysis.
+    
+    Process:
+    1. Filters reviews with ratings between min_rating and max_rating (default 1-3)
+    2. Clusters the negative reviews using HDBSCAN (targets min(n_reviews/2, 100) clusters)
+    3. Finds the centroid review (most representative) of each cluster
+    4. Sends centroid reviews to LLM to extract product gaps
+    
+    Args:
+        table_name: The dataset table name (must have __embedding__ column)
+        user_id: User ID
+        text_column: Column containing review text (default: "text")
+        rating_column: Column containing ratings (default: "rating")
+        max_clusters: Maximum number of clusters to target (default: 100)
+        min_rating: Minimum rating to include (default: 1)
+        max_rating: Maximum rating to include (default: 3)
+    
+    Returns:
+        Detailed product gap analysis report with actionable insights
+    """
+    dm = DataManager.get_instance("default")
+    df = await dm.get_dataset(table_name, user_id)
+    
+    if df is None or df.empty:
+        return f"Error: Dataset '{table_name}' not found."
+    
+    if "__embedding__" not in df.columns:
+        return f"Error: Dataset must have '__embedding__' column. Use embedding_tool first."
+    
+    if text_column not in df.columns:
+        return f"Error: Column '{text_column}' not found in dataset."
+    
+    if rating_column not in df.columns:
+        return f"Error: Column '{rating_column}' not found in dataset."
+
+    def _cluster_and_find_centroids():
+        # Filter negative reviews
+        negative_df = df[
+            (df[rating_column] >= min_rating) & 
+            (df[rating_column] <= max_rating)
+        ].copy()
+        
+        if negative_df.empty:
+            return None, None, "No reviews found with ratings between {} and {}".format(min_rating, max_rating)
+        
+        n_reviews = len(negative_df)
+        
+        # Target cluster count: min(n_reviews / 2, max_clusters)
+        target_clusters = min(n_reviews // 2, max_clusters)
+        
+        if n_reviews < 2:
+            return None, None, "Not enough reviews for clustering (minimum 2 required)"
+        
+        # Extract embeddings
+        embeddings = np.array(negative_df["__embedding__"].tolist())
+        
+        # Calculate min_cluster_size to get approximately target_clusters
+        # HDBSCAN finds clusters automatically, but min_cluster_size controls granularity
+        # Rough heuristic: min_cluster_size = n_reviews / target_clusters
+        min_cluster_size = max(2, n_reviews // max(target_clusters, 1))
+        
+        # Perform HDBSCAN clustering
+        clusterer = hdbscan.HDBSCAN(
+            min_cluster_size=min_cluster_size,
+            min_samples=1,
+            metric='euclidean',
+            cluster_selection_method='eom'
+        )
+        cluster_labels = clusterer.fit_predict(embeddings)
+        
+        negative_df["__cluster_id__"] = cluster_labels
+        
+        # Get unique clusters (excluding noise labeled as -1)
+        unique_clusters = [c for c in set(cluster_labels) if c != -1]
+        
+        # Find centroid review for each cluster
+        centroid_reviews = []
+        for cluster_id in unique_clusters:
+            cluster_mask = cluster_labels == cluster_id
+            cluster_embeddings = embeddings[cluster_mask]
+            cluster_indices = np.where(cluster_mask)[0]
+            
+            if len(cluster_indices) == 0:
+                continue
+            
+            # Find the review closest to the cluster centroid (mean of cluster)
+            cluster_center = cluster_embeddings.mean(axis=0)
+            distances = np.linalg.norm(cluster_embeddings - cluster_center, axis=1)
+            closest_idx = cluster_indices[np.argmin(distances)]
+            
+            centroid_row = negative_df.iloc[closest_idx]
+            centroid_reviews.append({
+                "cluster_id": cluster_id,
+                "cluster_size": int(cluster_mask.sum()),
+                "text": str(centroid_row[text_column])[:500],  # Limit text length
+                "rating": int(centroid_row[rating_column]) if pd.notna(centroid_row[rating_column]) else None
+            })
+        
+        # Count noise points
+        noise_count = (cluster_labels == -1).sum()
+        
+        # Sort by cluster size (most common issues first)
+        centroid_reviews.sort(key=lambda x: x["cluster_size"], reverse=True)
+        
+        return negative_df, centroid_reviews, None, noise_count, len(unique_clusters)
+    
+    loop = asyncio.get_running_loop()
+    try:
+        result = await loop.run_in_executor(None, _cluster_and_find_centroids)
+        
+        # Handle error case (3 elements) vs success case (5 elements)
+        if len(result) == 3:
+            _, _, error = result
+            return f"Error: {error}"
+        
+        negative_df, centroid_reviews, _, noise_count, n_clusters = result
+        n_reviews = len(negative_df)
+        
+        # Build prompt for LLM with centroid reviews
+        reviews_text = "\n\n".join([
+            f"**Cluster {i+1}** ({r['cluster_size']} similar reviews, Rating: {r['rating']}):\n\"{r['text']}\""
+            for i, r in enumerate(centroid_reviews[:50])  # Limit to top 50 clusters
+        ])
+        
+        prompt = f"""You are a product analyst. Analyze these representative customer complaints (each represents a cluster of similar complaints).
+
+Total negative reviews analyzed: {n_reviews}
+Number of distinct complaint clusters: {n_clusters}
+
+REPRESENTATIVE REVIEWS (one per cluster, sorted by frequency):
+
+{reviews_text}
+
+Extract the key product gaps, issues, and improvement opportunities. Focus on:
+1. Recurring problems that appear across multiple clusters
+2. Critical issues that severely impact user experience
+3. Feature gaps or missing functionality
+4. UX/usability problems
+5. Performance or reliability issues
+
+Be specific and actionable in your analysis."""
+
+        # Call LLM with structured output
+        llm = ChatOpenAI(
+            model="gpt-4o-mini",
+            api_key=os.getenv("OPENAI_API_KEY"),
+            temperature=0
+        )
+        structured_llm = llm.with_structured_output(ProductGapsExtraction)
+        
+        result = await structured_llm.ainvoke(prompt)
+        
+        # Build comprehensive report
+        report = []
+        report.append("# 🔍 Product Gap Analysis from Negative Reviews")
+        report.append(f"\n**Dataset:** {table_name}")
+        report.append(f"**Rating Filter:** {min_rating}-{max_rating} stars")
+        report.append(f"**Total Negative Reviews:** {n_reviews}")
+        report.append(f"**Complaint Clusters:** {n_clusters}")
+        report.append(f"**Unclustered (noise):** {noise_count}")
+        report.append(f"**Analysis Method:** HDBSCAN Clustering + LLM Extraction\n")
+        
+        report.append("---\n")
+        report.append(f"## 📋 Summary\n\n{result.overall_summary}\n")
+        
+        report.append("---\n")
+        report.append("## 🚨 Identified Product Gaps\n")
+        
+        severity_emoji = {
+            "critical": "🔴",
+            "high": "🟠", 
+            "medium": "🟡",
+            "low": "🟢"
+        }
+        
+        for i, gap in enumerate(result.gaps, 1):
+            emoji = severity_emoji.get(gap.severity.lower(), "⚪")
+            report.append(f"### {i}. {gap.title} {emoji}")
+            report.append(f"\n**Severity:** {gap.severity.upper()}")
+            report.append(f"**Frequency:** {gap.frequency_hint}")
+            report.append(f"\n**Description:**\n{gap.description}")
+            report.append(f"\n**Recommended Action:**\n> {gap.suggested_action}\n")
+        
+        # Add cluster size distribution
+        report.append("---\n")
+        report.append("## 📊 Cluster Size Distribution\n")
+        report.append("| Cluster | Size | Sample Review |")
+        report.append("|---------|------|---------------|")
+        
+        for i, cr in enumerate(centroid_reviews[:15], 1):  # Top 15 clusters
+            text_preview = cr["text"][:80].replace("|", "\\|").replace("\n", " ")
+            if len(cr["text"]) > 80:
+                text_preview += "..."
+            report.append(f"| {i} | {cr['cluster_size']} | {text_preview} |")
+        
+        if len(centroid_reviews) > 15:
+            report.append(f"\n*...and {len(centroid_reviews) - 15} more clusters*")
+        
+        return "\n".join(report)
+        
     except Exception as e:
         return f"Error detecting product gaps: {str(e)}"
