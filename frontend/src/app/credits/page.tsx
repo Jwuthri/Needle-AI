@@ -79,7 +79,7 @@ export default function CreditsPage() {
         await fetchData()
         
         // Show success (you could add a toast notification here)
-        alert(`Successfully added ${tier.credits} free credits! New balance: ${response.credits_available}`)
+        // alert(`Successfully added ${tier.credits} free credits! New balance: ${response.credits_available}`)
       } catch (err: any) {
         console.error('Error adding free credits:', err)
         setError(err.message || 'Failed to add free credits')

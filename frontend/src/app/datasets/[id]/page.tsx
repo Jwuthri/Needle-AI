@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { ArrowLeft, Database, Table as TableIcon, FileText, Loader2, Settings, Trash2 } from 'lucide-react'
+import { ArrowLeft, Database, Table as TableIcon, FileText, Loader2, Settings, Trash2, Download } from 'lucide-react'
 import { useAuth } from '@clerk/nextjs'
 import { createApiClient } from '@/lib/api'
 import type { UserDataset, FieldMetadata } from '@/types/user-dataset'
@@ -29,6 +29,7 @@ export default function DatasetDetailPage() {
   const [totalRows, setTotalRows] = useState(0)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [downloading, setDownloading] = useState(false)
 
   useEffect(() => {
     if (isLoaded && !isSignedIn) {
@@ -168,6 +169,59 @@ export default function DatasetDetailPage() {
     }
   }
 
+  const handleDownloadCSV = async () => {
+    if (!datasetId || downloading) return
+    
+    setDownloading(true)
+    try {
+      const token = await getToken()
+      const api = createApiClient(token)
+      
+      // Fetch all data (no limit)
+      const response = await api.getDatasetData(datasetId, 100000, 0)
+      const csvData = response.data || []
+      const csvColumns = response.columns || []
+      
+      if (csvData.length === 0) {
+        alert('No data to download')
+        return
+      }
+      
+      // Convert to CSV
+      const escapeCSV = (value: any): string => {
+        if (value === null || value === undefined) return ''
+        const str = typeof value === 'object' ? JSON.stringify(value) : String(value)
+        // Escape quotes and wrap in quotes if contains comma, newline, or quote
+        if (str.includes(',') || str.includes('\n') || str.includes('"')) {
+          return `"${str.replace(/"/g, '""')}"`
+        }
+        return str
+      }
+      
+      const header = csvColumns.map(escapeCSV).join(',')
+      const rows = csvData.map((row: any) => 
+        csvColumns.map((col: string) => escapeCSV(row[col])).join(',')
+      )
+      const csv = [header, ...rows].join('\n')
+      
+      // Download
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${dataset?.table_name || 'dataset'}.csv`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+    } catch (error: any) {
+      console.error('Failed to download CSV:', error)
+      alert(`Failed to download: ${error.message || 'Unknown error'}`)
+    } finally {
+      setDownloading(false)
+    }
+  }
+
   if (!isLoaded || !isSignedIn || loading) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-950">
@@ -261,13 +315,27 @@ export default function DatasetDetailPage() {
               <Database className="w-8 h-8 text-emerald-400" />
               <h1 className="text-3xl font-bold text-white">{friendlyTableName}</h1>
             </div>
-            <button
-              onClick={() => setShowDeleteConfirm(true)}
-              className="flex items-center space-x-2 px-4 py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/30 text-red-400 rounded-xl transition-colors"
-            >
-              <Trash2 className="w-4 h-4" />
-              <span>Delete Dataset</span>
-            </button>
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={handleDownloadCSV}
+                disabled={downloading}
+                className="flex items-center space-x-2 px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 hover:border-emerald-500/30 text-emerald-400 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {downloading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4" />
+                )}
+                <span>{downloading ? 'Downloading...' : 'Download CSV'}</span>
+              </button>
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="flex items-center space-x-2 px-4 py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 hover:border-red-500/30 text-red-400 rounded-xl transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Delete Dataset</span>
+              </button>
+            </div>
           </div>
           <p className="text-white/60">
             {dataset.origin} • {dataset.row_count.toLocaleString()} rows

@@ -11,49 +11,145 @@ def create_analyst_node(user_id: str, dataset_table_name: Optional[str] = None):
     # Create wrapper tools with user_id bound (and optional default table_name)
     @tool
     async def clustering(table_name: str, target_column: str, n_clusters: int = 3) -> str:
-        """Perform K-means clustering on a dataset."""
+        """
+        Performs K-Means clustering on a numeric column of a dataset.
+        
+        Returns a comprehensive clustering analysis report with:
+        - Cluster distribution and sizes
+        - Statistical summary for each cluster
+        - Sample data from each cluster
+        - Insights about cluster characteristics
+        
+        Updates the dataset with a new 'cluster' column containing cluster IDs (0 to n_clusters-1).
+        
+        Args:
+            table_name: Name of the dataset to cluster
+            target_column: Numeric column to cluster on
+            n_clusters: Number of clusters to create (default: 3)
+        """
         actual_table = dataset_table_name if dataset_table_name else table_name
         return await clustering_tool.coroutine(table_name=actual_table, target_column=target_column, user_id=user_id, n_clusters=n_clusters)
     
     @tool
     async def tfidf_analysis(table_name: str, text_column: str, max_features: int = 10) -> str:
-        """Perform TF-IDF analysis on a text column."""
+        """
+        Computes TF-IDF (Term Frequency-Inverse Document Frequency) analysis for a text column.
+        
+        Identifies the most important terms/keywords based on their frequency and uniqueness.
+        Returns a comprehensive report with top terms, scores, and vocabulary statistics.
+        
+        Args:
+            table_name: Name of the dataset
+            text_column: Text column to analyze
+            max_features: Number of top terms to return (default: 10)
+        """
         actual_table = dataset_table_name if dataset_table_name else table_name
         return await tfidf_tool.coroutine(table_name=actual_table, text_column=text_column, user_id=user_id, max_features=max_features)
     
     @tool
     async def describe_dataset(table_name: str) -> str:
-        """Get descriptive statistics and metadata for a dataset."""
+        """
+        Returns descriptive statistics and metadata for a dataset.
+        
+        Includes:
+        - Field descriptions and data types
+        - Column statistics (min, max, mean, etc.)
+        - Sample data (first 5 rows)
+        
+        Args:
+            table_name: Name of the dataset to describe
+        """
         actual_table = dataset_table_name if dataset_table_name else table_name
         return await describe_tool.coroutine(table_name=actual_table, user_id=user_id)
     
     @tool
     async def sentiment_analysis(table_name: str, text_column: str) -> str:
-        """Perform sentiment analysis on a text column."""
+        """
+        Analyzes the sentiment of a text column in a dataset.
+        
+        Returns a comprehensive sentiment analysis report with:
+        - Overall sentiment distribution (positive/negative/neutral)
+        - Statistical summary (mean, std, min, max polarity)
+        - Subjectivity analysis
+        - Most positive and negative examples
+        
+        Adds sentiment_polarity, sentiment_subjectivity, and sentiment_label columns to the dataset.
+        
+        Args:
+            table_name: Name of the dataset
+            text_column: Text column to analyze (e.g., 'text', 'review', 'comment')
+        """
         actual_table = dataset_table_name if dataset_table_name else table_name
         return await sentiment_analysis_tool.coroutine(table_name=actual_table, text_column=text_column, user_id=user_id)
     
     @tool
     async def generate_embeddings(table_name: str, text_column: str) -> str:
-        """Generate embeddings for a text column."""
+        """
+        Generates vector embeddings for a text column using OpenAI's embedding model.
+        
+        Adds a new '__embedding__' column to the dataset.
+        WARNING: This can be slow and cost money for large datasets.
+        
+        Args:
+            table_name: Name of the dataset
+            text_column: Text column to generate embeddings for
+        """
         actual_table = dataset_table_name if dataset_table_name else table_name
         return await embedding_tool.coroutine(table_name=actual_table, text_column=text_column, user_id=user_id)
     
     @tool
     async def linear_regression(table_name: str, target_column: str, feature_columns: list[str]) -> str:
-        """Perform linear regression analysis."""
+        """
+        Performs a simple linear regression to predict a target column based on feature columns.
+        
+        Returns regression results including R2 score, MSE, and coefficients.
+        
+        Args:
+            table_name: Name of the dataset
+            target_column: Column to predict (dependent variable)
+            feature_columns: List of columns to use as features (independent variables)
+        """
         actual_table = dataset_table_name if dataset_table_name else table_name
         return await linear_regression_tool.coroutine(table_name=actual_table, target_column=target_column, feature_columns=feature_columns, user_id=user_id)
     
     @tool
     async def trend_analysis(table_name: str, date_column: str, value_column: str, period: str = "M") -> str:
-        """Analyze trends in time series data."""
+        """
+        Analyzes trends in a value column over time.
+        
+        Returns a comprehensive trend analysis report with:
+        - Trend direction (increasing/decreasing/stable)
+        - Statistical summary (first, last, mean, std, min, max)
+        - Percentage change over time
+        - Volatility detection
+        - Recent time series data
+        
+        Args:
+            table_name: Name of the dataset
+            date_column: Column containing datetime values
+            value_column: Numeric column to track over time
+            period: Aggregation period - 'D' (daily), 'W' (weekly), 'M' (monthly), 'Q' (quarterly), 'Y' (yearly)
+        """
         actual_table = dataset_table_name if dataset_table_name else table_name
         return await trend_analysis_tool.coroutine(table_name=actual_table, date_column=date_column, value_column=value_column, user_id=user_id, period=period)
     
     @tool
     async def product_gap_detection(table_name: str, min_cluster_size: int = 5, eps: float = 0.3) -> str:
-        """Detect gaps in product catalog using clustering on embeddings."""
+        """
+        Detects gaps in a product catalog by clustering on embeddings.
+        
+        Uses DBSCAN clustering on the __embedding__ column to identify:
+        1. Underrepresented product clusters (gaps)
+        2. Outlier products (niche or edge cases)
+        3. Missing product themes
+        
+        Note: Dataset must have '__embedding__' column. Use generate_embeddings first if needed.
+        
+        Args:
+            table_name: Name of the product dataset (must have __embedding__ column)
+            min_cluster_size: Minimum cluster size for DBSCAN (default: 5)
+            eps: DBSCAN epsilon parameter for clustering (default: 0.3)
+        """
         actual_table = dataset_table_name if dataset_table_name else table_name
         return await product_gap_detection_tool.coroutine(table_name=actual_table, user_id=user_id, min_cluster_size=min_cluster_size, eps=eps)
     

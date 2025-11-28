@@ -44,12 +44,6 @@ const navItems = [
     match: (pathname: string) => pathname.startsWith('/companies'),
   },
   {
-    name: 'Chat',
-    href: '/chat',
-    icon: MessageSquare,
-    match: (pathname: string) => pathname === '/chat' || pathname.startsWith('/chat/'),
-  },
-  {
     name: 'Exp Chat',
     href: '/chat-experimental',
     icon: Zap,
@@ -96,8 +90,8 @@ export function Sidebar({ conversations = [], onNewChat, onSelectSession, curren
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [activeMenu, setActiveMenu] = useState<string | null>(null)
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null)
-  // Show chat controls for both chat routes
-  const isChatRoute = pathname === '/chat' || pathname === '/chat-experimental'
+  // Show chat controls for chat route
+  const isChatRoute = pathname === '/chat-experimental'
 
   // Load chat sessions when on chat route
   useEffect(() => {
@@ -245,8 +239,7 @@ export function Sidebar({ conversations = [], onNewChat, onSelectSession, curren
       <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
         {navItems.map((item) => {
           const Icon = item.icon
-          // Exact match for chat routes to avoid conflicts between /chat and /chat-experimental
-          const isActive = item.href === '/chat' || item.href === '/chat-experimental'
+          const isActive = item.href === '/chat-experimental'
             ? pathname === item.href
             : pathname?.startsWith(item.href)
 

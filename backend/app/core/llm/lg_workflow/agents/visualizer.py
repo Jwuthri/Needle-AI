@@ -1,8 +1,8 @@
 """Visualizer Agent - creates plots from datasets."""
-from typing import Optional
+from typing import Any, Optional
 from langchain_core.tools import tool
 from app.core.llm.lg_workflow.tools.base import get_dataset_info_tool
-from app.core.llm.lg_workflow.tools.viz import generate_plot_tool
+from app.core.llm.lg_workflow.tools.viz import generate_plot_from_data_tool, generate_plot_tool
 from .base import create_agent, llm
 
 def create_visualizer_node(user_id: str, dataset_table_name: Optional[str] = None):
@@ -11,17 +11,64 @@ def create_visualizer_node(user_id: str, dataset_table_name: Optional[str] = Non
     # Create wrapper tools with user_id bound (and optional default table_name)
     @tool
     async def get_dataset_info(table_name: str) -> str:
-        """Returns metadata and the first 5 rows of a dataset given its table name."""
+        """
+        Returns comprehensive metadata and sample data for a dataset.
+        
+        Includes:
+        - Table name and description
+        - Total rows and columns
+        - Column details (name, type, description)
+        - Column statistics
+        - Sample data (first 5 rows)
+        - Embedding information if available
+        
+        Args:
+            table_name: Name of the dataset to get info for
+        """
         actual_table = dataset_table_name if dataset_table_name else table_name
         return await get_dataset_info_tool.coroutine(table_name=actual_table, user_id=user_id)
 
     @tool
-    async def generate_plot(table_name: str, x_column: str, y_column: str, plot_type: str = "scatter") -> str:
-        """Generate a high-quality plot for a dataset using Plotly."""
-        actual_table = dataset_table_name if dataset_table_name else table_name
-        return await generate_plot_tool.coroutine(table_name=actual_table, x_column=x_column, y_column=y_column, user_id=user_id, plot_type=plot_type)
+    async def generate_plot_from_data(data: list[dict[str, Any]], x_column: str, y_column: str, title: str, plot_type: str = "bar") -> str:
+        """
+        Generate a high-quality plot from raw data using Plotly.
+        
+        Use this when you have data already computed/aggregated and don't need to read from a table.
+        Saves the plot as a PNG file and returns a markdown report with the file path.
+        
+        Args:
+            data: List of dictionaries containing the data to plot (e.g., [{"category": "A", "value": 10}, ...])
+            x_column: Key name for x-axis values in the data dictionaries
+            y_column: Key name for y-axis values in the data dictionaries
+            title: Chart title
+            plot_type: Type of plot - 'bar' (default), 'scatter', 'line', 'pie', 'histogram'
+        """
+        return await generate_plot_from_data_tool.coroutine(data=data, x_column=x_column, y_column=y_column, user_id=user_id, title=title, plot_type=plot_type)
     
-    visualizer_tools = [get_dataset_info, generate_plot]
+    @tool
+    async def generate_plot(table_name: str, x_column: str, y_column: str, plot_type: str = "scatter", title: str = "") -> str:
+        """
+        Generate a high-quality interactive plot for a dataset using Plotly.
+        
+        Saves the plot as a PNG file to the user's graph directory and returns a markdown report.
+        
+        Args:
+            table_name: Name of the dataset to plot
+            x_column: Column name for x-axis
+            y_column: Column name for y-axis (use empty string "" for histogram or pie with auto-count)
+            plot_type: Type of plot - Options:
+                - 'scatter': Scatter plot (default)
+                - 'line': Line chart for trends
+                - 'bar': Bar chart for comparisons
+                - 'histogram': Distribution histogram (uses only x_column)
+                - 'pie': Pie chart (x_column=labels, y_column="" for auto-count or values column)
+                - 'box': Box plot for distribution analysis
+            title: Custom chart title (optional, auto-generated if not provided)
+        """
+        actual_table = dataset_table_name if dataset_table_name else table_name
+        return await generate_plot_tool.coroutine(table_name=actual_table, x_column=x_column, y_column=y_column, user_id=user_id, plot_type=plot_type, title=title)
+    
+    visualizer_tools = [get_dataset_info, generate_plot, generate_plot_from_data]
     
     # Build prompt with optional focused mode notice
     base_prompt = """You are a Visualizer - create charts from datasets.

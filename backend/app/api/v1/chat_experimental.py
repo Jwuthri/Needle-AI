@@ -24,10 +24,83 @@ from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage, AIMessage
 
 from app.core.llm.lg_workflow.graph import create_workflow
+from app.core.config.settings import get_settings
 
 logger = get_logger("chat_experimental_api")
 
 router = APIRouter()
+
+
+async def summarize_steps_for_history(
+    user_message: str,
+    assistant_response: str,
+    agent_steps: list,
+) -> str:
+    """
+    Summarize the workflow steps for better conversation history context.
+    Uses a small, fast model (gpt-5-nano) to create a concise summary.
+    """
+    from openai import AsyncOpenAI
+    
+    settings = get_settings()
+    if not settings.openai_api_key:
+        logger.warning("No OpenAI API key configured, skipping step summarization")
+        return ""
+    
+    # Build a detailed view of tool calls with arguments
+    tool_calls_list = []
+    datasets_used = set()
+    
+    for step in agent_steps:
+        agent = step.get("agent_name", "unknown")
+        if step.get("is_structured"):
+            content = step.get("content", {})
+            tool_name = content.get("tool_name", "unknown_tool")
+            tool_kwargs = content.get("tool_kwargs", {})
+            raw_output = step.get("raw_output", "")
+            
+            # Extract dataset/table info from kwargs
+            for key in ["dataset_id", "table_name", "dataset_table_name", "table"]:
+                if key in tool_kwargs:
+                    datasets_used.add(str(tool_kwargs[key]))
+            
+            # Format tool call with args
+            args_str = ", ".join(f"{k}={v}" for k, v in tool_kwargs.items()) if tool_kwargs else "no args"
+            output_preview = raw_output[:300] if raw_output else "no output"
+            tool_calls_list.append(f"- {tool_name}({args_str}) → {output_preview}")
+    
+    tool_calls_text = "\n".join(tool_calls_list) if tool_calls_list else "No tool calls"
+    datasets_text = ", ".join(datasets_used) if datasets_used else "None identified"
+    
+    prompt = f"""Summarize this workflow execution for conversation history context.
+
+MUST INCLUDE in your summary:
+1. Dataset/table used: {datasets_text}
+2. Each tool call with key arguments
+3. Key findings or results
+
+User question: {user_message[:300]}
+
+Tool calls executed:
+{tool_calls_text}
+
+Final answer preview: {assistant_response[:400]}...
+
+Write a concise 2-4 sentence summary emphasizing the data sources accessed, tools used with their arguments, and main findings:"""
+
+    try:
+        client = AsyncOpenAI(api_key=settings.openai_api_key)
+        response = await client.chat.completions.create(
+            model="gpt-4.1-nano",
+            messages=[{"role": "user", "content": prompt}],
+            max_completion_tokens=512,
+        )
+        summary = response.choices[0].message.content.strip()
+        logger.info(f"Generated step summary: {summary[:100]}...")
+        return summary
+    except Exception as e:
+        logger.error(f"Failed to summarize steps: {e}")
+        return ""
 
 
 @router.post("/stream")
@@ -77,10 +150,15 @@ async def send_message_stream_experimental(
             
             # Fetch recent conversation history (last 10 messages = 5 exchanges)
             messages = await ChatMessageRepository.get_recent_messages(db, session_id, limit=10)
-            conversation_history = [
-                {"role": msg.role.value, "content": msg.content}
-                for msg in reversed(messages)  # Reverse to get chronological order
-            ]
+            conversation_history = []
+            for msg in reversed(messages):  # Reverse to get chronological order
+                content = msg.content
+                # For assistant messages, prepend step summary if available
+                if msg.role.value == "assistant" and msg.extra_metadata:
+                    step_summary = msg.extra_metadata.get("step_summary")
+                    if step_summary:
+                        content = f"<Workflow Summary>{step_summary}</Workflow Summary>\n\n<Final answer>{content}</Final answer>"
+                conversation_history.append({"role": msg.role.value, "content": content})
             
             # Save user message to database
             user_message = await ChatMessageRepository.create(
@@ -323,9 +401,32 @@ async def send_message_stream_experimental(
                         logger.info(f"Message updated successfully")
                     else:
                         logger.error(f"Failed to update message {assistant_message_id}")
-
-                # Send complete event with full response structure
+                
+                # Send complete event with full response structure (BEFORE background task)
                 yield f"data: {json.dumps({'type': 'complete', 'data': {'message_id': str(assistant_message_id), 'message': final_content, 'timestamp': datetime.utcnow().isoformat(), 'completed_at': completed_at.isoformat(), 'metadata': {'agent_steps': agent_steps}}})}\n\n"
+
+                # Fire-and-forget background task for step summarization (non-blocking)
+                async def generate_and_save_summary():
+                    try:
+                        step_summary = await summarize_steps_for_history(
+                            user_message=request.message,
+                            assistant_response=final_content,
+                            agent_steps=agent_steps,
+                        )
+                        if step_summary:
+                            async with get_async_session() as db:
+                                await ChatMessageRepository.update(
+                                    db,
+                                    assistant_message_id,
+                                    extra_metadata={"step_summary": step_summary}
+                                )
+                                await db.commit()
+                                logger.info(f"Saved step summary for message {assistant_message_id}")
+                    except Exception as sum_err:
+                        logger.error(f"Failed to generate step summary: {sum_err}")
+                
+                # Schedule as background task - don't await
+                asyncio.create_task(generate_and_save_summary())
 
             except Exception as e:
                 logger.error(f"Stream error: {e}", exc_info=True)

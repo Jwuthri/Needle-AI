@@ -170,11 +170,12 @@ export default function JobsPage() {
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
                       <h3 className="text-lg font-semibold text-white">
-                        Job {job.id.slice(0, 8)}...
+                        {job.source_name || 'Reviews'}: {job.company_name || `Company ${job.company_id.slice(0, 8)}`}
                       </h3>
                       {getStatusBadge(job.status)}
                     </div>
                     <div className="flex flex-wrap gap-4 text-sm text-white/60">
+                      <span className="text-white/40">#{job.id.slice(0, 8)}</span>
                       <span>Created: {formatDate(job.created_at)}</span>
                       {job.started_at && (
                         <span>Duration: {calculateDuration(job.started_at, job.completed_at)}</span>

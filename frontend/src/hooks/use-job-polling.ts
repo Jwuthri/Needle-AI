@@ -17,6 +17,9 @@ interface Job {
   created_at: string
   started_at: string | null
   completed_at: string | null
+  // Human-readable names
+  source_name?: string
+  company_name?: string
 }
 
 interface UseJobPollingOptions {

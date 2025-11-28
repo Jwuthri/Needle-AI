@@ -19,8 +19,12 @@ export interface ScrapingJob {
   cost: number;
   started_at?: string;
   completed_at?: string;
+  created_at?: string;
   error_message?: string;
   user_id: string;
+  // Human-readable names
+  source_name?: string;
+  company_name?: string;
 }
 
 export interface StartScrapingJobRequest {

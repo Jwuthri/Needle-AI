@@ -45,6 +45,9 @@ class ScrapingJobResponse(BaseModel):
     created_at: datetime
     started_at: Optional[datetime]
     completed_at: Optional[datetime]
+    # Human-readable names
+    source_name: Optional[str] = None
+    company_name: Optional[str] = None
 
     class Config:
         from_attributes = True

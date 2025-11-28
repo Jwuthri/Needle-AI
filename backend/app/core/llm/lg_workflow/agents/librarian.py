@@ -10,7 +10,14 @@ def create_librarian_node(user_id: str, dataset_table_name: Optional[str] = None
     # Create wrapper tools with user_id bound
     @tool
     async def list_datasets() -> str:
-        """Lists available datasets with their table names and descriptions."""
+        """
+        Lists all available datasets with their table names and descriptions.
+        
+        Returns a formatted list of datasets the user has access to, including:
+        - Table name (use this for other tool calls)
+        - Description of the dataset
+        - Row count
+        """
         result = await list_datasets_tool.coroutine(user_id=user_id)
         
         # If focused on a specific dataset, filter the results
@@ -29,7 +36,20 @@ def create_librarian_node(user_id: str, dataset_table_name: Optional[str] = None
     
     @tool
     async def get_dataset_info(table_name: str) -> str:
-        """Returns metadata and the first 5 rows of a dataset given its table name."""
+        """
+        Returns comprehensive metadata and sample data for a dataset.
+        
+        Includes:
+        - Table name and description
+        - Total rows and columns
+        - Column details (name, type, description)
+        - Column statistics
+        - Sample data (first 5 rows)
+        - Embedding information if available
+        
+        Args:
+            table_name: Name of the dataset to get info for
+        """
         # If focused mode, override the table_name to ensure we use the focused dataset
         actual_table = dataset_table_name if dataset_table_name else table_name
         return await get_dataset_info_tool.coroutine(table_name=actual_table, user_id=user_id)

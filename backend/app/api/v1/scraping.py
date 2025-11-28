@@ -214,7 +214,30 @@ async def list_scraping_jobs(
                 db, current_user.id, limit=limit, offset=offset
             )
         
-        return [ScrapingJobResponse.model_validate(job) for job in jobs]
+        # Enrich jobs with source and company names
+        result = []
+        # Cache lookups to avoid repeated queries
+        sources_cache = {}
+        companies_cache = {}
+        
+        for job in jobs:
+            job_data = ScrapingJobResponse.model_validate(job)
+            
+            # Get source name
+            if job.source_id not in sources_cache:
+                source = await ReviewSourceRepository.get_by_id(db, job.source_id)
+                sources_cache[job.source_id] = source.name if source else None
+            job_data.source_name = sources_cache[job.source_id]
+            
+            # Get company name
+            if job.company_id not in companies_cache:
+                company = await CompanyRepository.get_by_id(db, job.company_id)
+                companies_cache[job.company_id] = company.name if company else None
+            job_data.company_name = companies_cache[job.company_id]
+            
+            result.append(job_data)
+        
+        return result
         
     except HTTPException:
         raise

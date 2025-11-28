@@ -11,7 +11,7 @@ from app.config import get_settings
 from app.core.celery_app import celery_app
 from app.database.models.scraping_job import JobStatusEnum
 from app.database.models.review_source import SourceTypeEnum
-from app.database.session import get_async_session
+from app.database.session import get_fresh_async_session
 from app.database.repositories import (
     CompanyRepository,
     ReviewRepository,
@@ -73,7 +73,7 @@ async def scrape_reviews_async(
     """
     settings = get_settings()
     
-    async with get_async_session() as session:
+    async with get_fresh_async_session() as session:
         try:
             # Get job
             job = await ScrapingJobRepository.get_by_id(session, job_id)
@@ -272,7 +272,7 @@ async def generate_fake_reviews_async(
     """
     settings = get_settings()
     
-    async with get_async_session() as session:
+    async with get_fresh_async_session() as session:
         try:
             # Get job
             job = await ScrapingJobRepository.get_by_id(session, job_id)

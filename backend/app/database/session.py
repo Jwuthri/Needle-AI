@@ -284,3 +284,34 @@ async def cleanup_database():
 
     _async_session_factory = None
     logger.info("Database cleanup completed")
+
+
+@asynccontextmanager
+async def get_fresh_async_session() -> AsyncGenerator[AsyncSession, None]:
+    """
+    Get a fresh async database session with its own engine.
+    
+    Use this in Celery tasks or other contexts where a new event loop
+    is created (e.g., asyncio.run()) to avoid event loop conflicts.
+    """
+    # Create a fresh engine for this context (not the global singleton)
+    engine = create_async_database_engine()
+    session_factory = async_sessionmaker(
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autoflush=False,
+        autocommit=False
+    )
+    
+    async with session_factory() as session:
+        try:
+            yield session
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
+    
+    # Dispose of the engine when done
+    await engine.dispose()
