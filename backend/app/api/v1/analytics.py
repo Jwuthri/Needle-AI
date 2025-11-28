@@ -4,8 +4,11 @@ Analytics API endpoints for dashboard.
 
 from datetime import datetime
 from typing import Optional
+import csv
+import io
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -258,7 +261,9 @@ async def get_user_reviews_stats(
     db: AsyncSession = Depends(get_db),
     company_id: Optional[str] = None,
     source: Optional[str] = None,
-    time_period: str = "month"
+    time_period: str = "month",
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None
 ):
     """
     Get analytics from user's reviews table.
@@ -269,7 +274,7 @@ async def get_user_reviews_stats(
     - Source breakdown
     - Total reviews count
     
-    Optionally filter by company_id and/or source.
+    Optionally filter by company_id, source, and date range.
     """
     try:
         user_id = current_user.id
@@ -291,6 +296,13 @@ async def get_user_reviews_stats(
         # Add source filter if provided
         if source:
             where_conditions.append(f"source = '{source}'")
+        
+        # Add date range filters if provided
+        if date_from:
+            where_conditions.append(f"date >= '{date_from.strftime('%Y-%m-%d')}'")
+        if date_to:
+            where_conditions.append(f"date <= '{date_to.strftime('%Y-%m-%d')}'")
+        
         
         where_clause = f"WHERE {' AND '.join(where_conditions)}" if where_conditions else ""
         
@@ -449,6 +461,109 @@ async def get_user_reviews_stats(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get analytics: {str(e)}"
+        )
+
+
+@router.get("/user-reviews/export")
+async def export_user_reviews(
+    current_user: ClerkUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    company_id: Optional[str] = None,
+    source: Optional[str] = None,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None
+):
+    """
+    Export user reviews as CSV file.
+    
+    Supports the same filters as the stats endpoint:
+    - company_id
+    - source
+    - date_from/date_to
+    """
+    try:
+        user_id = current_user.id
+        reviews_service = UserReviewsService(db)
+        table_name = reviews_service.get_user_reviews_table_name(user_id)
+        
+        # Check if table exists
+        await reviews_service.ensure_user_reviews_table(user_id)
+        
+        # Build where clause
+        where_conditions = []
+        company_name = None
+        if company_id:
+            company = await CompanyRepository.get_by_id(db, company_id)
+            if company:
+                company_name = company.name
+                where_conditions.append(f"company_name = '{company_name}'")
+        
+        if source:
+            where_conditions.append(f"source = '{source}'")
+        
+        if date_from:
+            where_conditions.append(f"date >= '{date_from.strftime('%Y-%m-%d')}'")
+        if date_to:
+            where_conditions.append(f"date <= '{date_to.strftime('%Y-%m-%d')}'")
+        
+        where_clause = f"WHERE {' AND '.join(where_conditions)}" if where_conditions else ""
+        
+        # Get all reviews matching filters
+        query = text(f"""
+            SELECT company_name, title, text, rating, source, date, author_name
+            FROM "{table_name}"
+            {where_clause}
+            ORDER BY date DESC
+        """)
+        result = await db.execute(query)
+        rows = result.fetchall()
+        
+        # Create CSV in memory
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Write header
+        writer.writerow(['Company', 'Title', 'Review Text', 'Rating', 'Source', 'Date', 'Author'])
+        
+        # Write data rows
+        for row in rows:
+            writer.writerow([
+                row[0],  # company_name
+                row[1],  # title
+                row[2],  # text
+                row[3],  # rating
+                row[4],  # source
+                row[5].strftime('%Y-%m-%d') if row[5] else '',  # date
+                row[6] or ''  # author_name
+            ])
+        
+        output.seek(0)
+        
+        # Generate filename
+        filename_parts = ['reviews']
+        if company_name:
+            filename_parts.append(company_name.replace(' ', '_'))
+        if source:
+            filename_parts.append(source)
+        if date_from:
+            filename_parts.append(f"from_{date_from.strftime('%Y-%m-%d')}")
+        if date_to:
+            filename_parts.append(f"to_{date_to.strftime('%Y-%m-%d')}")
+        filename = '_'.join(filename_parts) + '.csv'
+        
+        logger.info(f"Exporting {len(rows)} reviews for user {user_id}")
+        
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+        
+    except Exception as e:
+        logger.error(f"Error exporting user reviews: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to export reviews: {str(e)}"
         )
 
 

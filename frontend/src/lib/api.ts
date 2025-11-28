@@ -254,13 +254,48 @@ class ApiClient {
   }
 
   // Analytics endpoints
-  async getUserReviewsStats(companyId?: string, source?: string, timePeriod?: string): Promise<any> {
+  async getUserReviewsStats(
+    companyId?: string,
+    source?: string,
+    timePeriod?: string,
+    dateFrom?: string,
+    dateTo?: string
+  ): Promise<any> {
     const params = new URLSearchParams()
     if (companyId) params.append('company_id', companyId)
     if (source) params.append('source', source)
     if (timePeriod) params.append('time_period', timePeriod)
+    if (dateFrom) params.append('date_from', dateFrom)
+    if (dateTo) params.append('date_to', dateTo)
     const queryString = params.toString() ? `?${params.toString()}` : ''
     return this.request(`/analytics/user-reviews/stats${queryString}`)
+  }
+
+  async exportUserReviews(
+    companyId?: string,
+    source?: string,
+    dateFrom?: string,
+    dateTo?: string
+  ): Promise<Blob> {
+    const params = new URLSearchParams()
+    if (companyId) params.append('company_id', companyId)
+    if (source) params.append('source', source)
+    if (dateFrom) params.append('date_from', dateFrom)
+    if (dateTo) params.append('date_to', dateTo)
+    const queryString = params.toString() ? `?${params.toString()}` : ''
+    
+    const url = `${this.baseUrl}/analytics/user-reviews/export${queryString}`
+    const headers: Record<string, string> = {}
+    if (this.token) {
+      headers.Authorization = `Bearer ${this.token}`
+    }
+    
+    const response = await fetch(url, { headers })
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
+    
+    return response.blob()
   }
 
   // Data import endpoints

@@ -3,8 +3,42 @@ Celery application stub for task decorators.
 """
 
 import ssl
+import logging
 from celery import Celery
+from celery.signals import setup_logging
+from rich.console import Console
+from rich.logging import RichHandler
 from app.core.config.settings import get_settings
+
+
+@setup_logging.connect
+def setup_celery_logging(**kwargs):
+    """Configure Rich logging for Celery workers."""
+    console = Console(force_terminal=True)
+    
+    # Configure root logger with Rich
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(message)s",
+        datefmt="[%X]",
+        handlers=[
+            RichHandler(
+                console=console,
+                rich_tracebacks=True,
+                tracebacks_show_locals=True,
+                show_path=False,
+                markup=True,
+            )
+        ],
+        force=True,
+    )
+    
+    # Set levels for noisy loggers
+    logging.getLogger("celery").setLevel(logging.INFO)
+    logging.getLogger("kombu").setLevel(logging.WARNING)
+    logging.getLogger("amqp").setLevel(logging.WARNING)
+    logging.getLogger("sqlalchemy").setLevel(logging.WARNING)
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 
 settings = get_settings()
 

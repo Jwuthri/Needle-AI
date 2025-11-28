@@ -31,7 +31,8 @@ async def get_dataset_info_tool(table_name: str, user_id: str) -> str:
     if meta.get('field_metadata'):
         output.append("\n## Column Details")
         for field in meta['field_metadata']:
-            col_name = field.get('column_name', 'Unknown')
+            # Support both 'column_name' and 'field_name' keys
+            col_name = field.get('column_name') or field.get('field_name') or field.get('name', 'Unknown')
             data_type = field.get('data_type', 'Unknown')
             description = field.get('description', '')
             output.append(f"- **{col_name}** ({data_type}): {description if description else 'No description'}")

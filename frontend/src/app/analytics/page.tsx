@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { motion } from 'framer-motion'
-import { BarChart3, Calendar, Download, TrendingUp, Loader2 } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { BarChart3, Calendar, Download, TrendingUp, Loader2, X, ChevronDown } from 'lucide-react'
 import { useAuth } from '@clerk/nextjs'
 import { createApiClient } from '@/lib/api'
 import { CompanySelector } from '@/components/ui/company-selector'
@@ -22,6 +22,20 @@ import {
   Legend,
   ResponsiveContainer
 } from 'recharts'
+
+interface DateRange {
+  from: string | null
+  to: string | null
+}
+
+const DATE_PRESETS = [
+  { label: 'Last 7 days', days: 7 },
+  { label: 'Last 30 days', days: 30 },
+  { label: 'Last 90 days', days: 90 },
+  { label: 'Last 6 months', days: 180 },
+  { label: 'Last year', days: 365 },
+  { label: 'All time', days: null },
+]
 
 interface BoxPlotData {
   source: string
@@ -123,6 +137,78 @@ export default function AnalyticsPage() {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null)
   const [loading, setLoading] = useState(false)
   const [trendLoading, setTrendLoading] = useState(false)
+  const [dateRange, setDateRange] = useState<DateRange>({ from: null, to: null })
+  const [showDatePicker, setShowDatePicker] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const datePickerRef = useRef<HTMLDivElement>(null)
+
+  // Close date picker when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (datePickerRef.current && !datePickerRef.current.contains(event.target as Node)) {
+        setShowDatePicker(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const applyDatePreset = (days: number | null) => {
+    if (days === null) {
+      setDateRange({ from: null, to: null })
+    } else {
+      const to = new Date()
+      const from = new Date()
+      from.setDate(from.getDate() - days)
+      setDateRange({
+        from: from.toISOString().split('T')[0],
+        to: to.toISOString().split('T')[0]
+      })
+    }
+    setShowDatePicker(false)
+  }
+
+  const getDateRangeLabel = () => {
+    if (!dateRange.from && !dateRange.to) return 'All Time'
+    if (dateRange.from && dateRange.to) {
+      const from = new Date(dateRange.from)
+      const to = new Date(dateRange.to)
+      return `${from.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${to.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+    }
+    if (dateRange.from) return `From ${new Date(dateRange.from).toLocaleDateString()}`
+    if (dateRange.to) return `Until ${new Date(dateRange.to).toLocaleDateString()}`
+    return 'Date Range'
+  }
+
+  const handleExport = async () => {
+    if (!selectedCompany) return
+    
+    setExporting(true)
+    try {
+      const token = await getToken()
+      const api = createApiClient(token)
+      const blob = await api.exportUserReviews(
+        selectedCompany,
+        selectedSource || undefined,
+        dateRange.from || undefined,
+        dateRange.to || undefined
+      )
+      
+      // Create download link
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `reviews_export_${new Date().toISOString().split('T')[0]}.csv`
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+    } catch (error) {
+      console.error('Failed to export:', error)
+    } finally {
+      setExporting(false)
+    }
+  }
 
   useEffect(() => {
     if (isLoaded && !isSignedIn) {
@@ -137,7 +223,7 @@ export default function AnalyticsPage() {
         return
       }
 
-      // Only show full loading when company/source changes
+      // Only show full loading when company/source/date changes
       const isCompanyOrSourceChange = !analytics ||
         analytics.company_name !== selectedCompany ||
         analytics.filtered_source !== selectedSource
@@ -155,7 +241,9 @@ export default function AnalyticsPage() {
         const data = await api.getUserReviewsStats(
           selectedCompany,
           selectedSource || undefined,
-          timePeriod
+          timePeriod,
+          dateRange.from || undefined,
+          dateRange.to || undefined
         )
         setAnalytics(data)
       } catch (error) {
@@ -170,7 +258,7 @@ export default function AnalyticsPage() {
     }
 
     fetchAnalytics()
-  }, [selectedCompany, selectedSource, timePeriod, getToken, isSignedIn])
+  }, [selectedCompany, selectedSource, timePeriod, dateRange, getToken, isSignedIn])
 
   if (!isLoaded || !isSignedIn) {
     return (
@@ -215,13 +303,99 @@ export default function AnalyticsPage() {
           </div>
 
           <div className="flex items-center space-x-4">
-            <button className="flex items-center space-x-2 px-4 py-2 bg-gray-800/50 border border-gray-700 rounded-xl text-white hover:bg-gray-800 transition-colors">
-              <Calendar className="w-4 h-4" />
-              <span>Date Range</span>
-            </button>
-            <button className="flex items-center space-x-2 px-4 py-2 bg-gray-800/50 border border-gray-700 rounded-xl text-white hover:bg-gray-800 transition-colors">
-              <Download className="w-4 h-4" />
-              <span>Export</span>
+            {/* Date Range Picker */}
+            <div className="relative" ref={datePickerRef}>
+              <button
+                onClick={() => setShowDatePicker(!showDatePicker)}
+                className="flex items-center space-x-2 px-4 py-2 bg-gray-800/50 border border-gray-700 rounded-xl text-white hover:bg-gray-800 transition-colors"
+              >
+                <Calendar className="w-4 h-4" />
+                <span className="max-w-[180px] truncate">{getDateRangeLabel()}</span>
+                <ChevronDown className={`w-4 h-4 transition-transform ${showDatePicker ? 'rotate-180' : ''}`} />
+              </button>
+              
+              <AnimatePresence>
+                {showDatePicker && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="absolute right-0 mt-2 w-80 bg-gray-900 border border-gray-700 rounded-xl shadow-xl z-50 overflow-hidden"
+                  >
+                    <div className="p-4 border-b border-gray-700">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-sm font-medium text-white">Select Date Range</span>
+                        {(dateRange.from || dateRange.to) && (
+                          <button
+                            onClick={() => setDateRange({ from: null, to: null })}
+                            className="text-xs text-emerald-400 hover:text-emerald-300"
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                      
+                      {/* Presets */}
+                      <div className="grid grid-cols-2 gap-2 mb-4">
+                        {DATE_PRESETS.map((preset) => (
+                          <button
+                            key={preset.label}
+                            onClick={() => applyDatePreset(preset.days)}
+                            className="px-3 py-2 text-sm bg-gray-800/50 hover:bg-gray-800 border border-gray-700 hover:border-emerald-500/50 rounded-lg text-white/80 hover:text-white transition-colors text-left"
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
+                      </div>
+                      
+                      {/* Custom Date Inputs */}
+                      <div className="space-y-3">
+                        <div>
+                          <label className="text-xs text-white/60 mb-1 block">From</label>
+                          <input
+                            type="date"
+                            value={dateRange.from || ''}
+                            onChange={(e) => setDateRange(prev => ({ ...prev, from: e.target.value || null }))}
+                            className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-emerald-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-white/60 mb-1 block">To</label>
+                          <input
+                            type="date"
+                            value={dateRange.to || ''}
+                            onChange={(e) => setDateRange(prev => ({ ...prev, to: e.target.value || null }))}
+                            className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-emerald-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="p-3 bg-gray-800/50 flex justify-end">
+                      <button
+                        onClick={() => setShowDatePicker(false)}
+                        className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm rounded-lg transition-colors"
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+            
+            {/* Export Button */}
+            <button
+              onClick={handleExport}
+              disabled={!selectedCompany || exporting}
+              className="flex items-center space-x-2 px-4 py-2 bg-gray-800/50 border border-gray-700 rounded-xl text-white hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {exporting ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Download className="w-4 h-4" />
+              )}
+              <span>{exporting ? 'Exporting...' : 'Export'}</span>
             </button>
           </div>
         </div>
