@@ -608,6 +608,138 @@ async def product_gap_detection_tool(
         return f"Error detecting product gaps: {str(e)}"
 
 
+@tool
+async def semantic_search_tool(
+    table_name: str,
+    user_id: str,
+    query: str,
+    text_column: str = "text",
+    top_k: int = 1000
+) -> str:
+    """
+    Performs semantic search on a dataset to find reviews matching a query.
+    
+    Uses cosine similarity on the __embedding__ column to find the most relevant reviews.
+    Only returns results with similarity score > 0.4 (relevant matches).
+    
+    IMPORTANT: The query is for EMBEDDING SEARCH, not a human! Keep it SHORT and DIRECT.
+    
+    Args:
+        table_name: The dataset table name (must have __embedding__ column)
+        user_id: User ID
+        query: SHORT phrase (2-5 words). Examples:
+               ✓ "slow search" 
+               ✓ "bad customer support"
+               ✓ "pricing too expensive"
+               ✗ "reviews mentioning that the search is slow" (TOO VERBOSE)
+               ✗ "find all reviews about customer support issues" (TOO VERBOSE)
+        text_column: Column containing the text to display (default: "text")
+        top_k: Maximum number of results to return (default: 1000, max: 1000)
+    
+    Returns:
+        Markdown formatted results with matching reviews and download link
+    """
+    dm = DataManager.get_instance("default")
+    df = await dm.get_dataset(table_name, user_id)
+    
+    if df is None or df.empty:
+        return f"Error: Dataset '{table_name}' not found."
+    
+    if "__embedding__" not in df.columns:
+        return f"Error: Dataset must have '__embedding__' column. Use generate_embeddings first."
+    
+    if text_column not in df.columns:
+        return f"Error: Column '{text_column}' not found in dataset."
+    
+    # Cap top_k at 1000
+    top_k = min(top_k, 1000)
+    
+    def _search():
+        # Generate embedding for the query
+        embeddings_model = OpenAIEmbeddings(api_key=os.getenv("OPENAI_API_KEY"))
+        query_embedding = embeddings_model.embed_query(query)
+        query_vec = np.array(query_embedding)
+        
+        # Get all embeddings from dataset
+        embeddings = np.array(df["__embedding__"].tolist())
+        
+        # Compute cosine similarity
+        # Normalize vectors
+        query_norm = query_vec / np.linalg.norm(query_vec)
+        embeddings_norm = embeddings / np.linalg.norm(embeddings, axis=1, keepdims=True)
+        
+        # Cosine similarity
+        similarities = np.dot(embeddings_norm, query_norm)
+        
+        # Get top_k indices
+        top_indices = np.argsort(similarities)[::-1][:top_k]
+        top_scores = similarities[top_indices]
+        # Filter to only include results with similarity > 0.4 (relevant matches)
+        valid_mask = top_scores > 0.033
+        top_indices = top_indices[valid_mask]
+        top_scores = top_scores[valid_mask]
+        
+        return top_indices, top_scores
+    
+    loop = asyncio.get_running_loop()
+    try:
+        top_indices, top_scores = await loop.run_in_executor(None, _search)
+        
+        if len(top_indices) == 0:
+            return f"No relevant results found for query: '{query}'"
+        
+        # Get the matching rows
+        result_df = df.iloc[top_indices].copy()
+        result_df["__similarity_score__"] = top_scores
+        
+        # Save as artifact for further analysis
+        artifact_name = f"search_{table_name}_{len(result_df)}_similarity_to_{query}"
+        await dm.save_artifact(
+            result_df.drop(columns=["__embedding__", "__similarity_score__"], errors="ignore"),
+            artifact_name,
+            f"Semantic search results for: {query}",
+            user_id
+        )
+        
+        # Build report
+        report = []
+        report.append(f"# 🔍 Semantic Search Results")
+        report.append(f"\n**Query:** \"{query}\"")
+        report.append(f"**Dataset:** {table_name}")
+        report.append(f"**Results Found:** {len(result_df)}")
+        report.append(f"**Saved as:** `{artifact_name}`\n")
+        
+        # Show top 10 results with similarity scores
+        report.append("## Top Results\n")
+        report.append("| # | Score | Review |")
+        report.append("|---|-------|--------|")
+        
+        for i, (idx, row) in enumerate(result_df.head(10).iterrows(), 1):
+            score = row["__similarity_score__"]
+            text_preview = str(row[text_column])[:100].replace("|", "\\|").replace("\n", " ")
+            if len(str(row[text_column])) > 100:
+                text_preview += "..."
+            report.append(f"| {i} | {score:.3f} | {text_preview} |")
+        
+        if len(result_df) > 10:
+            report.append(f"\n*...and {len(result_df) - 10} more results saved in `{artifact_name}`*")
+        
+        # Add summary stats
+        report.append("\n## Similarity Score Distribution")
+        report.append(f"- **Highest:** {top_scores[0]:.3f}")
+        report.append(f"- **Lowest:** {top_scores[-1]:.3f}")
+        report.append(f"- **Mean:** {np.mean(top_scores):.3f}")
+        
+        # Add download link
+        report.append("\n---")
+        report.append(f"\n📥 **[Download all {len(result_df)} results as CSV](download:{artifact_name})**")
+        
+        return "\n".join(report)
+        
+    except Exception as e:
+        return f"Error performing semantic search: {str(e)}"
+
+
 class ProductGap(BaseModel):
     """A single product gap extracted from reviews."""
     title: str = Field(description="Short title for the gap (3-7 words)")
@@ -628,17 +760,17 @@ async def negative_review_gap_detector(
     table_name: str,
     user_id: str,
     text_column: str = "text",
-    rating_column: str = "rating",
+    rating_column: str | None = None,
     max_clusters: int = 100,
     min_rating: int = 1,
     max_rating: int = 3
 ) -> str:
     """
-    Detects product gaps from negative reviews (1-3 stars) using HDBSCAN clustering + LLM analysis.
+    Detects product gaps from reviews using HDBSCAN clustering + LLM analysis.
     
     Process:
-    1. Filters reviews with ratings between min_rating and max_rating (default 1-3)
-    2. Clusters the negative reviews using HDBSCAN (targets min(n_reviews/2, 100) clusters)
+    1. If rating_column provided: filters reviews with ratings between min_rating and max_rating
+    2. Clusters reviews using HDBSCAN (targets min(n_reviews/2, 100) clusters)
     3. Finds the centroid review (most representative) of each cluster
     4. Sends centroid reviews to LLM to extract product gaps
     
@@ -646,10 +778,10 @@ async def negative_review_gap_detector(
         table_name: The dataset table name (must have __embedding__ column)
         user_id: User ID
         text_column: Column containing review text (default: "text")
-        rating_column: Column containing ratings (default: "rating")
+        rating_column: Column containing ratings (optional - if not provided, analyzes all reviews)
         max_clusters: Maximum number of clusters to target (default: 100)
-        min_rating: Minimum rating to include (default: 1)
-        max_rating: Maximum rating to include (default: 3)
+        min_rating: Minimum rating to include when filtering (default: 1)
+        max_rating: Maximum rating to include when filtering (default: 3)
     
     Returns:
         Detailed product gap analysis report with actionable insights
@@ -666,20 +798,25 @@ async def negative_review_gap_detector(
     if text_column not in df.columns:
         return f"Error: Column '{text_column}' not found in dataset."
     
-    if rating_column not in df.columns:
-        return f"Error: Column '{rating_column}' not found in dataset."
+    # Check rating column only if provided
+    use_rating_filter = rating_column is not None and rating_column in df.columns
 
     def _cluster_and_find_centroids():
-        # Filter negative reviews
-        negative_df = df[
-            (df[rating_column] >= min_rating) & 
-            (df[rating_column] <= max_rating)
-        ].copy()
+        # Filter by rating if rating_column is provided and exists
+        if use_rating_filter:
+            filtered_df = df[
+                (df[rating_column] >= min_rating) & 
+                (df[rating_column] <= max_rating)
+            ].copy()
+        else:
+            filtered_df = df.copy()
         
-        if negative_df.empty:
-            return None, None, "No reviews found with ratings between {} and {}".format(min_rating, max_rating)
+        if filtered_df.empty:
+            if use_rating_filter:
+                return None, None, "No reviews found with ratings between {} and {}".format(min_rating, max_rating)
+            return None, None, "No reviews found in dataset"
         
-        n_reviews = len(negative_df)
+        n_reviews = len(filtered_df)
         
         # Target cluster count: min(n_reviews / 2, max_clusters)
         target_clusters = min(n_reviews // 2, max_clusters)
@@ -688,7 +825,7 @@ async def negative_review_gap_detector(
             return None, None, "Not enough reviews for clustering (minimum 2 required)"
         
         # Extract embeddings
-        embeddings = np.array(negative_df["__embedding__"].tolist())
+        embeddings = np.array(filtered_df["__embedding__"].tolist())
         
         # Calculate min_cluster_size to get approximately target_clusters
         # HDBSCAN finds clusters automatically, but min_cluster_size controls granularity
@@ -704,7 +841,7 @@ async def negative_review_gap_detector(
         )
         cluster_labels = clusterer.fit_predict(embeddings)
         
-        negative_df["__cluster_id__"] = cluster_labels
+        filtered_df["__cluster_id__"] = cluster_labels
         
         # Get unique clusters (excluding noise labeled as -1)
         unique_clusters = [c for c in set(cluster_labels) if c != -1]
@@ -724,12 +861,18 @@ async def negative_review_gap_detector(
             distances = np.linalg.norm(cluster_embeddings - cluster_center, axis=1)
             closest_idx = cluster_indices[np.argmin(distances)]
             
-            centroid_row = negative_df.iloc[closest_idx]
+            centroid_row = filtered_df.iloc[closest_idx]
+            
+            # Get rating if available
+            review_rating = None
+            if use_rating_filter and rating_column in filtered_df.columns:
+                review_rating = int(centroid_row[rating_column]) if pd.notna(centroid_row[rating_column]) else None
+            
             centroid_reviews.append({
                 "cluster_id": cluster_id,
                 "cluster_size": int(cluster_mask.sum()),
                 "text": str(centroid_row[text_column])[:500],  # Limit text length
-                "rating": int(centroid_row[rating_column]) if pd.notna(centroid_row[rating_column]) else None
+                "rating": review_rating
             })
         
         # Count noise points
@@ -738,30 +881,36 @@ async def negative_review_gap_detector(
         # Sort by cluster size (most common issues first)
         centroid_reviews.sort(key=lambda x: x["cluster_size"], reverse=True)
         
-        return negative_df, centroid_reviews, None, noise_count, len(unique_clusters)
+        return filtered_df, centroid_reviews, None, noise_count, len(unique_clusters), use_rating_filter
     
     loop = asyncio.get_running_loop()
     try:
         result = await loop.run_in_executor(None, _cluster_and_find_centroids)
         
-        # Handle error case (3 elements) vs success case (5 elements)
+        # Handle error case (3 elements) vs success case (6 elements)
         if len(result) == 3:
             _, _, error = result
             return f"Error: {error}"
         
-        negative_df, centroid_reviews, _, noise_count, n_clusters = result
-        n_reviews = len(negative_df)
+        filtered_df, centroid_reviews, _, noise_count, n_clusters, used_rating_filter = result
+        n_reviews = len(filtered_df)
         
         # Build prompt for LLM with centroid reviews
+        def format_review(i, r):
+            rating_info = f", Rating: {r['rating']}" if r['rating'] is not None else ""
+            return f"**Cluster {i+1}** ({r['cluster_size']} similar reviews{rating_info}):\n\"{r['text']}\""
+        
         reviews_text = "\n\n".join([
-            f"**Cluster {i+1}** ({r['cluster_size']} similar reviews, Rating: {r['rating']}):\n\"{r['text']}\""
+            format_review(i, r)
             for i, r in enumerate(centroid_reviews[:50])  # Limit to top 50 clusters
         ])
         
-        prompt = f"""You are a product analyst. Analyze these representative customer complaints (each represents a cluster of similar complaints).
+        filter_desc = f"filtered to {min_rating}-{max_rating} star ratings" if used_rating_filter else "all reviews (no rating filter)"
+        
+        prompt = f"""You are a product analyst. Analyze these representative customer reviews (each represents a cluster of similar reviews).
 
-Total negative reviews analyzed: {n_reviews}
-Number of distinct complaint clusters: {n_clusters}
+Total reviews analyzed: {n_reviews} ({filter_desc})
+Number of distinct clusters: {n_clusters}
 
 REPRESENTATIVE REVIEWS (one per cluster, sorted by frequency):
 
@@ -788,10 +937,13 @@ Be specific and actionable in your analysis."""
         
         # Build comprehensive report
         report = []
-        report.append("# 🔍 Product Gap Analysis from Negative Reviews")
+        report.append("# 🔍 Product Gap Analysis from Reviews")
         report.append(f"\n**Dataset:** {table_name}")
-        report.append(f"**Rating Filter:** {min_rating}-{max_rating} stars")
-        report.append(f"**Total Negative Reviews:** {n_reviews}")
+        if used_rating_filter:
+            report.append(f"**Rating Filter:** {min_rating}-{max_rating} stars")
+        else:
+            report.append("**Rating Filter:** None (all reviews)")
+        report.append(f"**Total Reviews Analyzed:** {n_reviews}")
         report.append(f"**Complaint Clusters:** {n_clusters}")
         report.append(f"**Unclustered (noise):** {noise_count}")
         report.append(f"**Analysis Method:** HDBSCAN Clustering + LLM Extraction\n")

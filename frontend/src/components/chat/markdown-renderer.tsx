@@ -1,4 +1,5 @@
 import React from 'react'
+import { Download } from 'lucide-react'
 
 // Parse markdown inline formatting (bold, italic)
 const parseInlineMarkdown = (text: string): (string | JSX.Element)[] => {
@@ -110,6 +111,66 @@ export function MarkdownRenderer({ content, className = '' }: MarkdownRendererPr
 
   lines.forEach((line, idx) => {
     const trimmedLine = line.trim()
+
+    // Detect download links: [text](download:artifact_name)
+    if (trimmedLine.includes('download:')) {
+      flushSection()
+      
+      // Try standard markdown link format first
+      let downloadMatch = trimmedLine.match(/\[([^\]]+)\]\(download:([^)]+)\)/)
+      
+      // If no match, try alternative format: (download:artifact_name)
+      if (!downloadMatch) {
+        const altMatch = trimmedLine.match(/\(download:([^)]+)\)/)
+        if (altMatch) {
+          downloadMatch = ['', 'Download results as CSV', altMatch[1]] as RegExpMatchArray
+        }
+      }
+      
+      if (downloadMatch) {
+        const linkText = downloadMatch[1]
+        const artifactName = downloadMatch[2]
+        
+        const handleDownload = async () => {
+          try {
+            const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+            const apiBase = baseUrl.endsWith('/api/v1') ? baseUrl : `${baseUrl}/api/v1`
+            const response = await fetch(`${apiBase}/chat/artifacts/${encodeURIComponent(artifactName)}/download`, {
+              credentials: 'include'
+            })
+            
+            if (!response.ok) throw new Error('Download failed')
+            
+            const blob = await response.blob()
+            const url = window.URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = `${artifactName}.csv`
+            document.body.appendChild(a)
+            a.click()
+            window.URL.revokeObjectURL(url)
+            document.body.removeChild(a)
+          } catch (error) {
+            console.error('Download failed:', error)
+          }
+        }
+
+        // Clean up the link text (remove emoji if present)
+        const cleanLinkText = linkText.replace(/^📥\s*/, '').replace(/^\*\*/, '').replace(/\*\*$/, '')
+
+        sections.push(
+          <button
+            key={`download-${idx}`}
+            onClick={handleDownload}
+            className="mt-4 flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-medium rounded-lg transition-all duration-200 shadow-lg hover:shadow-emerald-500/25"
+          >
+            <Download size={18} />
+            {cleanLinkText}
+          </button>
+        )
+        return
+      }
+    }
 
     // Detect markdown images: ![alt text](url)
     const imageMatch = trimmedLine.match(/!\[([^\]]*)\]\(([^)]+)\)/)

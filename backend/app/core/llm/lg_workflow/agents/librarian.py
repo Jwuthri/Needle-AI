@@ -2,6 +2,7 @@
 from typing import Optional
 from langchain_core.tools import tool
 from app.core.llm.lg_workflow.tools.base import list_datasets_tool, get_dataset_info_tool
+from app.core.llm.lg_workflow.tools.ml import semantic_search_tool
 from .base import create_agent, llm
 
 def create_librarian_node(user_id: str, dataset_table_name: Optional[str] = None):
@@ -54,15 +55,50 @@ def create_librarian_node(user_id: str, dataset_table_name: Optional[str] = None
         actual_table = dataset_table_name if dataset_table_name else table_name
         return await get_dataset_info_tool.coroutine(table_name=actual_table, user_id=user_id)
     
-    librarian_tools = [list_datasets, get_dataset_info]
+    @tool
+    async def semantic_search(
+        table_name: str,
+        query: str,
+        text_column: str = "text",
+        top_k: int = 1000
+    ) -> str:
+        """
+        Finds reviews/data matching a query using semantic similarity.
+        
+        IMPORTANT: Query is for EMBEDDING SEARCH - keep it SHORT (2-10 words)!
+        
+        Args:
+            table_name: Dataset to search (must have __embedding__ column)
+            query: SHORT phrase only! Examples:
+                   ✓ "slow search"
+                   ✓ "bad support"
+                   ✗ "reviews mentioning slow search" (TOO LONG)
+            text_column: Column with text content (default: "text")
+            top_k: Max results (default: 1000)
+        """
+        actual_table = dataset_table_name if dataset_table_name else table_name
+        return await semantic_search_tool.coroutine(
+            table_name=actual_table,
+            user_id=user_id,
+            query=query,
+            text_column=text_column,
+            top_k=top_k
+        )
+    
+    librarian_tools = [list_datasets, get_dataset_info, semantic_search]
     
     # Build prompt with optional focused mode notice
-    base_prompt = """You are a Data Librarian - help users find datasets. BE VERY CONCISE.
+    base_prompt = """You are a Data Librarian - help users find datasets and data. BE VERY CONCISE.
+
+TOOLS:
+- list_datasets - List all available datasets
+- get_dataset_info - Get schema, stats, sample data for a dataset
+- semantic_search - Find reviews matching a SHORT query (2-5 words like "slow search", NOT verbose)
 
 WORKFLOW:
-1. Call list_datasets OR get_dataset_info(table_name)
+1. Call appropriate tool
 2. Tool returns complete formatted output
-3. Add ONE sentence max if needed (e.g., "Found X datasets.")
+3. Add ONE sentence max if needed
 4. Pass through tool output
 
 CRITICAL - STAY CONCISE:
@@ -71,8 +107,6 @@ CRITICAL - STAY CONCISE:
 ✗ NO detailed summaries
 ✓ Call tool → Optional 1 sentence → Done
 
-The tool output is already perfect and complete. Just call it and move on.
-
 Example:
 User: "What datasets do we have?"
 You: [Call list_datasets]
@@ -80,10 +114,16 @@ Tool returns formatted list
 You: "Found 3 datasets."
 
 Example:
-User needs table info
+User: "needs table info"
 You: [Call get_dataset_info("table_name")]
 Tool returns schema + sample data
 You: "Dataset info retrieved."
+
+Example:
+User: "Find reviews about slow search"
+You: [Call semantic_search(table_name="reviews", query="slow search")]  # SHORT query!
+Tool returns results
+You: "Found X matching reviews."
 
 Remember: Tools are comprehensive. You stay minimal - 1 sentence max or nothing."""
 

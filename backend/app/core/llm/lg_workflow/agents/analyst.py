@@ -2,7 +2,7 @@
 from typing import Optional
 from langchain_core.tools import tool
 from app.core.llm.lg_workflow.tools.analytics import clustering_tool, tfidf_tool, describe_tool
-from app.core.llm.lg_workflow.tools.ml import sentiment_analysis_tool, embedding_tool, linear_regression_tool, trend_analysis_tool, product_gap_detection_tool, negative_review_gap_detector
+from app.core.llm.lg_workflow.tools.ml import sentiment_analysis_tool, embedding_tool, linear_regression_tool, trend_analysis_tool, product_gap_detection_tool, negative_review_gap_detector, semantic_search_tool
 from .base import create_agent, llm
 
 def create_analyst_node(user_id: str, dataset_table_name: Optional[str] = None):
@@ -154,20 +154,20 @@ def create_analyst_node(user_id: str, dataset_table_name: Optional[str] = None):
         return await product_gap_detection_tool.coroutine(table_name=actual_table, user_id=user_id, min_cluster_size=min_cluster_size, eps=eps)
     
     @tool
-    async def detect_gaps_from_negative_reviews(
+    async def detect_gaps_from_reviews(
         table_name: str, 
         text_column: str = "text",
-        rating_column: str = "rating",
+        rating_column: str | None = None,
         max_clusters: int = 100,
         min_rating: int = 1,
         max_rating: int = 3
     ) -> str:
         """
-        Detects product gaps from negative reviews (1-3 stars) using clustering + LLM.
+        Detects product gaps from reviews using HDBSCAN clustering + LLM.
         
         Process:
-        1. Filters reviews with ratings 1-3 (configurable)
-        2. Clusters them into up to 100 groups
+        1. If rating_column provided: filters reviews by rating range
+        2. Clusters reviews into groups (targets min(n_reviews/2, 100) clusters)
         3. Finds the most representative review per cluster
         4. Sends to LLM to extract actionable product gaps
         
@@ -176,10 +176,10 @@ def create_analyst_node(user_id: str, dataset_table_name: Optional[str] = None):
         Args:
             table_name: Name of the reviews dataset
             text_column: Column with review text (default: "text")
-            rating_column: Column with ratings (default: "rating")
+            rating_column: Column with ratings (optional - if not provided, analyzes all reviews)
             max_clusters: Maximum clusters to create (default: 100)
-            min_rating: Minimum rating to include (default: 1)
-            max_rating: Maximum rating to include (default: 3)
+            min_rating: Minimum rating when filtering (default: 1)
+            max_rating: Maximum rating when filtering (default: 3)
         """
         actual_table = dataset_table_name if dataset_table_name else table_name
         return await negative_review_gap_detector.coroutine(
@@ -192,10 +192,41 @@ def create_analyst_node(user_id: str, dataset_table_name: Optional[str] = None):
             max_rating=max_rating
         )
     
+    @tool
+    async def semantic_search(
+        table_name: str,
+        query: str,
+        text_column: str = "text",
+        top_k: int = 1000
+    ) -> str:
+        """
+        Performs semantic search to find reviews matching a query.
+        
+        IMPORTANT: Query is for EMBEDDING SEARCH - keep it SHORT (2-5 words)!
+        
+        Args:
+            table_name: Name of the dataset to search
+            query: SHORT phrase only! Examples:
+                   ✓ "slow search"
+                   ✓ "bad support" 
+                   ✓ "expensive pricing"
+                   ✗ "reviews about slow search" (TOO LONG)
+            text_column: Column containing review text (default: "text")
+            top_k: Maximum results to return (default: 1000)
+        """
+        actual_table = dataset_table_name if dataset_table_name else table_name
+        return await semantic_search_tool.coroutine(
+            table_name=actual_table,
+            user_id=user_id,
+            query=query,
+            text_column=text_column,
+            top_k=top_k
+        )
+    
     analyst_tools = [
         clustering, tfidf_analysis, describe_dataset, 
         sentiment_analysis, generate_embeddings, linear_regression,
-        trend_analysis, detect_gaps_from_negative_reviews # product_gap_detection
+        trend_analysis, detect_gaps_from_reviews, semantic_search
     ]
 
     # - product_gap_detection - Product gaps (DBSCAN-based)
@@ -210,7 +241,8 @@ AVAILABLE TOOLS:
 - describe_dataset - Statistical summary
 - linear_regression - Predictions
 - generate_embeddings - Vector embeddings
-- detect_gaps_from_negative_reviews - Extract product gaps from 1-3 star reviews using LLM
+- detect_gaps_from_reviews - Extract product gaps from reviews using HDBSCAN + LLM (optional rating filter)
+- semantic_search - Find reviews matching a SHORT query (2-5 words like "slow search", NOT verbose sentences)
 
 WORKFLOW:
 1. Get table_name from conversation

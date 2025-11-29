@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { User, Sparkles, ChevronDown, ChevronUp, ExternalLink, Copy, ThumbsUp, ThumbsDown } from 'lucide-react'
+import { User, Sparkles, ChevronDown, ChevronUp, ExternalLink, Copy, ThumbsUp, ThumbsDown, Download } from 'lucide-react'
 import { EnhancedChatMessage } from '@/types/chat'
 
 interface EnhancedMessageProps {
@@ -12,37 +12,139 @@ interface EnhancedMessageProps {
 
 // Keyword categories for highlighting
 const KEYWORDS = {
-  actions: ['count', 'sum', 'average', 'calculate', 'analyze', 'show', 'list', 'find', 'get', 'search', 'filter', 'group', 'aggregate'],
-  entities: ['transactions', 'users', 'customers', 'payments', 'reviews', 'products', 'orders', 'data', 'records'],
-  methods: ['card', 'paypal', 'cash', 'credit', 'debit', 'bank', 'transfer', 'wallet'],
-  metrics: ['total', 'revenue', 'sales', 'amount', 'quantity', 'rate', 'percentage', 'ratio', 'score'],
+  // Action verbs & phrases - blue
+  actions: [
+    // N-grams (phrases) - put these first for priority
+    'find me', 'show me', 'give me', 'tell me', 'get me', 'list all', 'show all',
+    'find all', 'get all', 'how many', 'how much', 'what are', 'what is',
+    'which are', 'where are', 'who are', 'break down', 'drill down',
+    'zoom in', 'deep dive', 'look at', 'look into', 'looking for',
+    // Single words
+    'find', 'show', 'list', 'get', 'search', 'filter', 'analyze', 'calculate',
+    'count', 'sum', 'average', 'group', 'aggregate', 'compare', 'summarize',
+    'identify', 'detect', 'discover', 'extract', 'highlight', 'rank', 'sort',
+    'cluster', 'segment', 'breakdown', 'explore', 'visualize', 'chart', 'graph',
+    'plot', 'export', 'download', 'create', 'generate', 'build', 'predict',
+    'forecast', 'track', 'monitor', 'evaluate', 'assess', 'measure', 'compute',
+    'determine', 'give', 'tell', 'explain', 'describe', 'fetch', 'retrieve',
+    'display', 'present', 'report', 'check', 'verify', 'validate', 'scan'
+  ],
+  // Data entities - emerald/green
+  entities: [
+    'reviews', 'review', 'feedback', 'comments', 'ratings', 'mentions', 'complaints',
+    'issues', 'problems', 'bugs', 'features', 'requests', 'suggestions',
+    'topics', 'themes', 'clusters', 'patterns', 'insights', 'gaps',
+    'datasets', 'tables', 'columns', 'rows', 'data', 'records',
+    'users', 'customers', 'people', 'companies', 'brands', 'competitors',
+    'products', 'services', 'transactions', 'payments', 'orders',
+    'surveys', 'responses', 'results', 'findings', 'trends', 'anomalies'
+  ],
+  // Sources & platforms - purple
+  sources: [
+    'reddit', 'twitter', 'trustpilot', 'google', 'facebook', 'instagram',
+    'linkedin', 'youtube', 'tiktok', 'amazon', 'yelp', 'appstore', 'playstore',
+    'g2', 'capterra', 'glassdoor', 'tripadvisor', 'booking', 'expedia',
+    'positive', 'negative', 'neutral', 'mixed'
+  ],
+  // Metrics & measurements - yellow/amber
+  metrics: [
+    'total', 'count', 'number', 'amount', 'quantity', 'volume',
+    'average', 'mean', 'median', 'min', 'max', 'sum',
+    'score', 'rating', 'rate', 'percentage', 'ratio', 'percent',
+    'revenue', 'sales', 'growth', 'decline', 'increase', 'decrease',
+    'trend', 'distribution', 'frequency', 'correlation', 'variance',
+    'performance', 'conversion', 'engagement', 'retention', 'churn',
+    'satisfaction', 'nps', 'csat', 'sentiment', 'benchmark', 'kpi'
+  ],
+  // Time periods - cyan
+  time: [
+    // N-grams (phrases)
+    'last week', 'last month', 'last year', 'last quarter',
+    'this week', 'this month', 'this year', 'this quarter',
+    'past week', 'past month', 'past year', 'past 7 days', 'past 30 days',
+    'last 7 days', 'last 30 days', 'last 90 days', 'last 6 months',
+    'year to date', 'month to date', 'week over week', 'month over month',
+    'year over year', 'over time', 'all time',
+    // Single words
+    'today', 'yesterday', 'week', 'month', 'year', 'quarter',
+    'daily', 'weekly', 'monthly', 'yearly', 'quarterly', 'annual',
+    'last', 'previous', 'recent', 'latest', 'historical', 'past',
+    'period', 'range', 'since', 'before', 'after', 'between',
+    'january', 'february', 'march', 'april', 'may', 'june',
+    'july', 'august', 'september', 'october', 'november', 'december'
+  ],
+  // Comparisons & superlatives - orange
+  comparisons: [
+    'vs', 'versus', 'compared', 'comparison', 'difference', 'similar', 'different',
+    'better', 'worse', 'highest', 'lowest', 'most', 'least',
+    'top', 'bottom', 'best', 'worst', 'first', 'second', 'third',
+    'more', 'less', 'greater', 'fewer', 'above', 'below',
+    'all', 'every', 'each', 'any', 'none', 'some', 'many', 'few'
+  ],
+  // Star ratings - pink
+  ratings: [
+    '1-star', '2-star', '3-star', '4-star', '5-star',
+    '1star', '2star', '3star', '4star', '5star',
+    'one-star', 'two-star', 'three-star', 'four-star', 'five-star',
+    'stars', 'star'
+  ]
 }
 
-// Highlight keywords in text
+// Highlight keywords in text (supports n-grams/phrases)
 const highlightKeywords = (text: string) => {
-  let result = text
   const highlights: Array<{ text: string; color: string; start: number; end: number }> = []
 
-  // Find all keyword matches
+  // Color mapping for categories
+  const categoryColors: Record<string, string> = {
+    actions: 'text-blue-500',
+    entities: 'text-emerald-400',
+    sources: 'text-purple-400',
+    metrics: 'text-amber-400',
+    time: 'text-cyan-400',
+    comparisons: 'text-orange-400',
+    ratings: 'text-pink-400'
+  }
+
+  // Collect all keywords with their categories, sorted by length (longest first)
+  // This ensures "find me" is matched before "find"
+  const allKeywords: Array<{ word: string; category: string }> = []
   Object.entries(KEYWORDS).forEach(([category, words]) => {
     words.forEach((word) => {
-      const regex = new RegExp(`\\b(${word})\\b`, 'gi')
-      let match
-      while ((match = regex.exec(text)) !== null) {
-        const color =
-          category === 'actions' ? 'text-blue-400' :
-            category === 'entities' ? 'text-emerald-400' :
-              category === 'methods' ? 'text-purple-400' :
-                'text-yellow-400'
+      allKeywords.push({ word, category })
+    })
+  })
+  allKeywords.sort((a, b) => b.word.length - a.word.length)
 
+  // Track which positions are already highlighted to avoid overlaps
+  const usedRanges: Array<{ start: number; end: number }> = []
+
+  // Find all keyword matches
+  allKeywords.forEach(({ word, category }) => {
+    // Escape special regex characters in the word
+    const escapedWord = word.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')
+    // Use lookbehind/lookahead for word boundaries that work with phrases
+    // Match if: (start of string OR non-word char) + phrase + (end of string OR non-word char)
+    const regex = new RegExp(`(?<![\\w])(${escapedWord})(?![\\w])`, 'gi')
+    let match
+    while ((match = regex.exec(text)) !== null) {
+      const start = match.index
+      const end = match.index + match[0].length
+      
+      // Check if this range overlaps with any existing highlight
+      const overlaps = usedRanges.some(
+        range => (start < range.end && end > range.start)
+      )
+      
+      if (!overlaps) {
         highlights.push({
           text: match[0],
-          color,
-          start: match.index,
-          end: match.index + match[0].length
+          color: categoryColors[category] || 'text-white',
+          start,
+          end
         })
+        usedRanges.push({ start, end })
       }
-    })
+    }
   })
 
   // Sort by position and remove overlaps
@@ -173,6 +275,54 @@ const formatAssistantContent = (content: string) => {
 
   lines.forEach((line, idx) => {
     const trimmedLine = line.trim()
+
+    // Detect download links: [text](download:artifact_name)
+    if (trimmedLine.includes('download:')) {
+      flushSection()
+      const downloadMatch = trimmedLine.match(/\[([^\]]+)\]\(download:([^)]+)\)/)
+      if (downloadMatch) {
+        const linkText = downloadMatch[1]
+        const artifactName = downloadMatch[2]
+        
+        const handleDownload = async () => {
+          try {
+            const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+            const apiBase = baseUrl.endsWith('/api/v1') ? baseUrl : `${baseUrl}/api/v1`
+            const response = await fetch(`${apiBase}/chat/artifacts/${encodeURIComponent(artifactName)}/download`, {
+              credentials: 'include'
+            })
+            
+            if (!response.ok) throw new Error('Download failed')
+            
+            const blob = await response.blob()
+            const url = window.URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = `${artifactName}.csv`
+            document.body.appendChild(a)
+            a.click()
+            window.URL.revokeObjectURL(url)
+            document.body.removeChild(a)
+          } catch (error) {
+            console.error('Download failed:', error)
+          }
+        }
+
+        const cleanLinkText = linkText.replace(/^📥\s*/, '').replace(/^\*\*/, '').replace(/\*\*$/, '')
+
+        sections.push(
+          <button
+            key={`download-${idx}`}
+            onClick={handleDownload}
+            className="mt-4 flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-medium rounded-lg transition-all duration-200 shadow-lg hover:shadow-emerald-500/25"
+          >
+            <Download size={18} />
+            {cleanLinkText}
+          </button>
+        )
+        return
+      }
+    }
 
     // Detect markdown images: ![alt text](url)
     const imageMatch = trimmedLine.match(/!\[([^\]]*)\]\(([^)]+)\)/)

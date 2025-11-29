@@ -752,6 +752,63 @@ async def clear_session(
         )
 
 
+@router.get("/artifacts/{artifact_name}/download")
+async def download_artifact(
+    artifact_name: str,
+    current_user: Optional[ClerkUser] = Depends(get_current_user)
+):
+    """
+    Download a search artifact as CSV.
+    
+    Artifacts are created by tools like semantic_search and stored in the DataManager cache.
+    """
+    try:
+        from app.core.llm.lg_workflow.data.manager import DataManager
+        import io
+        
+        user_id = current_user.id if current_user else None
+        
+        # Get the artifact from DataManager cache
+        dm = DataManager.get_instance("default")
+        
+        # Check if artifact exists in cache
+        if artifact_name not in dm._local_cache:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Artifact '{artifact_name}' not found"
+            )
+        
+        # Get the dataframe
+        item = dm._local_cache[artifact_name]
+        if isinstance(item, tuple):
+            df, _ = item
+        else:
+            df = item
+        
+        # Convert to CSV
+        csv_buffer = io.StringIO()
+        df.to_csv(csv_buffer, index=False)
+        csv_content = csv_buffer.getvalue()
+        
+        # Return as downloadable CSV
+        return StreamingResponse(
+            iter([csv_content]),
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f"attachment; filename={artifact_name}.csv"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error downloading artifact: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to download artifact: {str(e)}"
+        )
+
+
 @router.post("/feedback", response_model=FeedbackResponse)
 async def submit_feedback(
     feedback: ChatFeedback,
