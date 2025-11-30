@@ -64,7 +64,7 @@ export default function DashboardPage() {
 
         // Mock recent activity
         setRecentActivity([
-          { id: 1, type: 'scraping', message: 'Completed scraping 500 Reddit reviews', time: '2 hours ago' },
+          { id: 1, type: 'scraping', message: 'Completed scraping 500 G2 reviews', time: '2 hours ago' },
           { id: 2, type: 'chat', message: 'New chat session started', time: '3 hours ago' },
           { id: 3, type: 'company', message: 'Added new company: Acme Corp', time: '1 day ago' },
         ])

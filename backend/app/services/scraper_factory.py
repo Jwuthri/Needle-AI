@@ -1,5 +1,11 @@
 """
 Scraper factory for managing and creating review scrapers.
+
+Working scrapers:
+- G2Scraper: Uses omkar-cloud/g2-product-scraper Apify actor
+- TrustpilotCrawler: Uses apify/website-content-crawler
+- TrustRadiusScraper: Uses scraped/trustradius-review-scraper Apify actor
+- CSVImporter: User uploads their own review data
 """
 
 from typing import Dict, List, Optional, Type
@@ -11,9 +17,8 @@ from app.services.scrapers import (
     BaseReviewScraper,
     CSVImporter,
     G2Scraper,
-    RedditScraper,
-    TrustpilotScraper,
-    TwitterScraper,
+    TrustpilotCrawler,
+    TrustRadiusScraper,
 )
 from app.utils.logging import get_logger
 
@@ -37,12 +42,11 @@ class ScraperFactory:
 
     def _register_default_scrapers(self):
         """Register built-in scrapers."""
-        self.register_scraper(SourceTypeEnum.REDDIT, RedditScraper)
-        self.register_scraper(SourceTypeEnum.TWITTER, TwitterScraper)
         self.register_scraper(SourceTypeEnum.G2, G2Scraper)
-        self.register_scraper(SourceTypeEnum.TRUSTPILOT, TrustpilotScraper)
+        self.register_scraper(SourceTypeEnum.TRUSTPILOT, TrustpilotCrawler)
+        self.register_scraper(SourceTypeEnum.TRUSTRADIUS, TrustRadiusScraper)
         self.register_scraper(SourceTypeEnum.CUSTOM_CSV, CSVImporter)
-        logger.info("Registered default scrapers: Reddit, Twitter, G2, Trustpilot, CSV")
+        logger.info("Registered default scrapers: G2, Trustpilot, TrustRadius, CSV")
 
     def register_scraper(
         self,
@@ -96,14 +100,12 @@ class ScraperFactory:
             scraper = scraper_class(self.settings)
             
             # Get cost per review
-            if source_type == SourceTypeEnum.REDDIT:
-                cost = self.settings.reddit_review_cost
-            elif source_type == SourceTypeEnum.TWITTER:
-                cost = self.settings.twitter_review_cost
-            elif source_type == SourceTypeEnum.G2:
+            if source_type == SourceTypeEnum.G2:
                 cost = self.settings.g2_review_cost
             elif source_type == SourceTypeEnum.TRUSTPILOT:
                 cost = self.settings.trustpilot_review_cost
+            elif source_type == SourceTypeEnum.TRUSTRADIUS:
+                cost = self.settings.trustradius_review_cost
             elif source_type == SourceTypeEnum.CUSTOM_CSV:
                 cost = self.settings.csv_review_cost
             else:

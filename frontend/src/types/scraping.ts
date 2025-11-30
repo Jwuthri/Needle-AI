@@ -1,7 +1,7 @@
 export interface ScrapingSource {
   id: string;
   name: string;
-  source_type: 'reddit' | 'twitter' | 'custom';
+  source_type: 'g2' | 'trustpilot' | 'trustradius' | 'custom_csv' | 'custom_json';
   cost_per_review: number;
   is_active: boolean;
   description?: string;

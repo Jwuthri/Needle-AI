@@ -154,6 +154,13 @@ class Settings(BaseSettings):
     apify_g2_actor_id: str = Field(default="epctex/g2-scraper", description="Apify G2 scraper actor ID")
     apify_trustpilot_actor_id: str = Field(default="compass/trustpilot-scraper", description="Apify Trustpilot scraper actor ID")
     
+    # ZenRows Configuration (Anti-bot Web Scraping)
+    zenrows_api_key: Optional[str] = Field(default=None, description="ZenRows API key for anti-bot scraping")
+    
+    # ScrapingBee Configuration (Anti-bot Web Scraping)
+    scrapingbee_api_key: Optional[str] = Field(default=None, description="ScrapingBee API key for anti-bot scraping")
+    
+    
     # Stripe Configuration (Payments)
     stripe_secret_key: Optional[str] = Field(default=None, description="Stripe secret key")
     stripe_publishable_key: str = Field(default="", description="Stripe publishable key")
@@ -161,10 +168,9 @@ class Settings(BaseSettings):
     stripe_currency: str = Field(default="usd", description="Default currency for Stripe")
     
     # Review Scraping Costs (per review in credits)
-    reddit_review_cost: float = Field(default=0.01, ge=0.0, description="Cost per Reddit review")
-    twitter_review_cost: float = Field(default=0.01, ge=0.0, description="Cost per Twitter review")
     g2_review_cost: float = Field(default=0.02, ge=0.0, description="Cost per G2 review")
     trustpilot_review_cost: float = Field(default=0.015, ge=0.0, description="Cost per Trustpilot review")
+    trustradius_review_cost: float = Field(default=0.02, ge=0.0, description="Cost per TrustRadius review")
     csv_review_cost: float = Field(default=0.0, ge=0.0, description="Cost per CSV imported review")
     
     # Credit Packages (amount in USD: credits)

@@ -1,8 +1,13 @@
 """
 Seed script to create real review sources in the database.
 
-This script creates real review scraping sources (Twitter, Reddit, G2, Trustpilot)
+This script creates real review scraping sources (G2, Trustpilot, TrustRadius)
 that users can select from the data sources page to scrape actual reviews.
+
+Working scrapers:
+- G2: Uses omkar-cloud/g2-product-scraper Apify actor
+- Trustpilot: Uses apify/website-content-crawler
+- TrustRadius: Uses scraped/trustradius-review-scraper Apify actor
 """
 
 import asyncio
@@ -25,30 +30,6 @@ async def seed_real_sources():
     
     real_sources = [
         {
-            "name": "Reddit",
-            "source_type": SourceTypeEnum.REDDIT,
-            "description": "Scrape real reviews and discussions from Reddit. Search by subreddit or keywords to find authentic user opinions.",
-            "cost_per_review": 0.01,
-            "is_active": True,
-            "config": {
-                "type": "real_scraper",
-                "platform": "reddit",
-                "apify_based": True
-            }
-        },
-        {
-            "name": "Twitter/X",
-            "source_type": SourceTypeEnum.TWITTER,
-            "description": "Scrape real tweets and replies from Twitter/X. Search by hashtags, mentions, or keywords to capture social media sentiment.",
-            "cost_per_review": 0.01,
-            "is_active": True,
-            "config": {
-                "type": "real_scraper",
-                "platform": "twitter",
-                "apify_based": True
-            }
-        },
-        {
             "name": "G2",
             "source_type": SourceTypeEnum.G2,
             "description": "Scrape verified product reviews from G2.com. Get detailed B2B software reviews with ratings, pros, and cons.",
@@ -69,6 +50,18 @@ async def seed_real_sources():
             "config": {
                 "type": "real_scraper",
                 "platform": "trustpilot",
+                "apify_based": True
+            }
+        },
+        {
+            "name": "TrustRadius",
+            "source_type": SourceTypeEnum.TRUSTRADIUS,
+            "description": "Scrape verified B2B software reviews from TrustRadius. Get detailed reviews with ratings, pros, cons, and buyer insights.",
+            "cost_per_review": 0.02,
+            "is_active": True,
+            "config": {
+                "type": "real_scraper",
+                "platform": "trustradius",
                 "apify_based": True
             }
         }

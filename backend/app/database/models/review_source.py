@@ -15,10 +15,9 @@ from ..base import Base
 
 class SourceTypeEnum(str, enum.Enum):
     """Available review source types (for Python code only, not DB constraint)."""
-    REDDIT = "reddit"
-    TWITTER = "twitter"
     G2 = "g2"
     TRUSTPILOT = "trustpilot"
+    TRUSTRADIUS = "trustradius"
     CUSTOM_CSV = "custom_csv"
     CUSTOM_JSON = "custom_json"
 

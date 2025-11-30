@@ -33,6 +33,7 @@ class Company(Base):
     reviews = relationship("Review", back_populates="company", cascade="all, delete-orphan")
     scraping_jobs = relationship("ScrapingJob", back_populates="company", cascade="all, delete-orphan")
     data_imports = relationship("DataImport", back_populates="company", cascade="all, delete-orphan")
+    intelligence = relationship("ProductIntelligence", back_populates="company", cascade="all, delete-orphan")
 
     # Indexes
     __table_args__ = (

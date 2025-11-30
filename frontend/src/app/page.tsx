@@ -64,7 +64,7 @@ export default function LandingPage() {
             transition={{ duration: 0.8, delay: 0.2 }}
             className="text-xl text-white/80 mb-8 max-w-2xl mx-auto"
           >
-            Discover insights from customer reviews across Reddit, Twitter, and more. 
+            Discover insights from customer reviews across G2, Trustpilot, and more. 
             Chat with your data using AI-powered analysis.
           </motion.p>
 
@@ -136,7 +136,7 @@ export default function LandingPage() {
             </div>
             <h3 className="text-2xl font-bold text-white mb-4">Multi-Source Scraping</h3>
             <p className="text-white/70 leading-relaxed">
-              Collect reviews from Reddit, Twitter, and custom sources. Import CSV files or scrape automatically.
+              Collect reviews from G2, Trustpilot, and custom sources. Import CSV files or scrape automatically.
             </p>
           </div>
 

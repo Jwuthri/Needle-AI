@@ -101,7 +101,7 @@ const highlightKeywords = (text: string) => {
     sources: 'text-purple-400',
     metrics: 'text-amber-400',
     time: 'text-cyan-400',
-    comparisons: 'text-orange-400',
+    comparisons: 'text-yellow-400',
     ratings: 'text-pink-400'
   }
 

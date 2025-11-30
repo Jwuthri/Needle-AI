@@ -23,7 +23,7 @@ export interface ReviewSource {
   review_id: string;
   content: string;
   author: string;
-  source: string; // reddit/twitter/csv
+  source: string; // g2/trustpilot/csv
   sentiment: number;
   url?: string;
   relevance_score: number;
