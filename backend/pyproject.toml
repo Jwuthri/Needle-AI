@@ -123,6 +123,7 @@ dependencies = [
     "langchain-community>=0.4.1",
     "matplotlib>=3.10.7",
     "seaborn>=0.13.2",
+    "langchain-anthropic>=1.2.0",
 ]
 
 [project.optional-dependencies]

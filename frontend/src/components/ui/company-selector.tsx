@@ -9,7 +9,7 @@ import { Company } from '@/types/company'
 
 interface CompanySelectorProps {
   value: string | null
-  onChange: (companyId: string | null) => void
+  onChange: (companyId: string | null, company?: Company | null) => void
   placeholder?: string
   className?: string
 }
@@ -56,7 +56,8 @@ export function CompanySelector({
   }, [])
 
   const handleSelect = (companyId: string | null) => {
-    onChange(companyId)
+    const company = companyId ? companies.find(c => c.id === companyId) : null
+    onChange(companyId, company)
     setShowDropdown(false)
   }
 

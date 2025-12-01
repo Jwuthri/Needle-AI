@@ -3,6 +3,7 @@ Background tasks for NeedleAi.
 """
 
 from .chat_tasks import *
+from .company_tasks import *
 from .general_tasks import *
 from .llm_tasks import *
 
@@ -16,6 +17,9 @@ __all__ = [
     "process_chat_message_async",
     "clean_old_sessions",
     "backup_conversation_history",
+
+    # Company tasks
+    "discover_review_urls_task",
 
     # General tasks
     "send_notification",

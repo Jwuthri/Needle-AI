@@ -10,6 +10,7 @@ from typing import Annotated, List, TypedDict, Union, Literal, Optional
 from app.core.llm.lg_workflow.agents.librarian import create_librarian_node
 from app.core.llm.lg_workflow.agents.analyst import create_analyst_node
 from app.core.llm.lg_workflow.agents.visualizer import create_visualizer_node
+from app.core.llm.lg_workflow.agents.coder import create_coder_node
 from app.core.llm.lg_workflow.agents import (
     researcher_node,
     reporter_node,
@@ -58,10 +59,12 @@ def create_workflow(user_id: str, dataset_table_name: Optional[str] = None):
     librarian_node = create_librarian_node(user_id, dataset_table_name)
     analyst_node = create_analyst_node(user_id, dataset_table_name)
     visualizer_node = create_visualizer_node(user_id, dataset_table_name)
+    coder_node = create_coder_node(user_id, dataset_table_name)
 
     workflow.add_node("Supervisor", supervisor_node)
     workflow.add_node("DataLibrarian", librarian_node)
     workflow.add_node("DataAnalyst", analyst_node)
+    workflow.add_node("Coder", coder_node)
     workflow.add_node("Researcher", researcher_node)
     workflow.add_node("Visualizer", visualizer_node)
     workflow.add_node("Reporter", reporter_node)
@@ -78,6 +81,7 @@ def create_workflow(user_id: str, dataset_table_name: Optional[str] = None):
     # Edges from workers back to Supervisor
     workflow.add_edge("DataLibrarian", "Supervisor")
     workflow.add_edge("DataAnalyst", "Supervisor")
+    workflow.add_edge("Coder", "Supervisor")
     workflow.add_edge("Researcher", "Supervisor")
     workflow.add_edge("Visualizer", "Supervisor")
     workflow.add_edge("Reporter", END) # Reporter finishes the flow

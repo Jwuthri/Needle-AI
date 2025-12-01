@@ -17,6 +17,7 @@ from app.models.company import (
     CompanyResponse,
     CompanyUpdate,
 )
+from app.tasks.company_tasks import discover_review_urls_task
 from app.utils.logging import get_logger
 
 logger = get_logger("companies_api")
@@ -35,6 +36,7 @@ async def create_company(
     Create a new company for review analysis.
     
     The company will be associated with the current user.
+    Automatically discovers review URLs in the background.
     """
     try:
         company = await CompanyRepository.create(
@@ -48,6 +50,10 @@ async def create_company(
         await db.commit()
         
         logger.info(f"Created company {company.id} for user {current_user.id}")
+        
+        # Trigger background task to discover review URLs
+        discover_review_urls_task.delay(company.id)
+        logger.info(f"Triggered URL discovery for company {company.id}")
         
         return CompanyResponse.model_validate(company)
         

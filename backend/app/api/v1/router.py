@@ -2,7 +2,7 @@
 Main API v1 router for NeedleAi.
 """
 
-from app.api.v1 import analytics, auth, chat, chat_experimental, companies, graphs, health, metrics, payments, scraping, tasks, user_datasets
+from app.api.v1 import analytics, auth, chat, chat_experimental, code_execution, companies, graphs, health, metrics, payments, scraping, tasks, user_datasets
 from fastapi import APIRouter
 
 api_router = APIRouter(prefix="/v1")
@@ -24,3 +24,6 @@ api_router.include_router(analytics.router, prefix="/analytics", tags=["analytic
 
 # User datasets endpoints
 api_router.include_router(user_datasets.router, prefix="/user-datasets", tags=["user-datasets"])
+
+# Code execution endpoint
+api_router.include_router(code_execution.router, prefix="/code", tags=["code-execution"])

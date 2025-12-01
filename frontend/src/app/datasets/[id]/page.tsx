@@ -64,8 +64,8 @@ export default function DatasetDetailPage() {
       try {
         const token = await getToken()
         const api = createApiClient(token)
-        // Fetch more data for client-side sorting/filtering (up to 1000 rows)
-        const response = await api.getDatasetData(datasetId, 1000, 0)
+        // Fetch more data for client-side sorting/filtering (up to 10000 rows)
+        const response = await api.getDatasetData(datasetId, 10000, 0)
         setData(response.data || [])
         setColumns(response.columns || [])
         setTotalRows(response.total_rows || 0)

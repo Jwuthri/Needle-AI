@@ -173,7 +173,7 @@ async def get_dataset_data(
         data = await service.get_dataset_data(
             dataset_id=dataset_id,
             user_id=current_user.id,
-            limit=min(limit, 1000),  # Cap at 1000 rows
+            limit=min(limit, 10000),  # Cap at 10000 rows
             offset=offset
         )
         

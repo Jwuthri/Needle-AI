@@ -133,6 +133,7 @@ class Settings(BaseSettings):
     
     # Security Configuration (Guardrails)
     openai_api_key: Optional[str] = Field(default=None, description="OpenAI API key for moderation")
+    anthropic_api_key: Optional[str] = Field(default=None, description="Anthropic API key for Claude models")
     enable_pii_detection: bool = Field(default=True, description="Enable PII detection and redaction")
     enable_injection_detection: bool = Field(default=True, description="Enable prompt injection detection")
     enable_content_moderation: bool = Field(default=True, description="Enable content moderation")

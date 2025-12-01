@@ -140,21 +140,21 @@ class G2Scraper(BaseReviewScraper):
     ) -> str:
         """Start the Apify actor run."""
         start_url = f"https://api.apify.com/v2/acts/{self.ACTOR_ID}/runs"
-        headers = {"Authorization": f"Bearer {self.api_token}"}
-        
-        async with session.post(
-            start_url,
-            json=actor_input,
-            headers=headers
-        ) as response:
-            if response.status != 201:
-                error_text = await response.text()
-                raise ExternalServiceError(
-                    f"Failed to start Apify actor: {error_text}",
-                    service="apify"
-                )
-            
-            run_data = await response.json()
+                headers = {"Authorization": f"Bearer {self.api_token}"}
+                
+                async with session.post(
+                    start_url,
+                    json=actor_input,
+                    headers=headers
+                ) as response:
+                    if response.status != 201:
+                        error_text = await response.text()
+                        raise ExternalServiceError(
+                            f"Failed to start Apify actor: {error_text}",
+                            service="apify"
+                        )
+                    
+                    run_data = await response.json()
             return run_data["data"]["id"]
 
     async def _wait_for_completion(
@@ -165,33 +165,33 @@ class G2Scraper(BaseReviewScraper):
     ) -> Dict[str, Any]:
         """Wait for actor run to complete."""
         headers = {"Authorization": f"Bearer {self.api_token}"}
-        waited = 0
+                waited = 0
         status_data = None
         
-        while waited < max_wait:
+                while waited < max_wait:
             await asyncio.sleep(10)
             waited += 10
 
             status_url = f"https://api.apify.com/v2/acts/{self.ACTOR_ID}/runs/{run_id}"
-            async with session.get(status_url, headers=headers) as response:
-                status_data = await response.json()
-                status = status_data["data"]["status"]
+                    async with session.get(status_url, headers=headers) as response:
+                        status_data = await response.json()
+                        status = status_data["data"]["status"]
 
-                if status == "SUCCEEDED":
+                        if status == "SUCCEEDED":
                     return status_data
-                elif status in ["FAILED", "ABORTED", "TIMED-OUT"]:
-                    raise ExternalServiceError(
-                        f"Apify actor run failed with status: {status}",
-                        service="apify"
-                    )
+                        elif status in ["FAILED", "ABORTED", "TIMED-OUT"]:
+                            raise ExternalServiceError(
+                                f"Apify actor run failed with status: {status}",
+                                service="apify"
+                            )
 
             logger.debug(f"G2 scraper status: {status}, waited: {waited}s")
 
-        raise ExternalServiceError(
-            "Apify actor run timeout",
-            service="apify",
-            retryable=True
-        )
+                    raise ExternalServiceError(
+                        "Apify actor run timeout",
+                        service="apify",
+                        retryable=True
+                    )
 
     async def _get_results(
         self, 
@@ -200,9 +200,9 @@ class G2Scraper(BaseReviewScraper):
     ) -> List[Dict[str, Any]]:
         """Get results from the dataset."""
         headers = {"Authorization": f"Bearer {self.api_token}"}
-        results_url = f"https://api.apify.com/v2/datasets/{dataset_id}/items"
-        
-        async with session.get(results_url, headers=headers) as response:
+                results_url = f"https://api.apify.com/v2/datasets/{dataset_id}/items"
+                
+                async with session.get(results_url, headers=headers) as response:
             return await response.json()
 
     def _parse_review(self, item: Dict[str, Any], product_name: str) -> Optional[ScrapedReview]:

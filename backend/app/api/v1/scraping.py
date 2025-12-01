@@ -132,9 +132,10 @@ async def create_scraping_job(
                 company_id=data.company_id,
                 source_id=data.source_id,
                 user_id=current_user.id,
-                review_count=review_count
+                review_count=review_count,
+                custom_query=data.query  # Optional custom URL/query
             )
-            logger.info(f"Started scraping job {job.id} for user {current_user.id}")
+            logger.info(f"Started scraping job {job.id} for user {current_user.id} with query={data.query}")
 
         # Update job with Celery task ID
         await ScrapingJobRepository.set_celery_task_id(db, job.id, task.id)

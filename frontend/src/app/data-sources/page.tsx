@@ -14,17 +14,43 @@ interface JobStartDialogProps {
   onClose: () => void
   source: any
   companyId: string
+  companyData?: any  // Company object with review_urls
   onJobStarted: () => void
 }
 
-function JobStartDialog({ isOpen, onClose, source, companyId, onJobStarted }: JobStartDialogProps) {
+function JobStartDialog({ isOpen, onClose, source, companyId, companyData, onJobStarted }: JobStartDialogProps) {
   const { getToken } = useAuth()
   const [inputMode, setInputMode] = useState<'count' | 'cost'>('count')
   const [reviewCount, setReviewCount] = useState<string>('10')
   const [maxCost, setMaxCost] = useState<string>('1.00')
+  const [customUrl, setCustomUrl] = useState<string>('')
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [creditBalance, setCreditBalance] = useState<number>(0)
+  
+  // Check if this is a real scraper (not fake)
+  const isRealScraper = !(
+    source.config?.type === 'fake_generator' ||
+    source.name?.toLowerCase().includes('fake') ||
+    source.name?.toLowerCase().includes('llm')
+  )
+  
+  // Get discovered URL for this source type
+  const getDiscoveredUrl = () => {
+    if (!companyData?.review_urls) return ''
+    const sourceType = source.source_type?.toLowerCase()
+    return companyData.review_urls[sourceType] || ''
+  }
+
+  // Pre-fill URL from discovered URLs when dialog opens
+  useEffect(() => {
+    if (isOpen && isRealScraper) {
+      const discoveredUrl = getDiscoveredUrl()
+      if (discoveredUrl && !customUrl) {
+        setCustomUrl(discoveredUrl)
+      }
+    }
+  }, [isOpen, source.source_type, companyData])
 
   useEffect(() => {
     if (isOpen) {
@@ -80,17 +106,22 @@ function JobStartDialog({ isOpen, onClose, source, companyId, onJobStarted }: Jo
       const token = await getToken()
       const api = createApiClient(token)
       
-      // Build request payload - only include the field that has a value
+      // Build request payload
       const payload: any = {
         company_id: companyId,
         source_id: source.id,
-        generation_mode: 'fake'
+        generation_mode: isRealScraper ? 'real' : 'fake'
       }
       
       if (inputMode === 'count') {
         payload.review_count = estimate.reviews
       } else {
         payload.max_cost = costNum
+      }
+      
+      // Add custom URL/query for real scrapers
+      if (isRealScraper && customUrl.trim()) {
+        payload.query = customUrl.trim()
       }
       
       console.log('Starting job with payload:', payload)
@@ -121,7 +152,9 @@ function JobStartDialog({ isOpen, onClose, source, companyId, onJobStarted }: Jo
           className="bg-gray-900 border border-gray-800 rounded-xl p-6 w-full max-w-md mx-4 shadow-2xl"
         >
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-bold text-white">Start Review Generation</h2>
+            <h2 className="text-xl font-bold text-white">
+              {isRealScraper ? 'Start Review Scraping' : 'Start Review Generation'}
+            </h2>
             <button
               onClick={onClose}
               className="text-gray-400 hover:text-white transition-colors"
@@ -197,6 +230,49 @@ function JobStartDialog({ isOpen, onClose, source, companyId, onJobStarted }: Jo
               </div>
             )}
 
+            {/* Custom URL for real scrapers */}
+            {isRealScraper && (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-sm font-medium text-white/80">
+                    Product URL
+                  </label>
+                  {getDiscoveredUrl() && (
+                    <span className="text-xs text-emerald-400 flex items-center gap-1">
+                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                      </svg>
+                      Auto-discovered
+                    </span>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  value={customUrl}
+                  onChange={(e) => setCustomUrl(e.target.value)}
+                  className={`w-full px-4 py-2 bg-gray-800 border rounded-lg text-white focus:outline-none focus:border-emerald-500 transition-colors text-sm ${
+                    getDiscoveredUrl() && customUrl === getDiscoveredUrl() 
+                      ? 'border-emerald-500/50' 
+                      : 'border-gray-700'
+                  }`}
+                  placeholder={
+                    source.source_type === 'g2' 
+                      ? 'e.g., https://www.g2.com/products/notion/reviews or just "notion"'
+                      : source.source_type === 'trustpilot'
+                      ? 'e.g., https://www.trustpilot.com/review/notion.so'
+                      : source.source_type === 'trustradius'
+                      ? 'e.g., https://www.trustradius.com/products/slack/reviews'
+                      : 'Product name or review page URL'
+                  }
+                />
+                <p className="text-xs text-white/40 mt-1">
+                  {getDiscoveredUrl() 
+                    ? 'URL auto-discovered from web search. Edit if needed.' 
+                    : 'Enter the product name or full review page URL. Leave empty to use company name.'}
+                </p>
+              </div>
+            )}
+
             {/* Estimate */}
             <div className="bg-gray-800/50 border border-gray-700/50 rounded-lg p-4">
               <div className="text-sm text-white/60 mb-2">Estimate</div>
@@ -262,9 +338,10 @@ export default function DataSourcesPage() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const { isLoaded, isSignedIn, getToken } = useAuth()
-  const [selectedCompany, setSelectedCompany] = useState<string | null>(
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(
     searchParams.get('company_id')
   )
+  const [selectedCompanyData, setSelectedCompanyData] = useState<any>(null)
   const [sources, setSources] = useState<any[]>([])
   const [jobs, setJobs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -276,6 +353,12 @@ export default function DataSourcesPage() {
   const [jobDialogOpen, setJobDialogOpen] = useState(false)
   const [selectedSource, setSelectedSource] = useState<any>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  
+  // Handle company selection
+  const handleCompanyChange = (companyId: string | null, company?: any) => {
+    setSelectedCompanyId(companyId)
+    setSelectedCompanyData(company || null)
+  }
 
   useEffect(() => {
     if (isLoaded && !isSignedIn) {
@@ -292,7 +375,7 @@ export default function DataSourcesPage() {
       
       const [sourcesData, jobsData] = await Promise.all([
         api.listScrapingSources(),
-        api.listScrapingJobs(selectedCompany || undefined),
+        api.listScrapingJobs(selectedCompanyId || undefined),
       ])
 
       // Combine real and fake sources
@@ -311,7 +394,7 @@ export default function DataSourcesPage() {
 
   useEffect(() => {
     fetchData()
-  }, [selectedCompany, isSignedIn])
+  }, [selectedCompanyId, isSignedIn])
 
   if (!isLoaded || !isSignedIn || loading) {
     return (
@@ -428,13 +511,13 @@ export default function DataSourcesPage() {
         {/* Company Selector */}
         <div className="mb-8 max-w-md">
           <CompanySelector
-            value={selectedCompany}
-            onChange={setSelectedCompany}
+            value={selectedCompanyId}
+            onChange={handleCompanyChange}
             placeholder="Select a company..."
           />
         </div>
 
-        {!selectedCompany ? (
+        {!selectedCompanyId ? (
           <div className="flex flex-col items-center justify-center py-20">
             <div className="mb-4">
               <FolderOpen className="w-16 h-16 text-emerald-400" />
@@ -584,7 +667,7 @@ export default function DataSourcesPage() {
         )}
 
         {/* Active Jobs */}
-        {selectedCompany && jobs.length > 0 && (
+        {selectedCompanyId && jobs.length > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -632,12 +715,13 @@ export default function DataSourcesPage() {
       </div>
 
       {/* Job Start Dialog */}
-      {selectedSource && selectedCompany && (
+      {selectedSource && selectedCompanyId && (
         <JobStartDialog
           isOpen={jobDialogOpen}
           onClose={() => setJobDialogOpen(false)}
           source={selectedSource}
-          companyId={selectedCompany}
+          companyId={selectedCompanyId}
+          companyData={selectedCompanyData}
           onJobStarted={handleJobStarted}
         />
       )}

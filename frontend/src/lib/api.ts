@@ -170,6 +170,7 @@ class ApiClient {
     review_count?: number
     max_cost?: number
     generation_mode?: string
+    query?: string
   }): Promise<any> {
     return this.request('/scraping/jobs', {
       method: 'POST',

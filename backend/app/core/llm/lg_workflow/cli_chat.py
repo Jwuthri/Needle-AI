@@ -43,6 +43,9 @@ def main():
                 color = "magenta"
             elif node_name == "DataAnalyst":
                 color = "orange1"
+            elif node_name == "Coder":
+                color = "bright_cyan"
+                title = "🐍 Coder (Claude)"
             elif node_name == "Reporter":
                 color = "green"
                 title = "✅ Final Answer"
@@ -84,7 +87,7 @@ def main():
                     # Track node transitions
                     if kind == "on_chain_start":
                         # Check if this is an agent node
-                        if name in ["DataLibrarian", "DataAnalyst", "Researcher", "Visualizer", "Reporter"]:
+                        if name in ["DataLibrarian", "DataAnalyst", "Coder", "Researcher", "Visualizer", "Reporter"]:
                             if live_display and current_node != name:
                                 live_display.stop()
                             

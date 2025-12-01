@@ -36,7 +36,8 @@ def scrape_reviews_task(
     company_id: str,
     source_id: str,
     user_id: str,
-    review_count: int
+    review_count: int,
+    custom_query: str = None
 ) -> dict:
     """
     Celery wrapper for async scraping task.
@@ -45,7 +46,7 @@ def scrape_reviews_task(
     """
     try:
         return asyncio.run(
-            scrape_reviews_async(self, job_id, company_id, source_id, user_id, review_count)
+            scrape_reviews_async(self, job_id, company_id, source_id, user_id, review_count, custom_query)
         )
     except Exception as e:
         logger.error(f"Scraping task failed: {e}")
@@ -58,7 +59,8 @@ async def scrape_reviews_async(
     company_id: str,
     source_id: str,
     user_id: str,
-    review_count: int
+    review_count: int,
+    custom_query: str = None
 ) -> dict:
     """
     Async scraping implementation.
@@ -118,8 +120,9 @@ async def scrape_reviews_async(
             await ScrapingJobRepository.update_progress(session, job_id, 20.0, 0)
             await session.commit()
 
-            # Scrape reviews
-            query = company.domain or company.name
+            # Scrape reviews - use custom query if provided, otherwise fallback to company name
+            query = custom_query or company.name
+            logger.info(f"Scraping with query: {query}")
             scraped_reviews = await scraper.scrape(query=query, limit=review_count)
 
             logger.info(f"Scraped {len(scraped_reviews)} reviews for job {job_id}")
@@ -133,14 +136,23 @@ async def scrape_reviews_async(
             await session.commit()
 
             # Save reviews to database
+            # Determine platform name from source type (e.g., "g2", "trustpilot", "trustradius")
+            # source_type can be either an enum or a string depending on how it was loaded
+            if source.source_type:
+                platform_name = source.source_type.value if hasattr(source.source_type, 'value') else str(source.source_type)
+            else:
+                platform_name = "unknown"
+            
             saved_count = 0
+            saved_review_ids = []
             for scraped in scraped_reviews:
                 try:
-                    await ReviewRepository.create(
+                    review = await ReviewRepository.create(
                         session,
                         company_id=company_id,
                         source_id=source_id,
                         scraping_job_id=job_id,
+                        platform=platform_name,  # Set the platform!
                         content=scraped.content,
                         author=scraped.author,
                         url=scraped.url,
@@ -148,16 +160,49 @@ async def scrape_reviews_async(
                         metadata=scraped.metadata
                     )
                     saved_count += 1
+                    saved_review_ids.append(review.id)
                 except Exception as e:
                     logger.warning(f"Failed to save review: {e}")
                     continue
 
             await session.commit()
 
-            # Update progress: 80%
+            # Update progress: 70%
             task.update_state(
                 state='PROGRESS',
-                meta={'current': 80, 'total': 100, 'status': 'Deducting credits...'}
+                meta={'current': 70, 'total': 100, 'status': 'Generating embeddings...'}
+            )
+
+            # Generate embeddings for the saved reviews
+            if saved_review_ids:
+                try:
+                    embedding_service = get_embedding_service()
+                    reviews_to_embed = await ReviewRepository.get_reviews_without_embeddings(
+                        session, limit=len(saved_review_ids), company_id=company_id
+                    )
+                    
+                    if reviews_to_embed:
+                        # Generate embeddings in batch
+                        texts = [r.content for r in reviews_to_embed]
+                        embeddings = await embedding_service.generate_embeddings_batch(texts)
+                        
+                        # Update reviews with embeddings
+                        embedded_count = 0
+                        for review, embedding in zip(reviews_to_embed, embeddings):
+                            if embedding:
+                                await ReviewRepository.update_embedding(session, review.id, embedding)
+                                embedded_count += 1
+                        
+                        await session.commit()
+                        logger.info(f"Generated embeddings for {embedded_count} reviews")
+                except Exception as e:
+                    logger.warning(f"Failed to generate embeddings: {e}")
+                    # Don't fail job completion if embedding fails
+
+            # Update progress: 85%
+            task.update_state(
+                state='PROGRESS',
+                meta={'current': 85, 'total': 100, 'status': 'Deducting credits...'}
             )
 
             # Deduct credits

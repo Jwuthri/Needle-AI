@@ -5,7 +5,7 @@ Company model for product review analysis.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import JSON, Column, DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.orm import relationship
 
 from ..base import Base
@@ -20,6 +20,9 @@ class Company(Base):
     domain = Column(String(255), nullable=True, index=True)  # e.g., "gorgias.com"
     industry = Column(String(100), nullable=True)
     description = Column(Text, nullable=True)
+    
+    # Auto-discovered review URLs from DuckDuckGo search
+    review_urls = Column(JSON, default={}, nullable=True)  # {"g2": "url", "trustpilot": "url", "trustradius": "url"}
 
     # Ownership
     created_by = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)

@@ -3,9 +3,16 @@ Company API models for product review analysis.
 """
 
 from datetime import datetime
-from typing import Optional
+from typing import Dict, Optional
 
 from pydantic import BaseModel, Field
+
+
+class ReviewUrls(BaseModel):
+    """Auto-discovered review URLs for a company."""
+    g2: Optional[str] = None
+    trustpilot: Optional[str] = None
+    trustradius: Optional[str] = None
 
 
 class CompanyCreate(BaseModel):
@@ -45,6 +52,9 @@ class CompanyResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     
+    # Auto-discovered review URLs
+    review_urls: Optional[Dict[str, str]] = None
+    
     # Statistics
     total_reviews: Optional[int] = 0
     
@@ -59,7 +69,11 @@ class CompanyResponse(BaseModel):
                 "created_by": "user_123",
                 "created_at": "2024-01-01T00:00:00Z",
                 "updated_at": "2024-01-01T00:00:00Z",
-                "total_reviews": 150
+                "total_reviews": 150,
+                "review_urls": {
+                    "g2": "https://www.g2.com/products/gorgias/reviews",
+                    "trustpilot": "https://www.trustpilot.com/review/gorgias.com"
+                }
             }
         }
 

@@ -66,16 +66,26 @@ class ScraperFactory:
         self._scrapers[source_type] = scraper_class
         logger.debug(f"Registered scraper: {source_type.value} -> {scraper_class.__name__}")
 
-    def get_scraper(self, source_type: SourceTypeEnum) -> BaseReviewScraper:
+    def get_scraper(self, source_type: SourceTypeEnum | str) -> BaseReviewScraper:
         """
         Get a scraper instance for the given source type.
         
         Args:
-            source_type: Source type to scrape from
+            source_type: Source type to scrape from (enum or string)
             
         Returns:
             Scraper instance
         """
+        # Convert string to enum if needed
+        if isinstance(source_type, str):
+            try:
+                source_type = SourceTypeEnum(source_type)
+            except ValueError:
+                available = ", ".join([st.value for st in self._scrapers.keys()])
+                raise ConfigurationError(
+                    f"Unknown source type: {source_type}. Available: {available}"
+                )
+        
         scraper_class = self._scrapers.get(source_type)
         
         if not scraper_class:
@@ -122,14 +132,14 @@ class ScraperFactory:
 
     async def estimate_total_cost(
         self,
-        source_type: SourceTypeEnum,
+        source_type: SourceTypeEnum | str,
         review_count: int
     ) -> float:
         """
         Estimate the total cost for scraping.
         
         Args:
-            source_type: Source to scrape from
+            source_type: Source to scrape from (enum or string)
             review_count: Number of reviews to scrape
             
         Returns:
@@ -138,8 +148,13 @@ class ScraperFactory:
         scraper = self.get_scraper(source_type)
         return await scraper.estimate_cost(review_count)
 
-    def is_source_available(self, source_type: SourceTypeEnum) -> bool:
+    def is_source_available(self, source_type: SourceTypeEnum | str) -> bool:
         """Check if a source scraper is available."""
+        if isinstance(source_type, str):
+            try:
+                source_type = SourceTypeEnum(source_type)
+            except ValueError:
+                return False
         return source_type in self._scrapers
 
 

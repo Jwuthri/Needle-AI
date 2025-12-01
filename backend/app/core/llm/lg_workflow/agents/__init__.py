@@ -4,7 +4,7 @@ from .reporter import reporter_node
 from .supervisor import supervisor_node
 
 # Export the list of agent members for supervisor
-members = ["DataLibrarian", "DataAnalyst", "Researcher", "Visualizer", "Reporter"]
+members = ["DataLibrarian", "DataAnalyst", "Coder", "Researcher", "Visualizer", "Reporter"]
 
 __all__ = [
     "researcher_node",

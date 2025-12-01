@@ -17,14 +17,16 @@ class ScrapingJobCreate(BaseModel):
     review_count: Optional[int] = Field(None, ge=1, le=1000, description="Number of reviews to scrape/generate")
     max_cost: Optional[float] = Field(None, ge=0.01, le=1000.0, description="Maximum cost in credits")
     generation_mode: Optional[str] = Field(None, description="Mode: 'fake' for LLM generation, 'real' for actual scraping")
+    query: Optional[str] = Field(None, max_length=500, description="Custom query/URL for scraping (e.g., G2 product URL)")
 
     class Config:
         json_schema_extra = {
             "example": {
                 "company_id": "comp_123",
-                "source_id": "source_reddit",
+                "source_id": "source_g2",
                 "review_count": 100,
-                "generation_mode": "fake"
+                "generation_mode": "real",
+                "query": "https://www.g2.com/products/notion/reviews"
             }
         }
 

@@ -5,7 +5,7 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from .base import llm
 
 # List of worker agents
-members = ["DataLibrarian", "DataAnalyst", "Researcher", "Visualizer", "Reporter"]
+members = ["DataLibrarian", "DataAnalyst", "Coder", "Researcher", "Visualizer", "Reporter"]
 
 # Supervisor system prompt
 system_prompt = (
@@ -32,20 +32,30 @@ system_prompt = (
     "\n"
     "6. IF the user wants visualization (plot, chart, graph), route to Visualizer.\n"
     "\n"
-    "7. CRITICAL - AFTER AGENTS COMPLETE:\n"
+    "7. CRITICAL - USE CODER FOR COMPLEX DATA REQUESTS:\n"
+    "   → Route to Coder when DataAnalyst's tools cannot handle the request\n"
+    "   → Route to Coder for custom calculations, filtering, or transformations\n"
+    "   → Route to Coder for questions requiring multiple steps or complex logic\n"
+    "   → Route to Coder for 'show me X', 'calculate Y', 'find Z' type questions\n"
+    "   → Coder can write and execute Python code to handle ANY data analysis\n"
+    "   → If DataAnalyst fails or returns an error, try Coder next\n"
+    "\n"
+    "8. CRITICAL - AFTER AGENTS COMPLETE:\n"
     "   → If DataLibrarian listed datasets AND user asked ONLY about datasets → Reporter\n"
     "   → If DataAnalyst finished analysis → Reporter\n"
+    "   → If Coder finished code execution → Reporter\n"
     "   → If Researcher finished search → Reporter  \n"
     "   → If Visualizer created chart → Reporter\n"
     "\n"
-    "8. DO NOT route to DataAnalyst if the question was already fully answered by DataLibrarian.\n"
+    "9. DO NOT route to DataAnalyst if the question was already fully answered by DataLibrarian.\n"
     "\n"
-    "Remember: Route to Reporter after workers complete their tasks. Don't keep bouncing between agents."
+    "Remember: Route to Reporter after workers complete their tasks. Don't keep bouncing between agents.\n"
+    "Use Coder as a fallback when other agents cannot handle the data request."
 )
 
 # Route response type
 class RouteResponse(TypedDict):
-    next: Literal["DataLibrarian", "DataAnalyst", "Researcher", "Visualizer", "Reporter"]
+    next: Literal["DataLibrarian", "DataAnalyst", "Coder", "Researcher", "Visualizer", "Reporter"]
 
 # Prompt template
 prompt = ChatPromptTemplate.from_messages(
