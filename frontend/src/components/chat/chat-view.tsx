@@ -374,10 +374,17 @@ export function ChatView({ companyId, sessionId, onSessionIdChange, onCompanyCha
       role: 'user',
       timestamp: new Date().toISOString(),
     }
-    setMessages(prev => {
-      console.log('Adding user message to state')
-      return [...prev, userMessage]
-    })
+    
+    // If no session (new chat), clear old messages before adding the new one
+    // This prevents showing previous conversation while streaming starts
+    if (!sessionId) {
+      setMessages([userMessage])
+    } else {
+      setMessages(prev => {
+        console.log('Adding user message to state')
+        return [...prev, userMessage]
+      })
+    }
     
     setIsLoading(true)
 

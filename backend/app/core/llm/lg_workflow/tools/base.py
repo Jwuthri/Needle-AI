@@ -1,13 +1,107 @@
 from langchain_core.tools import tool
 from app.core.llm.lg_workflow.data.manager import DataManager
 import pandas as pd
-from typing import List, Optional
+from typing import List, Optional, Literal
 
 @tool
 async def list_datasets_tool(user_id: str) -> str:
     """Lists all available datasets with their table names and descriptions."""
     dm = DataManager.get_instance("default")
     return await dm.list_datasets(user_id)
+
+
+@tool
+async def filter_dataset_tool(
+    table_name: str,
+    column: str,
+    value: str,
+    user_id: str,
+    operator: str = "contains"
+) -> str:
+    """
+    Filters a dataset by column value and saves the result for analysis.
+    
+    Args:
+        table_name: Source dataset to filter
+        column: Column name to filter on (e.g., 'company_name', 'source', 'rating')
+        value: Value to filter for
+        user_id: User ID
+        operator: How to match - 'contains' (case-insensitive), 'equals', 'gt', 'lt', 'gte', 'lte'
+    
+    Returns:
+        Info about the filtered dataset and its new table name for subsequent analysis.
+    """
+    dm = DataManager.get_instance("default")
+    df = await dm.get_dataset(table_name, user_id)
+    
+    if df is None or df.empty:
+        return f"Error: Dataset '{table_name}' not found."
+    
+    if column not in df.columns:
+        available = ", ".join(df.columns.tolist()[:20])
+        return f"Error: Column '{column}' not found. Available columns: {available}"
+    
+    # Apply filter based on operator
+    original_count = len(df)
+    try:
+        if operator == "contains":
+            # Case-insensitive contains
+            mask = df[column].astype(str).str.lower().str.contains(value.lower(), na=False)
+        elif operator == "equals":
+            # Try numeric comparison first, then string
+            try:
+                mask = df[column] == float(value)
+            except (ValueError, TypeError):
+                mask = df[column].astype(str).str.lower() == value.lower()
+        elif operator == "gt":
+            mask = pd.to_numeric(df[column], errors='coerce') > float(value)
+        elif operator == "lt":
+            mask = pd.to_numeric(df[column], errors='coerce') < float(value)
+        elif operator == "gte":
+            mask = pd.to_numeric(df[column], errors='coerce') >= float(value)
+        elif operator == "lte":
+            mask = pd.to_numeric(df[column], errors='coerce') <= float(value)
+        else:
+            return f"Error: Unknown operator '{operator}'. Use: contains, equals, gt, lt, gte, lte"
+        
+        filtered_df = df[mask].copy()
+    except Exception as e:
+        return f"Error filtering: {str(e)}"
+    
+    if filtered_df.empty:
+        return f"No rows match filter: {column} {operator} '{value}'. Original dataset has {original_count} rows."
+    
+    # Create artifact name from filter
+    safe_value = "".join(c if c.isalnum() else "_" for c in value.lower())[:20]
+    artifact_name = f"{table_name}_filtered_{column}_{safe_value}"
+    
+    # Save to cache for subsequent tools
+    description = f"Filtered from {table_name} where {column} {operator} '{value}'"
+    await dm.save_artifact(filtered_df, artifact_name, description, user_id)
+    
+    # Return summary
+    output = [
+        f"✅ **Filtered Dataset Created**",
+        f"",
+        f"**New Table Name:** `{artifact_name}` (use this for analysis)",
+        f"**Filter:** {column} {operator} '{value}'",
+        f"**Rows:** {len(filtered_df)} (from {original_count} original)",
+        f"",
+        f"**Sample of filtered data:**"
+    ]
+    
+    # Show sample
+    sample = filtered_df.head(3)
+    # Only show key columns if too many
+    if len(sample.columns) > 6:
+        key_cols = [c for c in ['text', 'content', 'rating', 'source', column] if c in sample.columns]
+        if len(key_cols) < 3:
+            key_cols = list(sample.columns)[:5]
+        sample = sample[key_cols]
+    
+    output.append(sample.to_markdown(index=False))
+    
+    return "\n".join(output)
 
 @tool
 async def get_dataset_info_tool(table_name: str, user_id: str) -> str:

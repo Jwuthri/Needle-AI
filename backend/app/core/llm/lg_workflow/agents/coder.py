@@ -35,16 +35,18 @@ async def fetch_datasets_info(user_id: str) -> List[Dict[str, Any]]:
             
             datasets_info = []
             for ds in datasets:
+                # list_datasets returns dicts, not objects
                 info = {
-                    'id': ds.id,
-                    'table_name': ds.table_name,
-                    'row_count': ds.row_count,
+                    'id': ds.get('id') if isinstance(ds, dict) else ds.id,
+                    'table_name': ds.get('table_name') if isinstance(ds, dict) else ds.table_name,
+                    'row_count': ds.get('row_count') if isinstance(ds, dict) else getattr(ds, 'row_count', 0),
                     'columns': [],
                 }
                 
                 # Get column names from field_metadata
-                if ds.field_metadata:
-                    info['columns'] = [f.get('field_name') for f in ds.field_metadata if f.get('field_name')]
+                field_metadata = ds.get('field_metadata') if isinstance(ds, dict) else getattr(ds, 'field_metadata', None)
+                if field_metadata:
+                    info['columns'] = [f.get('field_name') for f in field_metadata if f.get('field_name')]
                 
                 datasets_info.append(info)
             

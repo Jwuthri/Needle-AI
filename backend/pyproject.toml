@@ -124,6 +124,7 @@ dependencies = [
     "matplotlib>=3.10.7",
     "seaborn>=0.13.2",
     "langchain-anthropic>=1.2.0",
+    "ddgs>=9.9.2",
 ]
 
 [project.optional-dependencies]

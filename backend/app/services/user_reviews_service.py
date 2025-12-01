@@ -308,7 +308,7 @@ class UserReviewsService:
             origin="reviews_sync",
             table_name=table_name,
             row_count=row_count,
-            description="**Overview 📊** This dataset contains short social reviews and metadata about a single company, with each row representing one external review item. Fields like `text`, `rating`, `source`, and `author` work together to capture *what* was said, *who* said it, *when*, and *where* (platform) — useful for **customer sentiment** and content analysis. The data is stored as relational records (one JSON-like object per row) with mostly non-null values and consistent timestamps. ⚠️ Note: `company_name`, `user_id`, and `category` are constant (single value), while `text` and `id` are unique per row.",
+            description="**Overview 📊** This dataset contains short social reviews and metadata, with each row representing one external review item. Fields like `text`, `rating`, `source`, and `author` work together to capture *what* was said, *who* said it, *when*, and *where* (platform) — useful for **customer sentiment** and content analysis. The data is stored as relational records (one JSON-like object per row) with mostly non-null values and consistent timestamps.",
             field_metadata=field_metadata,
             column_stats=column_stats,
             sample_data=[],

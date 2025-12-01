@@ -187,7 +187,14 @@ export function ExperimentalChatView({
       role: 'user',
       timestamp: new Date().toISOString(),
     }
-    setMessages((prev) => [...prev, userMessage])
+    
+    // If no session (new chat), clear old messages before adding the new one
+    // This prevents showing previous conversation while streaming starts
+    if (!sessionId) {
+      setMessages([userMessage])
+    } else {
+      setMessages((prev) => [...prev, userMessage])
+    }
     setIsLoading(true)
 
     try {

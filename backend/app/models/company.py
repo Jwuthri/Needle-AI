@@ -57,6 +57,7 @@ class CompanyResponse(BaseModel):
     
     # Statistics
     total_reviews: Optional[int] = 0
+    last_scrape: Optional[datetime] = None
     
     class Config:
         from_attributes = True
@@ -70,6 +71,7 @@ class CompanyResponse(BaseModel):
                 "created_at": "2024-01-01T00:00:00Z",
                 "updated_at": "2024-01-01T00:00:00Z",
                 "total_reviews": 150,
+                "last_scrape": "2024-01-15T10:30:00Z",
                 "review_urls": {
                     "g2": "https://www.g2.com/products/gorgias/reviews",
                     "trustpilot": "https://www.trustpilot.com/review/gorgias.com"

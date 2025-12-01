@@ -102,20 +102,24 @@ async def execute_code_tool(
                 
                 for ds in datasets:
                     try:
+                        # list_datasets returns dicts
+                        ds_id = ds['id'] if isinstance(ds, dict) else ds.id
+                        ds_table = ds['table_name'] if isinstance(ds, dict) else ds.table_name
+                        
                         # Load dataset data
                         data = await service.get_dataset_data(
-                            dataset_id=ds.id,
+                            dataset_id=ds_id,
                             user_id=user_id,
                             limit=50000,  # Load up to 50k rows
                             offset=0
                         )
                         if data and data.get('data'):
                             df = pd.DataFrame(data['data'])
-                            executor.add_dataset(ds.id, df)
+                            executor.add_dataset(ds_id, df)
                             # Also add by table name for convenience
-                            executor.add_dataset(ds.table_name, df)
+                            executor.add_dataset(ds_table, df)
                     except Exception as e:
-                        logger.warning(f"Failed to load dataset {ds.id}: {e}")
+                        logger.warning(f"Failed to load dataset {ds}: {e}")
                         continue
                         
         except Exception as e:

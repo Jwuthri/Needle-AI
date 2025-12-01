@@ -268,6 +268,13 @@ async def send_message_stream_experimental(
                         if chunk and hasattr(chunk, 'content') and chunk.content:
                             content = chunk.content
                             
+                            # Handle list content (Claude returns list of content blocks)
+                            if isinstance(content, list):
+                                content = "".join(
+                                    c.get("text", "") if isinstance(c, dict) else str(c)
+                                    for c in content
+                                )
+                            
                             # Filter out routing decisions
                             import re
                             content = re.sub(r'\{\s*["\']next["\']\s*:\s*["\'][^"\']*["\']\s*\}', '', content)

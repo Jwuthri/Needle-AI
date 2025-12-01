@@ -1,7 +1,7 @@
 """Data Librarian Agent - helps users find the right datasets."""
 from typing import Optional
 from langchain_core.tools import tool
-from app.core.llm.lg_workflow.tools.base import list_datasets_tool, get_dataset_info_tool
+from app.core.llm.lg_workflow.tools.base import list_datasets_tool, get_dataset_info_tool, filter_dataset_tool
 from app.core.llm.lg_workflow.tools.ml import semantic_search_tool
 from .base import create_agent, llm
 
@@ -85,47 +85,73 @@ def create_librarian_node(user_id: str, dataset_table_name: Optional[str] = None
             top_k=top_k
         )
     
-    librarian_tools = [list_datasets, get_dataset_info, semantic_search]
+    @tool
+    async def filter_dataset(
+        table_name: str,
+        column: str,
+        value: str,
+        operator: str = "contains"
+    ) -> str:
+        """
+        Filters a dataset by column value for analysis.
+        
+        USE THIS when user asks about a specific company, source, or subset of data.
+        Creates a new filtered dataset that other agents can analyze.
+        
+        Args:
+            table_name: Dataset to filter (e.g., '__user_xyz_reviews')
+            column: Column to filter on. Common columns:
+                    - 'company_name' for company (Slack, Notion, etc.)
+                    - 'source' for platform (g2, trustpilot, etc.)
+                    - 'rating' for star rating
+            value: Value to match (e.g., 'Slack', 'g2', '5')
+            operator: Match type:
+                      - 'contains' (default) - case-insensitive partial match
+                      - 'equals' - exact match
+                      - 'gt', 'lt', 'gte', 'lte' - numeric comparisons
+        
+        Example:
+            filter_dataset("__user_xyz_reviews", "company_name", "Slack")
+            → Creates filtered dataset for Slack reviews only
+        """
+        actual_table = dataset_table_name if dataset_table_name else table_name
+        return await filter_dataset_tool.coroutine(
+            table_name=actual_table,
+            column=column,
+            value=value,
+            user_id=user_id,
+            operator=operator
+        )
+    
+    librarian_tools = [list_datasets, get_dataset_info, semantic_search, filter_dataset]
     
     # Build prompt with optional focused mode notice
-    base_prompt = """You are a Data Librarian - help users find datasets and data. BE VERY CONCISE.
+    base_prompt = """You are a Data Librarian - help users find and prepare datasets. BE CONCISE.
 
 TOOLS:
 - list_datasets - List all available datasets
-- get_dataset_info - Get schema, stats, sample data for a dataset
-- semantic_search - Find reviews matching a SHORT query (2-5 words like "slow search", NOT verbose)
+- get_dataset_info - Get schema, columns, sample data
+- filter_dataset - Filter data by column value (IMPORTANT for company/source-specific requests)
+- semantic_search - Find reviews matching a SHORT query (2-5 words)
 
-WORKFLOW:
-1. Call appropriate tool
-2. Tool returns complete formatted output
-3. Add ONE sentence max if needed
-4. Pass through tool output
-
-CRITICAL - STAY CONCISE:
-✗ NO long explanations
-✗ NO reformatting tool output
-✗ NO detailed summaries
-✓ Call tool → Optional 1 sentence → Done
+CRITICAL WORKFLOW for "analyze X reviews" requests:
+1. list_datasets → find the reviews table
+2. get_dataset_info → find the right column (company_name, source, etc.)
+3. filter_dataset → create filtered subset for the specific company/source
+4. Report the NEW filtered table name for DataAnalyst to use
 
 Example:
-User: "What datasets do we have?"
-You: [Call list_datasets]
-Tool returns formatted list
-You: "Found 3 datasets."
+User: "Analyze sentiment for Slack reviews"
+You:
+1. [Call list_datasets] → find "__user_xyz_reviews"
+2. [Call get_dataset_info("__user_xyz_reviews")] → see 'company_name' column
+3. [Call filter_dataset("__user_xyz_reviews", "company_name", "Slack")]
+   → Creates "__user_xyz_reviews_filtered_company_name_slack"
+4. "Created filtered dataset with X Slack reviews. Table: __user_xyz_reviews_filtered_company_name_slack"
 
-Example:
-User: "needs table info"
-You: [Call get_dataset_info("table_name")]
-Tool returns schema + sample data
-You: "Dataset info retrieved."
+Then DataAnalyst runs sentiment on that filtered table.
 
-Example:
-User: "Find reviews about slow search"
-You: [Call semantic_search(table_name="reviews", query="slow search")]  # SHORT query!
-Tool returns results
-You: "Found X matching reviews."
-
-Remember: Tools are comprehensive. You stay minimal - 1 sentence max or nothing."""
+STAY CONCISE - let tools do the work, output minimal text."""
 
     if dataset_table_name:
         focused_notice = f"""
