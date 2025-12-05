@@ -150,3 +150,21 @@ class ScrapingJobRepository:
         await db.refresh(job)
         return job
 
+    @staticmethod
+    async def get_last_scrape_date(
+        db: AsyncSession,
+        company_id: str
+    ) -> Optional[datetime]:
+        """Get the most recent completed scrape date for a company."""
+        result = await db.execute(
+            select(ScrapingJob.completed_at)
+            .filter(
+                ScrapingJob.company_id == company_id,
+                ScrapingJob.status == JobStatusEnum.COMPLETED,
+                ScrapingJob.completed_at.isnot(None)
+            )
+            .order_by(desc(ScrapingJob.completed_at))
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+

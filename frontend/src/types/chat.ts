@@ -23,7 +23,7 @@ export interface ReviewSource {
   review_id: string;
   content: string;
   author: string;
-  source: string; // reddit/twitter/csv
+  source: string; // g2/trustpilot/csv
   sentiment: number;
   url?: string;
   relevance_score: number;
@@ -42,8 +42,9 @@ export interface AgentStep {
   content: any; // BaseModel dict or string
   is_structured: boolean;
   timestamp: string;
-  status?: 'active' | 'completed';
+  status?: 'started' | 'active' | 'completed' | 'error';
   step_order?: number; // Step number in the execution sequence
+  raw_output?: string; // Raw unprocessed output from agent
 }
 
 export interface ChartConfig {
@@ -89,14 +90,17 @@ export interface ChatRequest {
   message: string;
   session_id?: string;
   company_id?: string;
+  dataset_id?: string;
+  dataset_table_name?: string;
   context?: Record<string, any>;
 }
 
 export interface ChatResponse {
   message: string;
-  session_id: string;
-  message_id: string;
-  timestamp: string;
+  content?: string; // Alternative to message (some endpoints use this)
+  session_id?: string;
+  message_id?: string;
+  timestamp?: string;
   completed_at?: string;
   metadata?: Record<string, any>;
   query_type?: string;

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import check_rate_limit, get_db
 from app.core.security.clerk_auth import ClerkUser, get_current_user
 from app.database.repositories import CompanyRepository, ReviewRepository
+from app.database.repositories.scraping_job import ScrapingJobRepository
 from app.exceptions import NotFoundError
 from app.models.company import (
     CompanyCreate,
@@ -17,6 +18,7 @@ from app.models.company import (
     CompanyResponse,
     CompanyUpdate,
 )
+from app.tasks.company_tasks import discover_review_urls_task
 from app.utils.logging import get_logger
 
 logger = get_logger("companies_api")
@@ -35,6 +37,7 @@ async def create_company(
     Create a new company for review analysis.
     
     The company will be associated with the current user.
+    Automatically discovers review URLs in the background.
     """
     try:
         company = await CompanyRepository.create(
@@ -48,6 +51,10 @@ async def create_company(
         await db.commit()
         
         logger.info(f"Created company {company.id} for user {current_user.id}")
+        
+        # Trigger background task to discover review URLs
+        discover_review_urls_task.delay(company.id)
+        logger.info(f"Triggered URL discovery for company {company.id}")
         
         return CompanyResponse.model_validate(company)
         
@@ -78,12 +85,14 @@ async def list_companies(
         
         total = await CompanyRepository.count_user_companies(db, current_user.id)
         
-        # Enrich with review counts
+        # Enrich with review counts and last scrape dates
         company_responses = []
         for company in companies:
             review_count = await ReviewRepository.count_company_reviews(db, company.id)
-            company_dict = company.__dict__
+            last_scrape = await ScrapingJobRepository.get_last_scrape_date(db, company.id)
+            company_dict = company.__dict__.copy()
             company_dict['total_reviews'] = review_count
+            company_dict['last_scrape'] = last_scrape
             company_responses.append(CompanyResponse.model_validate(company_dict))
         
         return CompanyListResponse(
@@ -121,10 +130,12 @@ async def get_company(
                 detail="You don't have access to this company"
             )
         
-        # Get review count
+        # Get review count and last scrape date
         review_count = await ReviewRepository.count_company_reviews(db, company.id)
-        company_dict = company.__dict__
+        last_scrape = await ScrapingJobRepository.get_last_scrape_date(db, company.id)
+        company_dict = company.__dict__.copy()
         company_dict['total_reviews'] = review_count
+        company_dict['last_scrape'] = last_scrape
         
         return CompanyResponse.model_validate(company_dict)
         

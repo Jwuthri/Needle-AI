@@ -456,3 +456,88 @@ async def _show_stats(company_name: Optional[str]):
     
     console.print()
 
+
+@review_group.command(name="sync-to-user-reviews")
+@click.option(
+    "--user-id",
+    "-u",
+    type=str,
+    required=True,
+    help="User ID to sync reviews for",
+)
+@click.option(
+    "--scraping-job-id",
+    "-j",
+    type=str,
+    help="Scraping job ID to sync only reviews from that job (optional)",
+)
+def sync_to_user_reviews(user_id: str, scraping_job_id: Optional[str]):
+    """
+    Sync reviews from the reviews table to the user's aggregated reviews table.
+    
+    This will:
+    - Create the __user_{user_id}_reviews table if it doesn't exist
+    - Sync all reviews from companies owned by the user
+    - Copy embeddings if they exist
+    """
+    asyncio.run(_sync_to_user_reviews(user_id, scraping_job_id))
+
+
+async def _sync_to_user_reviews(user_id: str, scraping_job_id: Optional[str]):
+    """Sync reviews to user reviews table."""
+    from app.services.user_reviews_service import UserReviewsService
+    
+    console.print("\n[bold blue]🔄 Syncing Reviews to User Reviews Table[/bold blue]\n")
+    
+    async with get_async_session() as db:
+        # Verify user exists
+        from app.database.models.user import User
+        from sqlalchemy.future import select
+        
+        result = await db.execute(select(User).filter(User.id == user_id))
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            console.print(f"[red]❌ User '{user_id}' not found[/red]")
+            return
+        
+        console.print(f"[green]✓[/green] User found: {user.email or user.full_name}\n")
+        
+        # Initialize service
+        user_reviews_service = UserReviewsService(db)
+        table_name = user_reviews_service.get_user_reviews_table_name(user_id)
+        
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Syncing reviews...", total=None)
+            
+            try:
+                # Sync reviews
+                synced_count = await user_reviews_service.sync_reviews_to_user_table(
+                    user_id=user_id,
+                    scraping_job_id=scraping_job_id
+                )
+                
+                progress.update(task, description="[green]✓[/green] Sync complete")
+                progress.remove_task(task)
+                
+                console.print("\n[bold green]🎉 Sync Complete![/bold green]")
+                console.print(f"\nSync Details:")
+                console.print(f"  • User ID: {user_id}")
+                console.print(f"  • Table Name: {table_name}")
+                console.print(f"  • Reviews Synced: {synced_count}")
+                if scraping_job_id:
+                    console.print(f"  • Scraping Job ID: {scraping_job_id}")
+                else:
+                    console.print(f"  • Source: All companies owned by user")
+                console.print()
+                
+            except Exception as e:
+                progress.update(task, description=f"[red]✗[/red] Failed: {str(e)}")
+                progress.remove_task(task)
+                console.print(f"\n[red]❌ Sync failed: {e}[/red]\n")
+                raise
+

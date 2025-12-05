@@ -2,7 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import { ChatRequest, ChatResponse, AgentStep } from '@/types/chat';
 
 interface StreamUpdate {
-  type: 'connected' | 'status' | 'content' | 'agent_step_start' | 'agent_step_content' | 'agent_step_complete' | 'agent_stream' | 'agent_stream_structured' | 'complete' | 'error';
+  type: 'connected' | 'status' | 'content' | 'agent_step_start' | 'agent_step_content' | 'agent_step_complete' | 'agent_stream' | 'agent_stream_structured' | 'thinking' | 'tool_call_start' | 'tool_call_param' | 'complete' | 'error';
   data: any;
 }
 
@@ -36,12 +36,21 @@ interface UseChatStreamOptions {
   onError?: (error: string) => void;
 }
 
+interface ToolCallState {
+  tool_id: string;
+  tool_name: string;
+  agent_name: string | null;
+  params: Record<string, any>;
+}
+
 export function useChatStream(options: UseChatStreamOptions = {}) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [currentContent, setCurrentContent] = useState('');
   const [agentSteps, setAgentSteps] = useState<AgentStep[]>([]);
   const [currentAgent, setCurrentAgent] = useState<string | null>(null);
   const [status, setStatus] = useState<{ status: string; message: string } | null>(null);
+  const [thinkingText, setThinkingText] = useState('');
+  const [activeToolCalls, setActiveToolCalls] = useState<ToolCallState[]>([]);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const sendMessage = useCallback(
@@ -51,6 +60,8 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
       setAgentSteps([]);
       setCurrentAgent(null);
       setStatus(null);
+      setThinkingText('');
+      setActiveToolCalls([]);
 
       // Create abort controller for cancellation
       abortControllerRef.current = new AbortController();
@@ -65,9 +76,9 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
           headers['Authorization'] = `Bearer ${authToken}`;
         }
 
-        // Construct full URL - don't use relative path to avoid double /api/v1
+        // Construct full URL - use experimental endpoint for enhanced streaming
         const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
-        const streamUrl = `${API_BASE_URL}/chat/stream`;
+        const streamUrl = `${API_BASE_URL}/chat-experimental/stream`;
 
         console.log('[Stream] Initiating stream request to:', streamUrl);
         console.log('[Stream] Request:', request);
@@ -125,6 +136,7 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
               try {
                 const update: StreamUpdate = JSON.parse(data);
                 console.log('[Stream] Received update:', update.type, update.data);
+                console.log('[Stream] Full update object:', JSON.stringify(update, null, 2));
 
                 switch (update.type) {
                   case 'connected':
@@ -240,9 +252,56 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
                     options.onAgentStepComplete?.(stepComplete);
                     break;
 
+                  case 'thinking':
+                    const thinkingDelta = update.data.delta;
+                    console.log('[Stream] Thinking delta:', thinkingDelta);
+                    setThinkingText((prev) => prev + thinkingDelta);
+                    break;
+
+                  case 'tool_call_start':
+                    const toolCallStart = update.data;
+                    console.log('[Stream] Tool call started:', toolCallStart.tool_name);
+                    setActiveToolCalls((prev) => {
+                      const newState = [
+                        ...prev,
+                        {
+                          tool_id: toolCallStart.tool_id,
+                          tool_name: toolCallStart.tool_name,
+                          agent_name: toolCallStart.agent_name,
+                          params: {},
+                        },
+                      ];
+                      console.log('[Stream] activeToolCalls updated:', newState);
+                      return newState;
+                    });
+                    break;
+
+                  case 'tool_call_param':
+                    const paramUpdate = update.data;
+                    console.log('[Stream] Tool call param:', paramUpdate.param_name, '=', paramUpdate.param_value);
+                    setActiveToolCalls((prev) => {
+                      const newState = prev.map((call) =>
+                        call.tool_id === paramUpdate.tool_id
+                          ? {
+                              ...call,
+                              params: {
+                                ...call.params,
+                                [paramUpdate.param_name]: paramUpdate.param_value,
+                              },
+                            }
+                          : call
+                      );
+                      console.log('[Stream] activeToolCalls after param update:', newState);
+                      return newState;
+                    });
+                    break;
+
                   case 'content':
                     const chunk = update.data.content;
                     console.log('[Stream] Final content chunk:', chunk.length, 'chars');
+                    // Clear thinking and tool calls when final content starts
+                    setThinkingText('');
+                    setActiveToolCalls([]);
                     setCurrentContent((prev) => prev + chunk);
                     options.onContentChunk?.(chunk);
                     break;
@@ -295,6 +354,8 @@ export function useChatStream(options: UseChatStreamOptions = {}) {
     agentSteps,
     currentAgent,
     status,
+    thinkingText,
+    activeToolCalls,
   };
 }
 

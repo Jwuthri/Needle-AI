@@ -2,17 +2,20 @@
 
 import { useState, useEffect } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { ChatView } from '@/components/chat/chat-view'
 import { useAuth } from '@clerk/nextjs'
 import { useChatContext } from '@/components/layout/app-layout'
+import { ExperimentalChatView } from '@/components/chat/experimental-chat-view'
 
-export default function ChatPage() {
+export default function ChatExperimentalPage() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const { isLoaded, isSignedIn } = useAuth()
   const chatContext = useChatContext()
   const [selectedCompany, setSelectedCompany] = useState<string | null>(
     searchParams.get('company_id')
+  )
+  const [selectedDataset, setSelectedDataset] = useState<string | null>(
+    searchParams.get('dataset_id')
   )
 
   // Redirect to sign-in if not authenticated
@@ -33,12 +36,15 @@ export default function ChatPage() {
 
   return (
     <div className="h-full flex flex-col">
-      <ChatView
+      <ExperimentalChatView
         companyId={selectedCompany}
         sessionId={chatContext?.currentSessionId}
         onSessionIdChange={chatContext?.setCurrentSessionId}
         onCompanyChange={setSelectedCompany}
+        datasetId={selectedDataset}
+        onDatasetChange={setSelectedDataset}
       />
     </div>
   )
 }
+

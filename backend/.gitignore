@@ -173,6 +173,7 @@ uv.lock
 *.sqlite
 *.db
 data/
+!app/core/llm/lg_workflow/data/manager.py
 logs/
 backups/
 temp/

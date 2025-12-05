@@ -2,7 +2,7 @@
 Main API v1 router for NeedleAi.
 """
 
-from app.api.v1 import analytics, auth, chat, companies, health, metrics, payments, scraping, tasks, user_datasets
+from app.api.v1 import analytics, auth, chat, chat_experimental, code_execution, companies, graphs, health, metrics, payments, scraping, tasks, user_datasets
 from fastapi import APIRouter
 
 api_router = APIRouter(prefix="/v1")
@@ -11,8 +11,10 @@ api_router = APIRouter(prefix="/v1")
 api_router.include_router(auth.router, prefix="/auth", tags=["authentication"])
 api_router.include_router(health.router, prefix="/health", tags=["health"])
 api_router.include_router(chat.router, prefix="/chat", tags=["chat"])
+api_router.include_router(chat_experimental.router, prefix="/chat-experimental", tags=["chat-experimental"])
 api_router.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
 api_router.include_router(metrics.router, prefix="/metrics", tags=["metrics", "monitoring"])
+api_router.include_router(graphs.router, prefix="/graphs", tags=["graphs"])
 
 # Product review platform endpoints
 api_router.include_router(companies.router, prefix="/companies", tags=["companies"])
@@ -22,3 +24,6 @@ api_router.include_router(analytics.router, prefix="/analytics", tags=["analytic
 
 # User datasets endpoints
 api_router.include_router(user_datasets.router, prefix="/user-datasets", tags=["user-datasets"])
+
+# Code execution endpoint
+api_router.include_router(code_execution.router, prefix="/code", tags=["code-execution"])

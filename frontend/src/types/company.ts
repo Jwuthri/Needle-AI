@@ -1,3 +1,9 @@
+export interface ReviewUrls {
+  g2?: string;
+  trustpilot?: string;
+  trustradius?: string;
+}
+
 export interface Company {
   id: string;
   name: string;
@@ -8,6 +14,7 @@ export interface Company {
   total_reviews?: number;
   last_scrape?: string;
   user_id: string;
+  review_urls?: ReviewUrls;
 }
 
 export interface CreateCompanyRequest {

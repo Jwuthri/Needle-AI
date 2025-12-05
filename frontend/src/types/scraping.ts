@@ -1,7 +1,7 @@
 export interface ScrapingSource {
   id: string;
   name: string;
-  source_type: 'reddit' | 'twitter' | 'custom';
+  source_type: 'g2' | 'trustpilot' | 'trustradius' | 'custom_csv' | 'custom_json';
   cost_per_review: number;
   is_active: boolean;
   description?: string;
@@ -19,8 +19,12 @@ export interface ScrapingJob {
   cost: number;
   started_at?: string;
   completed_at?: string;
+  created_at?: string;
   error_message?: string;
   user_id: string;
+  // Human-readable names
+  source_name?: string;
+  company_name?: string;
 }
 
 export interface StartScrapingJobRequest {

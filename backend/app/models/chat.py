@@ -31,7 +31,13 @@ class ChatRequest(BaseModel):
     message: str = Field(..., description="The user's message", min_length=1)
     session_id: Optional[str] = Field(default=None, description="Session identifier for conversation continuity")
     company_id: Optional[str] = Field(default=None, description="Company ID to query reviews from (enables RAG mode)")
+    dataset_id: Optional[str] = Field(default=None, description="User dataset ID to query from")
+    dataset_table_name: Optional[str] = Field(default=None, description="User dataset table name for querying")
     context: Optional[dict] = Field(default=None, description="Additional context for the request")
+    conversation_history: Optional[List[dict]] = Field(
+        default=None, 
+        description="Recent conversation history (last N messages) for context awareness"
+    )
 
     class Config:
         json_schema_extra = {
@@ -39,6 +45,8 @@ class ChatRequest(BaseModel):
                 "message": "What are the main product gaps?",
                 "session_id": "123e4567-e89b-12d3-a456-426614174000",
                 "company_id": "comp_123",
+                "dataset_id": "dataset_123",
+                "dataset_table_name": "my_reviews_table",
                 "context": {}
             }
         }

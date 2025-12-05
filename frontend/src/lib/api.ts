@@ -98,6 +98,14 @@ class ApiClient {
     })
   }
 
+  // Experimental chat endpoints (using simple_workflow)
+  async sendMessageExperimental(request: ChatRequest): Promise<ChatResponse> {
+    return this.request<ChatResponse>('/chat-experimental/', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    })
+  }
+
   async healthCheck(): Promise<HealthResponse> {
     return this.request<HealthResponse>('/health/')
   }
@@ -148,11 +156,22 @@ class ApiClient {
   }
 
   // Scraping endpoints
-  async listScrapingSources(): Promise<{ sources: any[] }> {
+  async listScrapingSources(): Promise<{ 
+    sources: any[]
+    real_sources: any[]
+    fake_sources: any[]
+  }> {
     return this.request('/scraping/sources')
   }
 
-  async startScrapingJob(data: { company_id: string; source_id: string; total_reviews_target: number }): Promise<any> {
+  async startScrapingJob(data: { 
+    company_id: string
+    source_id: string
+    review_count?: number
+    max_cost?: number
+    generation_mode?: string
+    query?: string
+  }): Promise<any> {
     return this.request('/scraping/jobs', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -212,6 +231,13 @@ class ApiClient {
     return this.request('/payments/credits')
   }
 
+  async addFreeCredits(amount: number): Promise<any> {
+    return this.request('/payments/credits/free', {
+      method: 'POST',
+      body: JSON.stringify({ amount }),
+    })
+  }
+
   async createCheckoutSession(data: { pricing_tier_id: string; success_url: string; cancel_url: string }): Promise<any> {
     return this.request('/payments/checkout', {
       method: 'POST',
@@ -226,6 +252,51 @@ class ApiClient {
     const queryString = params.toString()
     const url = queryString ? `/payments/transactions?${queryString}` : '/payments/transactions'
     return this.request(url)
+  }
+
+  // Analytics endpoints
+  async getUserReviewsStats(
+    companyId?: string,
+    source?: string,
+    timePeriod?: string,
+    dateFrom?: string,
+    dateTo?: string
+  ): Promise<any> {
+    const params = new URLSearchParams()
+    if (companyId) params.append('company_id', companyId)
+    if (source) params.append('source', source)
+    if (timePeriod) params.append('time_period', timePeriod)
+    if (dateFrom) params.append('date_from', dateFrom)
+    if (dateTo) params.append('date_to', dateTo)
+    const queryString = params.toString() ? `?${params.toString()}` : ''
+    return this.request(`/analytics/user-reviews/stats${queryString}`)
+  }
+
+  async exportUserReviews(
+    companyId?: string,
+    source?: string,
+    dateFrom?: string,
+    dateTo?: string
+  ): Promise<Blob> {
+    const params = new URLSearchParams()
+    if (companyId) params.append('company_id', companyId)
+    if (source) params.append('source', source)
+    if (dateFrom) params.append('date_from', dateFrom)
+    if (dateTo) params.append('date_to', dateTo)
+    const queryString = params.toString() ? `?${params.toString()}` : ''
+    
+    const url = `${this.baseUrl}/analytics/user-reviews/export${queryString}`
+    const headers: Record<string, string> = {}
+    if (this.token) {
+      headers.Authorization = `Bearer ${this.token}`
+    }
+    
+    const response = await fetch(url, { headers })
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
+    
+    return response.blob()
   }
 
   // Data import endpoints
@@ -320,6 +391,12 @@ class ApiClient {
     const queryString = params.toString()
     const url = queryString ? `/user-datasets/${datasetId}/data?${queryString}` : `/user-datasets/${datasetId}/data`
     return this.request(url)
+  }
+
+  async deleteUserDataset(datasetId: string): Promise<{ message: string; dataset_id: string }> {
+    return this.request(`/user-datasets/${datasetId}`, {
+      method: 'DELETE',
+    })
   }
 }
 

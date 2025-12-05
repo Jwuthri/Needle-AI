@@ -1,5 +1,11 @@
 """
 Scraper factory for managing and creating review scrapers.
+
+Working scrapers:
+- G2Scraper: Uses omkar-cloud/g2-product-scraper Apify actor
+- TrustpilotCrawler: Uses apify/website-content-crawler
+- TrustRadiusScraper: Uses scraped/trustradius-review-scraper Apify actor
+- CSVImporter: User uploads their own review data
 """
 
 from typing import Dict, List, Optional, Type
@@ -10,8 +16,9 @@ from app.exceptions import ConfigurationError
 from app.services.scrapers import (
     BaseReviewScraper,
     CSVImporter,
-    RedditScraper,
-    TwitterScraper,
+    G2Scraper,
+    TrustpilotCrawler,
+    TrustRadiusScraper,
 )
 from app.utils.logging import get_logger
 
@@ -35,10 +42,11 @@ class ScraperFactory:
 
     def _register_default_scrapers(self):
         """Register built-in scrapers."""
-        self.register_scraper(SourceTypeEnum.REDDIT, RedditScraper)
-        self.register_scraper(SourceTypeEnum.TWITTER, TwitterScraper)
+        self.register_scraper(SourceTypeEnum.G2, G2Scraper)
+        self.register_scraper(SourceTypeEnum.TRUSTPILOT, TrustpilotCrawler)
+        self.register_scraper(SourceTypeEnum.TRUSTRADIUS, TrustRadiusScraper)
         self.register_scraper(SourceTypeEnum.CUSTOM_CSV, CSVImporter)
-        logger.info("Registered default scrapers: Reddit, Twitter, CSV")
+        logger.info("Registered default scrapers: G2, Trustpilot, TrustRadius, CSV")
 
     def register_scraper(
         self,
@@ -58,16 +66,26 @@ class ScraperFactory:
         self._scrapers[source_type] = scraper_class
         logger.debug(f"Registered scraper: {source_type.value} -> {scraper_class.__name__}")
 
-    def get_scraper(self, source_type: SourceTypeEnum) -> BaseReviewScraper:
+    def get_scraper(self, source_type: SourceTypeEnum | str) -> BaseReviewScraper:
         """
         Get a scraper instance for the given source type.
         
         Args:
-            source_type: Source type to scrape from
+            source_type: Source type to scrape from (enum or string)
             
         Returns:
             Scraper instance
         """
+        # Convert string to enum if needed
+        if isinstance(source_type, str):
+            try:
+                source_type = SourceTypeEnum(source_type)
+            except ValueError:
+                available = ", ".join([st.value for st in self._scrapers.keys()])
+                raise ConfigurationError(
+                    f"Unknown source type: {source_type}. Available: {available}"
+                )
+        
         scraper_class = self._scrapers.get(source_type)
         
         if not scraper_class:
@@ -92,10 +110,12 @@ class ScraperFactory:
             scraper = scraper_class(self.settings)
             
             # Get cost per review
-            if source_type == SourceTypeEnum.REDDIT:
-                cost = self.settings.reddit_review_cost
-            elif source_type == SourceTypeEnum.TWITTER:
-                cost = self.settings.twitter_review_cost
+            if source_type == SourceTypeEnum.G2:
+                cost = self.settings.g2_review_cost
+            elif source_type == SourceTypeEnum.TRUSTPILOT:
+                cost = self.settings.trustpilot_review_cost
+            elif source_type == SourceTypeEnum.TRUSTRADIUS:
+                cost = self.settings.trustradius_review_cost
             elif source_type == SourceTypeEnum.CUSTOM_CSV:
                 cost = self.settings.csv_review_cost
             else:
@@ -112,14 +132,14 @@ class ScraperFactory:
 
     async def estimate_total_cost(
         self,
-        source_type: SourceTypeEnum,
+        source_type: SourceTypeEnum | str,
         review_count: int
     ) -> float:
         """
         Estimate the total cost for scraping.
         
         Args:
-            source_type: Source to scrape from
+            source_type: Source to scrape from (enum or string)
             review_count: Number of reviews to scrape
             
         Returns:
@@ -128,8 +148,13 @@ class ScraperFactory:
         scraper = self.get_scraper(source_type)
         return await scraper.estimate_cost(review_count)
 
-    def is_source_available(self, source_type: SourceTypeEnum) -> bool:
+    def is_source_available(self, source_type: SourceTypeEnum | str) -> bool:
         """Check if a source scraper is available."""
+        if isinstance(source_type, str):
+            try:
+                source_type = SourceTypeEnum(source_type)
+            except ValueError:
+                return False
         return source_type in self._scrapers
 
 

@@ -1,34 +1,34 @@
 """
-Redis client for caching and session management.
+Valkey client for caching and session management.
 """
 
 import json
 from typing import Any, Dict, Optional
 
-from redis import Redis
-from redis.asyncio import Redis as AsyncRedis
+import valkey
+from valkey.asyncio import Valkey as AsyncValkey
 
 from ..config import get_settings
 from ..utils.logging import get_logger
 
-logger = get_logger("redis_client")
+logger = get_logger("valkey_client")
 
 
-class RedisClient:
-    """Redis client for caching, session storage, and pub/sub."""
+class ValkeyClient:
+    """Valkey client for caching, session storage, and pub/sub."""
 
     def __init__(self):
         settings = get_settings()
-        self.redis_url = settings.redis_url
-        self.redis: Optional[AsyncRedis] = None
-        self.sync_redis: Optional[Redis] = None
+        self.valkey_url = settings.redis_url  # Still using redis_url setting for backward compatibility
+        self.valkey: Optional[AsyncValkey] = None
+        self.sync_valkey: Optional[valkey.Valkey] = None
         self._initialized = False
-        self._available = False  # Track if Redis is actually available
+        self._available = False  # Track if Valkey is actually available
 
     def _check_availability(self, operation: str) -> bool:
-        """Check if Redis is available for the given operation."""
+        """Check if Valkey is available for the given operation."""
         if not self._available:
-            logger.debug(f"Redis not available, skipping {operation}")
+            logger.debug(f"Valkey not available, skipping {operation}")
             return False
         return True
 
@@ -44,64 +44,42 @@ class RedisClient:
         self._initialized = False
 
     async def connect(self):
-        """Initialize Redis connection."""
+        """Initialize Valkey connection."""
         try:
-            # SSL configuration for Aiven/Valkey or any SSL Redis
-            redis_config = {
-                "encoding": "utf-8",
-                "decode_responses": True,
-                "health_check_interval": 30,
-            }
-            
-            # Add SSL settings if using rediss://
-            if self.redis_url.startswith("rediss://"):
-                redis_config.update({
-                    "ssl_cert_reqs": "required",  # Require SSL certificate verification
-                    # Aiven provides valid certificates, so we use the system's CA bundle
-                    "ssl_check_hostname": True,
-                })
-                logger.info("Using SSL/TLS for Redis connection")
-            
-            self.redis = AsyncRedis.from_url(
-                self.redis_url,
-                **redis_config
+            # Valkey connection uses valkeys:// protocol
+            self.valkey = AsyncValkey.from_url(
+                self.valkey_url,
+                encoding="utf-8",
+                decode_responses=True,
+                health_check_interval=30,
             )
 
             # Test connection
-            await self.redis.ping()
-            logger.info(f"Connected to Redis at {self.redis_url.split('@')[-1]}")  # Don't log password
+            await self.valkey.ping()
+            logger.info(f"Connected to Valkey at {self.valkey_url.split('@')[-1]}")  # Don't log password
 
             # Initialize sync client for non-async operations
-            sync_config = {
-                "encoding": "utf-8",
-                "decode_responses": True,
-            }
-            if self.redis_url.startswith("rediss://"):
-                sync_config.update({
-                    "ssl_cert_reqs": "required",
-                    "ssl_check_hostname": True,
-                })
-            
-            self.sync_redis = Redis.from_url(
-                self.redis_url,
-                **sync_config
+            self.sync_valkey = valkey.Valkey.from_url(
+                self.valkey_url,
+                encoding="utf-8",
+                decode_responses=True,
             )
             
             self._available = True
 
         except Exception as e:
-            logger.warning(f"Redis not available: {e}")
-            logger.info("Running without Redis - caching and session features will be disabled")
+            logger.warning(f"Valkey not available: {e}")
+            logger.info("Running without Valkey - caching and session features will be disabled")
             self._available = False
-            # Don't raise the exception - allow the app to continue without Redis
+            # Don't raise the exception - allow the app to continue without Valkey
 
     async def disconnect(self):
-        """Close Redis connections."""
-        if self.redis:
-            await self.redis.aclose()
-        if self.sync_redis:
-            self.sync_redis.close()
-        logger.info("Disconnected from Redis")
+        """Close Valkey connections."""
+        if self.valkey:
+            await self.valkey.aclose()
+        if self.sync_valkey:
+            self.sync_valkey.close()
+        logger.info("Disconnected from Valkey")
 
     async def set(self, key: str, value: Any, expire: Optional[int] = None) -> bool:
         """Set a key-value pair with optional expiration."""
@@ -112,10 +90,10 @@ class RedisClient:
             if isinstance(value, (dict, list)):
                 value = json.dumps(value)
 
-            result = await self.redis.set(key, value, ex=expire)
+            result = await self.valkey.set(key, value, ex=expire)
             return bool(result)
         except Exception as e:
-            logger.error(f"Redis SET error for key {key}: {e}")
+            logger.error(f"Valkey SET error for key {key}: {e}")
             return False
 
     async def get(self, key: str) -> Optional[Any]:
@@ -124,7 +102,7 @@ class RedisClient:
             return None
             
         try:
-            value = await self.redis.get(key)
+            value = await self.valkey.get(key)
             if value is None:
                 return None
 
@@ -134,7 +112,7 @@ class RedisClient:
             except json.JSONDecodeError:
                 return value
         except Exception as e:
-            logger.error(f"Redis GET error for key {key}: {e}")
+            logger.error(f"Valkey GET error for key {key}: {e}")
             return None
 
     async def delete(self, key: str) -> bool:
@@ -143,10 +121,10 @@ class RedisClient:
             return False
             
         try:
-            result = await self.redis.delete(key)
+            result = await self.valkey.delete(key)
             return result > 0
         except Exception as e:
-            logger.error(f"Redis DELETE error for key {key}: {e}")
+            logger.error(f"Valkey DELETE error for key {key}: {e}")
             return False
 
     async def exists(self, key: str) -> bool:
@@ -155,9 +133,9 @@ class RedisClient:
             return False
             
         try:
-            return bool(await self.redis.exists(key))
+            return bool(await self.valkey.exists(key))
         except Exception as e:
-            logger.error(f"Redis EXISTS error for key {key}: {e}")
+            logger.error(f"Valkey EXISTS error for key {key}: {e}")
             return False
 
     async def increment(self, key: str, amount: int = 1) -> Optional[int]:
@@ -166,9 +144,9 @@ class RedisClient:
             return None
             
         try:
-            return await self.redis.incrby(key, amount)
+            return await self.valkey.incrby(key, amount)
         except Exception as e:
-            logger.error(f"Redis INCR error for key {key}: {e}")
+            logger.error(f"Valkey INCR error for key {key}: {e}")
             return None
 
     async def set_hash(self, key: str, mapping: Dict[str, Any]) -> bool:
@@ -185,10 +163,10 @@ class RedisClient:
                 else:
                     processed_mapping[field] = str(value)
 
-            result = await self.redis.hset(key, mapping=processed_mapping)
+            result = await self.valkey.hset(key, mapping=processed_mapping)
             return result is not None
         except Exception as e:
-            logger.error(f"Redis HSET error for key {key}: {e}")
+            logger.error(f"Valkey HSET error for key {key}: {e}")
             return False
 
     async def get_hash(self, key: str) -> Optional[Dict[str, Any]]:
@@ -197,7 +175,7 @@ class RedisClient:
             return None
             
         try:
-            result = await self.redis.hgetall(key)
+            result = await self.valkey.hgetall(key)
             if not result:
                 return None
 
@@ -211,11 +189,11 @@ class RedisClient:
 
             return processed_result
         except Exception as e:
-            logger.error(f"Redis HGETALL error for key {key}: {e}")
+            logger.error(f"Valkey HGETALL error for key {key}: {e}")
             return None
 
     async def publish(self, channel: str, message: Any) -> int:
-        """Publish a message to a Redis channel."""
+        """Publish a message to a Valkey channel."""
         if not self._check_availability(f"PUBLISH {channel}"):
             return 0
             
@@ -223,23 +201,23 @@ class RedisClient:
             if isinstance(message, (dict, list)):
                 message = json.dumps(message)
 
-            result = await self.redis.publish(channel, message)
+            result = await self.valkey.publish(channel, message)
             return result
         except Exception as e:
-            logger.error(f"Redis PUBLISH error for channel {channel}: {e}")
+            logger.error(f"Valkey PUBLISH error for channel {channel}: {e}")
             return 0
 
     async def subscribe(self, channels: list[str]):
-        """Subscribe to Redis channels."""
+        """Subscribe to Valkey channels."""
         if not self._check_availability(f"SUBSCRIBE {channels}"):
             return None
             
         try:
-            pubsub = self.redis.pubsub()
+            pubsub = self.valkey.pubsub()
             await pubsub.subscribe(*channels)
             return pubsub
         except Exception as e:
-            logger.error(f"Redis SUBSCRIBE error for channels {channels}: {e}")
+            logger.error(f"Valkey SUBSCRIBE error for channels {channels}: {e}")
             return None
 
     # Session management methods
@@ -265,12 +243,16 @@ class RedisClient:
         return await self.get(f"cache:{cache_key}")
 
     async def health_check(self) -> bool:
-        """Check Redis health."""
+        """Check Valkey health."""
         if not self._available:
             return False
             
         try:
-            await self.redis.ping()
+            await self.valkey.ping()
             return True
         except Exception:
             return False
+
+
+# Backward compatibility alias
+RedisClient = ValkeyClient

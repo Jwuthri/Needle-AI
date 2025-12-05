@@ -15,6 +15,7 @@ from sqlalchemy.future import select
 from app.database.models.company import Company
 from app.database.models.review import Review
 from app.database.models.scraping_job import ScrapingJob
+from app.database.repositories.user_dataset import UserDatasetRepository
 from app.utils.dynamic_tables import sanitize_table_name
 from app.utils.logging import get_logger
 
@@ -77,7 +78,7 @@ class UserReviewsService:
         
         # Create table with standardized schema
         # Based on the EDA example: id, user_id, company_name, category, rating, text, source, date, author, created_at, updated_at
-        # Plus embedding column for vector search
+        # Plus __embedding__ column for vector search
         create_table_sql = f"""
             CREATE TABLE "{table_name}" (
                 id TEXT PRIMARY KEY,
@@ -91,7 +92,7 @@ class UserReviewsService:
                 author TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                embedding vector(1536)
+                __embedding__ vector(1536)
             )
         """
         
@@ -113,6 +114,210 @@ class UserReviewsService:
         
         logger.info(f"{self._log_prefix(user_id)} | Created table {table_name} with indexes")
         return True
+
+    async def _compute_field_stats(self, user_id: str, row_count: int) -> tuple[list, dict]:
+        """Compute actual field statistics from the reviews table.
+        
+        Args:
+            user_id: User ID
+            row_count: Total row count
+            
+        Returns:
+            Tuple of (field_metadata, computed_stats)
+        """
+        table_name = self.get_user_reviews_table_name(user_id)
+        
+        # Query unique counts and top values for key fields
+        stats_queries = {
+            "company_name": f'SELECT company_name, COUNT(*) as cnt FROM "{table_name}" GROUP BY company_name ORDER BY cnt DESC LIMIT 10',
+            "source": f'SELECT source, COUNT(*) as cnt FROM "{table_name}" GROUP BY source ORDER BY cnt DESC LIMIT 10',
+            "author": f'SELECT author, COUNT(*) as cnt FROM "{table_name}" WHERE author IS NOT NULL GROUP BY author ORDER BY cnt DESC LIMIT 10',
+            "rating": f'SELECT rating, COUNT(*) as cnt FROM "{table_name}" WHERE rating IS NOT NULL GROUP BY rating ORDER BY cnt DESC LIMIT 10',
+            "category": f'SELECT category, COUNT(*) as cnt FROM "{table_name}" GROUP BY category ORDER BY cnt DESC LIMIT 10',
+        }
+        
+        computed_stats = {}
+        for field, query in stats_queries.items():
+            try:
+                result = await self.db.execute(text(query))
+                rows = result.fetchall()
+                computed_stats[field] = {
+                    "unique_count": len(rows),
+                    "top_values": [{"value": str(r[0]) if r[0] else "null", "count": r[1]} for r in rows[:5]]
+                }
+            except Exception as e:
+                logger.warning(f"{self._log_prefix(user_id)} | Failed to compute stats for {field}: {e}")
+                computed_stats[field] = {"unique_count": None, "top_values": None}
+        
+        # Get unique counts for other fields
+        unique_count_queries = {
+            "id": f'SELECT COUNT(DISTINCT id) FROM "{table_name}"',
+            "user_id": f'SELECT COUNT(DISTINCT user_id) FROM "{table_name}"',
+            "text": f'SELECT COUNT(DISTINCT text) FROM "{table_name}"',
+            "date": f'SELECT COUNT(DISTINCT date) FROM "{table_name}"',
+        }
+        
+        for field, query in unique_count_queries.items():
+            try:
+                result = await self.db.execute(text(query))
+                computed_stats[field] = {"unique_count": result.scalar(), "top_values": None}
+            except Exception as e:
+                logger.warning(f"{self._log_prefix(user_id)} | Failed to count {field}: {e}")
+                computed_stats[field] = {"unique_count": None, "top_values": None}
+        
+        # Build field metadata with computed values
+        field_metadata = [
+            {
+                "field_name": "id",
+                "data_type": "text",
+                "description": "A unique identifier (UUID) for each review row.",
+                "unique_value_count": computed_stats.get("id", {}).get("unique_count", row_count),
+                "top_values": None
+            },
+            {
+                "field_name": "user_id",
+                "data_type": "text",
+                "description": "Identifier for the owning user or tenant.",
+                "unique_value_count": computed_stats.get("user_id", {}).get("unique_count", 1),
+                "top_values": None
+            },
+            {
+                "field_name": "company_name",
+                "data_type": "text",
+                "description": "Name of the company being reviewed.",
+                "unique_value_count": computed_stats.get("company_name", {}).get("unique_count", 1),
+                "top_values": [v["value"] for v in computed_stats.get("company_name", {}).get("top_values", []) or []][:5] or None
+            },
+            {
+                "field_name": "category",
+                "data_type": "text",
+                "description": "High-level classification of the record (e.g., `review`).",
+                "unique_value_count": computed_stats.get("category", {}).get("unique_count", 1),
+                "top_values": [v["value"] for v in computed_stats.get("category", {}).get("top_values", []) or []][:5] or ["review"]
+            },
+            {
+                "field_name": "rating",
+                "data_type": "int",
+                "description": "Numeric rating attached to each review (range: 1–5).",
+                "unique_value_count": computed_stats.get("rating", {}).get("unique_count", 5),
+                "top_values": [v["value"] for v in computed_stats.get("rating", {}).get("top_values", []) or []][:5] or None
+            },
+            {
+                "field_name": "text",
+                "data_type": "text",
+                "description": "Full review text or short commentary from the external source.",
+                "unique_value_count": computed_stats.get("text", {}).get("unique_count", row_count),
+                "top_values": None
+            },
+            {
+                "field_name": "source",
+                "data_type": "text",
+                "description": "Origin platform for the review (e.g., `reddit`, `twitter/x`, `trustpilot`).",
+                "unique_value_count": computed_stats.get("source", {}).get("unique_count"),
+                "top_values": [v["value"] for v in computed_stats.get("source", {}).get("top_values", []) or []][:5] or None
+            },
+            {
+                "field_name": "date",
+                "data_type": "timestamp",
+                "description": "The original timestamp when the review was posted.",
+                "unique_value_count": computed_stats.get("date", {}).get("unique_count", row_count),
+                "top_values": None
+            },
+            {
+                "field_name": "author",
+                "data_type": "text",
+                "description": "Handle or username of the person who posted the review.",
+                "unique_value_count": computed_stats.get("author", {}).get("unique_count"),
+                "top_values": [v["value"] for v in computed_stats.get("author", {}).get("top_values", []) or []][:5] or None
+            },
+            {
+                "field_name": "created_at",
+                "data_type": "timestamp",
+                "description": "When this record was created in the system.",
+                "unique_value_count": row_count,
+                "top_values": None
+            },
+            {
+                "field_name": "updated_at",
+                "data_type": "timestamp",
+                "description": "Last time the record was updated.",
+                "unique_value_count": row_count,
+                "top_values": None
+            }
+        ]
+        
+        return field_metadata, computed_stats
+
+    async def ensure_user_dataset_record(self, user_id: str, row_count: int = 0) -> None:
+        """Ensure a user_datasets record exists for the reviews table.
+        
+        This creates metadata that allows the LLM agents to discover the reviews dataset.
+        
+        Args:
+            user_id: User ID
+            row_count: Number of rows in the reviews table
+        """
+        table_name = self.get_user_reviews_table_name(user_id)
+        
+        # Check if user_datasets record already exists
+        existing = await UserDatasetRepository.get_by_table_name(self.db, table_name, user_id)
+        
+        if existing:
+            logger.info(f"{self._log_prefix(user_id)} | user_datasets record already exists for {table_name}")
+            # Compute fresh field stats from actual data
+            field_metadata, _ = await self._compute_field_stats(user_id, row_count)
+            
+            # Update row count and field metadata
+            existing.row_count = row_count
+            existing.field_metadata = field_metadata
+            await self.db.commit()
+            logger.info(f"{self._log_prefix(user_id)} | Updated row count to {row_count} and refreshed field metadata")
+            return
+        
+        # Create user_datasets record
+        repository = UserDatasetRepository()
+        
+        # Build field metadata with computed stats from actual data
+        field_metadata, _ = await self._compute_field_stats(user_id, row_count)
+        
+        # Build column stats
+        column_stats = {
+            "id": {"dtype": "text", "description": "Unique identifier (UUID) for each review"},
+            "user_id": {"dtype": "text", "description": "Owning user/tenant identifier"},
+            "company_name": {"dtype": "text", "description": "Company being reviewed"},
+            "category": {"dtype": "text", "description": "Record classification (review)"},
+            "rating": {"dtype": "int", "description": "Numeric rating 1-5"},
+            "text": {"dtype": "text", "description": "Full review text content"},
+            "source": {"dtype": "text", "description": "Origin platform (reddit, twitter/x, etc.)"},
+            "date": {"dtype": "timestamp", "description": "When review was posted"},
+            "author": {"dtype": "text", "description": "Reviewer handle/username"},
+            "created_at": {"dtype": "timestamp", "description": "Record creation time"},
+            "updated_at": {"dtype": "timestamp", "description": "Record last update time"},
+        }
+        
+        # Vector store columns - main column for embeddings
+        vector_store_columns = {
+            "main_column": "text",
+            "alternative_columns": ["author", "company_name", "category"],
+            "description": "The `text` field is the primary candidate for embedding because it contains the review content necessary for semantic search and clustering. Concatenating `author`, `company_name`, and `category` with the main text can provide useful context (who wrote it, which company, and that it is a review) to improve relevance in vector-based retrieval."
+        }
+        
+        await repository.create(
+            db=self.db,
+            user_id=user_id,
+            origin="reviews_sync",
+            table_name=table_name,
+            row_count=row_count,
+            description="**Overview 📊** This dataset contains short social reviews and metadata, with each row representing one external review item. Fields like `text`, `rating`, `source`, and `author` work together to capture *what* was said, *who* said it, *when*, and *where* (platform) — useful for **customer sentiment** and content analysis. The data is stored as relational records (one JSON-like object per row) with mostly non-null values and consistent timestamps.",
+            field_metadata=field_metadata,
+            column_stats=column_stats,
+            sample_data=[],
+            vector_store_columns=vector_store_columns,
+            meta={"dataset_type": "reviews", "auto_generated": True}
+        )
+        await self.db.commit()
+        
+        logger.info(f"{self._log_prefix(user_id)} | Created user_datasets record for {table_name}")
 
     async def sync_reviews_to_user_table(
         self,
@@ -194,7 +399,7 @@ class UserReviewsService:
                 insert_sql = f"""
                     INSERT INTO "{table_name}" (
                         id, user_id, company_name, category, rating, text, source, date, author, 
-                        created_at, updated_at, embedding
+                        created_at, updated_at, __embedding__
                     ) VALUES (
                         :id, :user_id, :company_name, :category, :rating, :text, :source, :date, :author,
                         :created_at, :updated_at, :embedding
@@ -207,16 +412,19 @@ class UserReviewsService:
                         date = EXCLUDED.date,
                         author = EXCLUDED.author,
                         updated_at = CURRENT_TIMESTAMP,
-                        embedding = EXCLUDED.embedding
+                        __embedding__ = EXCLUDED.__embedding__
                 """
                 
                 # Convert embedding to string format if present
                 embedding_str = None
-                if review.embedding:
+                if review.embedding is not None:
                     # Embedding is a Vector type, convert to list then string
-                    embedding_list = list(review.embedding) if hasattr(review.embedding, '__iter__') else None
-                    if embedding_list:
-                        embedding_str = '[' + ','.join(map(str, embedding_list)) + ']'
+                    try:
+                        embedding_list = list(review.embedding) if hasattr(review.embedding, '__iter__') else None
+                        if embedding_list:
+                            embedding_str = '[' + ','.join(map(str, embedding_list)) + ']'
+                    except Exception as e:
+                        logger.warning(f"{self._log_prefix(user_id)} | Failed to convert embedding for review {review.id}: {e}")
                 
                 await self.db.execute(
                     text(insert_sql),
@@ -243,5 +451,14 @@ class UserReviewsService:
         await self.db.commit()
         
         logger.info(f"{self._log_prefix(user_id)} | Synced {synced_count} reviews to {table_name}")
+        
+        # Get ACTUAL total row count from the table
+        count_query = text(f'SELECT COUNT(*) FROM "{table_name}"')
+        result = await self.db.execute(count_query)
+        total_rows = result.scalar()
+        
+        # Update user_datasets record with actual row count
+        await self.ensure_user_dataset_record(user_id, row_count=total_rows)
+        
         return synced_count
 

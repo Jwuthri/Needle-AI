@@ -173,7 +173,7 @@ async def get_dataset_data(
         data = await service.get_dataset_data(
             dataset_id=dataset_id,
             user_id=current_user.id,
-            limit=min(limit, 1000),  # Cap at 1000 rows
+            limit=min(limit, 10000),  # Cap at 10000 rows
             offset=offset
         )
         
@@ -192,5 +192,55 @@ async def get_dataset_data(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get dataset data: {str(e)}"
+        )
+
+
+@router.delete("/{dataset_id}", status_code=status.HTTP_200_OK)
+async def delete_dataset(
+    dataset_id: str,
+    current_user: ClerkUser = Depends(require_current_user),
+    db: AsyncSession = Depends(get_db),
+    service: UserDatasetService = Depends(get_user_dataset_service),
+    _rate_limit = Depends(check_rate_limit)
+):
+    """
+    Delete a dataset and its associated dynamic table.
+    
+    This will permanently delete:
+    - The dataset record from the database
+    - The dynamic table containing the CSV data
+    """
+    try:
+        await service.delete_dataset(
+            dataset_id=dataset_id,
+            user_id=current_user.id
+        )
+        
+        logger.info(f"Successfully deleted dataset {dataset_id} for user {current_user.id}")
+        
+        return {"message": "Dataset deleted successfully", "dataset_id": dataset_id}
+        
+    except ValueError as e:
+        # Handle not found or permission errors
+        error_message = str(e)
+        if "not found" in error_message.lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=error_message
+            )
+        elif "permission" in error_message.lower():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=error_message
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_message
+        )
+    except Exception as e:
+        logger.error(f"Error deleting dataset: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete dataset: {str(e)}"
         )
 

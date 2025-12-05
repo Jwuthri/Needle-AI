@@ -7,7 +7,6 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import JSON, Boolean, Column, DateTime
-from sqlalchemy import Enum as SQLEnum
 from sqlalchemy import Float, Index, String, Text
 from sqlalchemy.orm import relationship
 
@@ -15,9 +14,10 @@ from ..base import Base
 
 
 class SourceTypeEnum(str, enum.Enum):
-    """Available review source types."""
-    REDDIT = "reddit"
-    TWITTER = "twitter"
+    """Available review source types (for Python code only, not DB constraint)."""
+    G2 = "g2"
+    TRUSTPILOT = "trustpilot"
+    TRUSTRADIUS = "trustradius"
     CUSTOM_CSV = "custom_csv"
     CUSTOM_JSON = "custom_json"
 
@@ -28,7 +28,7 @@ class ReviewSource(Base):
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String(100), nullable=False, unique=True, index=True)
-    source_type = Column(SQLEnum(SourceTypeEnum), nullable=False, index=True)
+    source_type = Column(String(50), nullable=False, index=True)
     description = Column(Text, nullable=True)
 
     # Configuration (e.g., API credentials, scraper settings)

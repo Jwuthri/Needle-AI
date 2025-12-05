@@ -47,6 +47,11 @@ async def send_message_stream(
     - error (if something goes wrong)
     
     Each event is JSON with {type, data} structure.
+    
+    Dataset Support:
+    - request.dataset_id: The ID of the selected user dataset
+    - request.dataset_table_name: The table name of the selected dataset (for SQL queries)
+    - Future: The backend will enforce dataset usage when a dataset is selected
     """
     try:
         from app.database.repositories.chat_session import ChatSessionRepository
@@ -193,6 +198,11 @@ async def send_message(
     - Generate visualizations when appropriate
     - Provide proper source citations
     - Track execution steps for UI visualization
+    
+    Dataset Support:
+    - request.dataset_id: The ID of the selected user dataset
+    - request.dataset_table_name: The table name of the selected dataset (for SQL queries)
+    - Future: The backend will enforce dataset usage when a dataset is selected
     """
     try:
         from app.database.repositories.chat_session import ChatSessionRepository
@@ -446,9 +456,15 @@ async def list_sessions(
                 # Format steps for frontend
                 formatted_steps = []
                 for step in agent_steps:
-                    # Determine content based on available fields
+                    # Combine tool_call and structured_output into content
                     content = None
-                    if step.structured_output:
+                    if step.tool_call and step.structured_output:
+                        # Both call and result - merge them
+                        content = {
+                            **step.tool_call,
+                            "output": step.structured_output
+                        }
+                    elif step.structured_output:
                         content = step.structured_output
                     elif step.tool_call:
                         content = step.tool_call
@@ -461,12 +477,13 @@ async def list_sessions(
                         "content": content,
                         "is_structured": step.structured_output is not None or step.tool_call is not None,
                         "timestamp": step.created_at.isoformat() if step.created_at else None,
-                        "status": "completed",
-                        "step_order": step.step_order
+                        "status": step.status or "completed",
+                        "step_order": step.step_order,
+                        "raw_output": step.raw_output  # Include raw_output for markdown rendering
                     })
                 
                 # Add steps to metadata
-                metadata = msg.metadata if isinstance(msg.metadata, dict) else {}
+                metadata = msg.extra_metadata if isinstance(msg.extra_metadata, dict) else {}
                 if formatted_steps:
                     metadata['agent_steps'] = formatted_steps
                 
@@ -546,9 +563,15 @@ async def get_session(
             # Format steps for frontend
             formatted_steps = []
             for step in agent_steps:
-                # Determine content based on available fields
+                # Combine tool_call and structured_output into content
                 content = None
-                if step.structured_output:
+                if step.tool_call and step.structured_output:
+                    # Both call and result - merge them
+                    content = {
+                        **step.tool_call,
+                        "output": step.structured_output
+                    }
+                elif step.structured_output:
                     content = step.structured_output
                 elif step.tool_call:
                     content = step.tool_call
@@ -561,12 +584,13 @@ async def get_session(
                     "content": content,
                     "is_structured": step.structured_output is not None or step.tool_call is not None,
                     "timestamp": step.created_at.isoformat() if step.created_at else None,
-                    "status": "completed",
-                    "step_order": step.step_order
+                    "status": step.status or "completed",
+                    "step_order": step.step_order,
+                    "raw_output": step.raw_output  # Include raw_output for markdown rendering
                 })
             
             # Add steps to metadata
-            metadata = msg.metadata if isinstance(msg.metadata, dict) else {}
+            metadata = msg.extra_metadata if isinstance(msg.extra_metadata, dict) else {}
             if formatted_steps:
                 metadata['agent_steps'] = formatted_steps
             
@@ -574,9 +598,9 @@ async def get_session(
                 id=str(msg.id),
                 content=msg.content,
                 role=MessageRole(msg.role.value),
-                timestamp=msg.created_at if msg.created_at else datetime.utcnow(),
-                completed_at=msg.completed_at,  # ADD THIS LINE
-                metadata=metadata
+                timestamp=msg.created_at.isoformat() if msg.created_at else datetime.utcnow().isoformat(),
+                completed_at=msg.completed_at.isoformat() if msg.completed_at else None,
+                metadata=metadata,
             ))
         
         # Include title and company_id in metadata
@@ -725,6 +749,63 @@ async def clear_session(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to clear session: {str(e)}"
+        )
+
+
+@router.get("/artifacts/{artifact_name}/download")
+async def download_artifact(
+    artifact_name: str,
+    current_user: Optional[ClerkUser] = Depends(get_current_user)
+):
+    """
+    Download a search artifact as CSV.
+    
+    Artifacts are created by tools like semantic_search and stored in the DataManager cache.
+    """
+    try:
+        from app.core.llm.lg_workflow.data.manager import DataManager
+        import io
+        
+        user_id = current_user.id if current_user else None
+        
+        # Get the artifact from DataManager cache
+        dm = DataManager.get_instance("default")
+        
+        # Check if artifact exists in cache
+        if artifact_name not in dm._local_cache:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Artifact '{artifact_name}' not found"
+            )
+        
+        # Get the dataframe
+        item = dm._local_cache[artifact_name]
+        if isinstance(item, tuple):
+            df, _ = item
+        else:
+            df = item
+        
+        # Convert to CSV
+        csv_buffer = io.StringIO()
+        df.to_csv(csv_buffer, index=False)
+        csv_content = csv_buffer.getvalue()
+        
+        # Return as downloadable CSV
+        return StreamingResponse(
+            iter([csv_content]),
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f"attachment; filename={artifact_name}.csv"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error downloading artifact: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to download artifact: {str(e)}"
         )
 
 

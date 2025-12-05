@@ -68,7 +68,7 @@ class EmbeddingService:
     async def generate_embeddings_batch(
         self, 
         texts: List[str],
-        batch_size: int = 100
+        batch_size: int = 512
     ) -> List[Optional[List[float]]]:
         """
         Generate embeddings for multiple texts in batches.

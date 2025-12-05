@@ -758,6 +758,8 @@ uv pip install -e .
 
 # Start the development server
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+celery -A app.core.celery_app worker --loglevel=info
 ```
 
 ### Running Tests

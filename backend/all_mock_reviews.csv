@@ -1,0 +1,187 @@
+id,category,rating,text,source,date,author,product
+1,review,2,Missing lyrics sync feature that Apple Music has. Would pay extra for this.,app_store,2025-10-15,user123,Spotify
+2,review,5,Best music app ever! Love the AI DJ feature.,app_store,2025-10-14,musicfan,Spotify
+3,review,3,Good but needs better podcast discovery. I can't find niche podcasts easily.,reddit,2025-10-13,podcastlover,Spotify
+4,review,1,Terrible shuffle algorithm. Keeps playing same songs. Need better randomization.,trustpilot,2025-10-12,frustrated_user,Spotify
+5,review,4,Great app but missing sleep timer for podcasts. Please add this!,reddit,2025-10-11,sleepy_listener,Spotify
+6,review,2,No way to transfer playlists to other platforms. Lock-in is frustrating.,app_store,2025-10-10,switcher,Spotify
+7,review,5,Discover Weekly is mind-blowing. Always finds music I love.,app_store,2025-10-09,discovery_fan,Spotify
+8,review,3,Needs better audio quality options. Competitors have lossless audio.,reddit,2025-10-08,audiophile,Spotify
+9,review,1,Desktop app is bloated and slow. Takes forever to load.,trustpilot,2025-10-07,desktop_user,Spotify
+10,review,4,Love it but wish there was collaborative queue for parties.,reddit,2025-10-06,party_host,Spotify
+11,review,2,Missing karaoke mode. Would be amazing for social features.,app_store,2025-10-05,karaoke_lover,Spotify
+12,review,5,Interface is clean and intuitive. Easy to use.,app_store,2025-10-04,ux_designer,Spotify
+13,review,3,Need better integration with smart home devices. Alexa support is lacking.,reddit,2025-10-03,smart_home_user,Spotify
+14,review,1,Ads are too frequent on free tier. Unbearable experience.,trustpilot,2025-10-02,free_user,Spotify
+15,review,4,Great but needs concert recommendations based on my music taste.,reddit,2025-10-01,concert_goer,Spotify
+31,review,2,The daily mixes are getting repetitive. Need more variety.,app_store,2025-09-30,mix_user,Spotify
+32,review,4,"I love the new UI update, very fresh and modern.",app_store,2025-09-29,designer_fan,Spotify
+33,review,3,Playback issues on Android Auto. Music often cuts out.,reddit,2025-09-28,car_listener,Spotify
+45,review,1,"Battery drain is insane, my phone dies in a few hours with Spotify open.",forum,2025-09-27,battery_sufferer,Spotify
+46,review,5,"Spotify Connect works flawlessly, great for seamless listening.",app_store,2025-09-26,seamless_listener,Spotify
+47,review,3,"Offline downloads are buggy, sometimes my music disappears.",reddit,2025-09-25,offline_user,Spotify
+48,review,2,"No option to buy individual songs, only subscribe or listen to ads.",trustpilot,2025-09-24,song_buyer,Spotify
+49,review,4,"I really enjoy the curated playlists, always something new to explore.",app_store,2025-09-23,playlist_explorer,Spotify
+50,review,1,"The podcast UI is separate and confusing, hard to switch between music and podcasts.",reddit,2025-09-22,podcast_switcher,Spotify
+51,review,5,"The sound quality is top-notch, especially with premium.",app_store,2025-09-21,audio_enthusiast,Spotify
+52,review,3,Discovering new artists is difficult without a dedicated 'new releases' section for my tastes.,forum,2025-09-20,new_music_seeker,Spotify
+53,review,2,"The social sharing features are very limited, wish I could easily share snippets.",twitter,2025-09-19,social_sharer,Spotify
+54,review,4,"Lyrics feature, while not perfect, is a great addition for singing along.",app_store,2025-09-18,karaoke_fan,Spotify
+55,review,1,"Too many ads even on paid tier, it's unacceptable.",trustpilot,2025-09-17,premium_ads,Spotify
+56,review,5,"Yearly Wrapped is my favorite feature, love seeing my listening habits.",instagram,2025-09-16,wrapped_lover,Spotify
+57,review,3,Needs a better way to filter explicit content for kids' profiles.,forum,2025-09-15,parent_user,Spotify
+58,review,2,"The desktop app is constantly crashing, very frustrating.",reddit,2025-09-14,crash_victim,Spotify
+59,review,4,I love the ability to create collaborative playlists with friends.,app_store,2025-09-13,collab_playlist,Spotify
+60,review,1,"The volume normalization is off, some songs are way louder than others.",trustpilot,2025-09-12,volume_issues,Spotify
+61,review,5,"Student discount is a lifesaver, great value for money.",app_store,2025-09-11,student_saver,Spotify
+62,review,3,"The search function is inconsistent, sometimes I get irrelevant results.",reddit,2025-09-10,search_frustration,Spotify
+63,review,2,"The autoplay feature after an album ends is annoying, wish I could turn it off permanently.",forum,2025-09-09,autoplay_hater,Spotify
+64,review,4,I appreciate the diverse range of genres and artists available.,app_store,2025-09-08,music_diversity,Spotify
+65,review,1,"The customer support is non-existent, took weeks to resolve a billing issue.",trustpilot,2025-09-07,bad_support,Spotify
+66,review,5,Family plan is perfect for sharing music with my whole household.,app_store,2025-09-06,family_user,Spotify
+67,review,3,"The queue management is clunky, hard to reorder songs.",reddit,2025-09-05,queue_struggle,Spotify
+68,review,2,"Discover Weekly used to be great, now it's just repeating old songs.",forum,2025-09-04,old_discover,Spotify
+69,review,4,I love the new feature that shows upcoming concerts for artists I follow.,app_store,2025-09-03,concert_lover_new,Spotify
+70,review,1,The download limits for offline listening are too restrictive.,trustpilot,2025-09-02,download_limited,Spotify
+71,review,5,"The app is incredibly stable, never crashes on my device.",app_store,2025-09-01,stable_app,Spotify
+72,review,3,Podcast recommendations are not tailored to my interests at all.,reddit,2025-08-31,podcast_mismatch,Spotify
+73,review,2,The 'Car Mode' is poorly designed and distracting.,forum,2025-08-30,car_mode_critic,Spotify
+74,review,4,I appreciate the clear labeling of explicit content.,app_store,2025-08-29,explicit_aware,Spotify
+75,review,1,Cannot block annoying artists or songs from my feed.,trustpilot,2025-08-28,block_needed,Spotify
+76,review,5,The crossfade feature works perfectly for smooth transitions.,app_store,2025-08-27,crossfade_fan,Spotify
+77,review,3,The interface is getting cluttered with too many new features.,reddit,2025-08-26,cluttered_ui,Spotify
+78,review,2,My downloaded playlists often fail to load when offline.,forum,2025-08-25,offline_fail,Spotify
+79,review,4,The daily drive playlist is a great mix of news and music.,app_store,2025-08-24,daily_driver,Spotify
+80,review,1,Premium subscription is too expensive for the features offered.,trustpilot,2025-08-23,expensive_premium,Spotify
+16,review,2,Mobile app is painfully slow. Takes 5 seconds to open a page.,app_store,2025-10-15,mobile_user,Notion
+17,review,5,Best note-taking app! So flexible and powerful.,app_store,2025-10-14,power_user,Notion
+18,review,3,Offline mode is terrible. Can't access anything without internet.,reddit,2025-10-13,traveler,Notion
+19,review,1,No proper Markdown export. Lock-in is real concern.,trustpilot,2025-10-12,concerned_user,Notion
+20,review,4,Love it but needs better table functionality. Excel-like features missing.,reddit,2025-10-11,data_person,Notion
+21,review,2,Collaboration is buggy. Changes don't sync in real-time.,app_store,2025-10-10,team_lead,Notion
+22,review,5,Templates are amazing. Saved me hours of work.,app_store,2025-10-09,template_fan,Notion
+23,review,3,Search is terrible. Can't find notes even when I know exact words.,reddit,2025-10-08,searcher,Notion
+24,review,1,No version history on free plan. Lost important work twice.,trustpilot,2025-10-07,student,Notion
+25,review,4,Great but needs better calendar integration. Want to see tasks in calendar view.,reddit,2025-10-06,planner,Notion
+34,review,2,The web clipper is clunky and often misses content.,chrome_store,2025-09-27,clipper_user,Notion
+35,review,5,Notion has replaced all my other productivity apps.,twitter,2025-09-26,productive_pro,Notion
+36,review,3,Wish there was a dedicated drawing/sketching tool built-in.,reddit,2025-09-25,artist_user,Notion
+81,review,1,"The desktop app is a memory hog, constantly slowing down my computer.",forum,2025-09-24,memory_hog,Notion
+82,review,5,"I love the database features, so powerful for organizing information.",app_store,2025-09-23,database_lover,Notion
+83,review,3,"Integrating with Google Calendar is a pain, often requires manual syncing.",reddit,2025-09-22,gcal_struggle,Notion
+84,review,2,Sharing pages with external users is confusing and permissions are tricky.,trustpilot,2025-09-21,sharing_hassle,Notion
+85,review,4,"The dark mode is excellent, easy on the eyes during late-night work.",app_store,2025-09-20,dark_mode_fan,Notion
+86,review,1,"The export options are limited, can't get a clean export to PDF.",forum,2025-09-19,pdf_export_fail,Notion
+87,review,5,The ability to link pages and create a wiki is a game changer for my team.,twitter,2025-09-18,wiki_builder,Notion
+88,review,3,"The learning curve is steep, took me ages to figure out advanced features.",reddit,2025-09-17,slow_learner,Notion
+89,review,2,"No real-time cursor collaboration, makes pair editing difficult.",app_store,2025-09-16,no_realtime_collab,Notion
+90,review,4,The inline databases are incredibly versatile and powerful.,app_store,2025-09-15,inline_db_fan,Notion
+91,review,1,"The mobile widget is useless, doesn't show enough information.",trustpilot,2025-09-14,bad_widget,Notion
+92,review,5,The community templates are a goldmine for new ideas and workflows.,forum,2025-09-13,community_lover,Notion
+93,review,3,"Customizing block colors is limited, wish there were more options.",reddit,2025-09-12,color_critic,Notion
+94,review,2,"The API is hard to use, not well documented for beginners.",developer_forum,2025-09-11,api_struggle,Notion
+95,review,4,"I use Notion for everything, from personal notes to project management.",app_store,2025-09-10,all_in_notion,Notion
+100,review,1,"The free tier is too restrictive, barely usable for anything serious.",trustpilot,2025-09-09,free_tier_complaint,Notion
+101,review,5,Notion AI is surprisingly good for summarizing and brainstorming.,twitter,2025-09-08,notion_ai_fan,Notion
+102,review,3,"Performance on large pages is terrible, constantly lagging.",reddit,2025-09-07,lag_sufferer,Notion
+103,review,2,No easy way to duplicate multiple pages at once.,forum,2025-09-06,duplicate_hassle,Notion
+104,review,4,The command palette is super fast for navigating and actions.,app_store,2025-09-05,command_palette_fan,Notion
+105,review,1,"Customer support is slow and unhelpful, took weeks to get a response.",trustpilot,2025-09-04,bad_support_notion,Notion
+106,review,5,I love the flexibility of creating my own systems and workflows.,app_store,2025-09-03,workflow_creator,Notion
+107,review,3,The mobile app often crashes when trying to open complex pages.,reddit,2025-09-02,mobile_crash,Notion
+108,review,2,No option for handwritten notes or sketching.,forum,2025-09-01,no_handwriting,Notion
+109,review,4,The embedding feature for various apps is fantastic.,app_store,2025-08-31,embed_fan,Notion
+110,review,1,"The notification system is broken, I miss critical updates.",trustpilot,2025-08-30,broken_notifications,Notion
+111,review,5,Notion is the ultimate tool for personal knowledge management.,twitter,2025-08-29,pkm_expert,Notion
+112,review,3,"The web app consumes too much RAM, my browser struggles.",reddit,2025-08-28,ram_hog,Notion
+113,review,2,"Calendar view needs more features, like recurring tasks.",forum,2025-08-27,calendar_limitations,Notion
+114,review,4,The search filter options are powerful once you understand them.,app_store,2025-08-26,search_master,Notion
+115,review,1,The pricing tiers are confusing and expensive for small teams.,trustpilot,2025-08-25,pricing_confusion,Notion
+116,review,5,Notion is constantly improving and adding valuable features.,app_store,2025-08-24,innovative_app,Notion
+117,review,3,"The comment system is basic, needs more rich text formatting.",reddit,2025-08-23,comment_needs_rich_text,Notion
+118,review,2,No integration with popular email clients for task creation.,forum,2025-08-22,email_integration_missing,Notion
+119,review,4,The ability to customize icons and covers makes pages feel personal.,app_store,2025-08-21,customization_lover,Notion
+120,review,1,"Offline access is still a major pain point, frequently fails to load content.",trustpilot,2025-08-20,offline_again,Notion
+26,review,2,Missing AI summarization of long threads. Would save so much time.,trustpilot,2025-10-15,busy_manager,Slack
+27,review,5,Best team communication tool. Can't imagine work without it.,app_store,2025-10-14,remote_worker,Slack
+28,review,3,Needs better video call quality. Zoom is much better.,reddit,2025-10-13,video_caller,Slack
+29,review,1,Search is useless after 90 days on free plan. Ridiculous limitation.,trustpilot,2025-10-12,free_tier_user,Slack
+30,review,4,Love it but need better thread organization. Hard to follow conversations.,reddit,2025-10-11,thread_follower,Slack
+37,review,2,"Notifications are inconsistent, sometimes I miss important messages.",app_store,2025-09-24,missed_message_user,Slack
+38,review,5,Integrations with other tools are seamless and powerful.,g2_crowd,2025-09-23,integration_fan,Slack
+39,review,1,"Too many channels, it's hard to keep track of everything.",reddit,2025-09-22,overwhelmed_user,Slack
+121,review,3,"The desktop app is a resource hog, constantly draining my laptop battery.",forum,2025-09-21,battery_drain_slack,Slack
+122,review,5,Emoji reactions are a simple but effective way to acknowledge messages.,app_store,2025-09-20,emoji_lover,Slack
+123,review,2,"The file sharing limit is too low on the free plan, always running out of space.",trustpilot,2025-09-19,file_limit_user,Slack
+124,review,4,Slack Huddles are a great quick way to connect with teammates.,app_store,2025-09-18,huddle_fan,Slack
+125,review,1,"The mobile app is buggy, messages often fail to send or load.",reddit,2025-09-17,mobile_bug_slack,Slack
+126,review,5,I love the ability to customize notifications per channel.,app_store,2025-09-16,custom_notify,Slack
+127,review,3,"The search functionality is not as robust as I'd like, hard to find old conversations.",forum,2025-09-15,search_struggle_slack,Slack
+128,review,2,"Too many distracting notifications, wish there was a 'focus mode'.",twitter,2025-09-14,distracted_user,Slack
+129,review,4,Slack Connect has made external collaboration so much easier.,app_store,2025-09-13,slack_connect_fan,Slack
+130,review,1,The new UI changes are confusing and less intuitive.,reddit,2025-09-12,ui_critic_slack,Slack
+131,review,5,The ability to schedule messages is a lifesaver for different time zones.,app_store,2025-09-11,scheduler_fan,Slack
+132,review,3,Voice messages are not easily searchable or transcribable.,forum,2025-09-10,voice_message_issue,Slack
+133,review,2,The automatic channel suggestions are often irrelevant.,trustpilot,2025-09-09,bad_suggestions,Slack
+134,review,4,I appreciate the wide range of app integrations available.,app_store,2025-09-08,integration_lover_slack,Slack
+135,review,1,The pricing structure for larger teams is too expensive.,trustpilot,2025-09-07,expensive_slack,Slack
+136,review,5,The shared channels feature is great for working with external partners.,app_store,2025-09-06,shared_channels_fan,Slack
+137,review,3,The thread view can be overwhelming with very active channels.,reddit,2025-09-05,thread_overload,Slack
+138,review,2,"Video call quality is consistently poor, often drops out.",forum,2025-09-04,poor_video_slack,Slack
+139,review,4,The ability to set reminders is very useful for keeping track of tasks.,app_store,2025-09-03,reminder_fan,Slack
+140,review,1,"The mobile app constantly logs me out, very inconvenient.",trustpilot,2025-09-02,mobile_logout_issue,Slack
+141,review,5,Slack's custom emojis are a great way to add personality to conversations.,app_store,2025-09-01,custom_emoji_lover,Slack
+142,review,3,"The search results are not always chronological, making it hard to find recent info.",reddit,2025-08-31,search_order_issue,Slack
+143,review,2,"The desktop app startup time is very slow, especially after an update.",forum,2025-08-30,slow_startup_slack,Slack
+144,review,4,I like the simple and clean interface of Slack.,app_store,2025-08-29,clean_ui_slack,Slack
+145,review,1,The file preview feature is often broken or takes too long to load.,trustpilot,2025-08-28,broken_preview,Slack
+146,review,5,The ability to quickly share code snippets with proper formatting is amazing.,app_store,2025-08-27,code_sharer,Slack
+147,review,3,"The DMs often get lost in the sea of channels, need better visibility.",reddit,2025-08-26,dm_visibility,Slack
+148,review,2,"The 'away' status isn't always accurate, sometimes I appear online when I'm not.",forum,2025-08-25,inaccurate_status,Slack
+149,review,4,I appreciate the security features and admin controls.,app_store,2025-08-24,security_fan_slack,Slack
+150,review,1,The constant updates are disruptive and often introduce new bugs.,trustpilot,2025-08-23,update_hater_slack,Slack
+40,review,3,Too many reboots and not enough original new content.,twitter,2025-10-15,old_school_viewer,Netflix
+41,review,5,Love the variety of international shows and movies!,app_store,2025-10-14,world_cinema_fan,Netflix
+42,review,2,"The recommendation engine is terrible, always suggests things I don't like.",reddit,2025-10-13,picky_viewer,Netflix
+43,review,4,"Great for binge-watching, but wish there was a 'skip intro' for every show.",trustpilot,2025-10-12,binge_watcher,Netflix
+44,review,1,"Price keeps going up, but content quality is declining. Not worth it anymore.",app_store,2025-10-11,budget_user,Netflix
+151,review,5,The user interface is intuitive and easy to navigate.,app_store,2025-10-10,ui_lover_netflix,Netflix
+152,review,2,"The subtitles are often out of sync, making it hard to follow.",reddit,2025-10-09,subtitle_struggle,Netflix
+153,review,4,Offline downloads work perfectly for travel.,app_store,2025-10-08,traveler_netflix,Netflix
+154,review,1,"Too many ads now, even for premium subscribers.",trustpilot,2025-10-07,premium_ads_netflix,Netflix
+155,review,3,Wish there was a better way to filter content by language.,forum,2025-10-06,language_filter_needed,Netflix
+156,review,5,The 4K streaming quality is incredible on my big screen TV.,app_store,2025-10-05,4k_viewer,Netflix
+157,review,2,"The continue watching section is buggy, often shows completed shows.",reddit,2025-10-04,buggy_continue,Netflix
+158,review,4,Love the profiles feature for personalized recommendations.,app_store,2025-10-03,profile_fan,Netflix
+159,review,1,"Customer service is unresponsive, terrible experience.",trustpilot,2025-10-02,bad_support_netflix,Netflix
+160,review,3,"The mobile app constantly buffers, even on fast internet.",reddit,2025-10-01,buffering_user,Netflix
+161,review,5,Netflix documentaries are always high quality and informative.,app_store,2025-09-30,docu_fan,Netflix
+162,review,2,"The search function is limited, hard to find obscure titles.",forum,2025-09-29,limited_search_netflix,Netflix
+163,review,4,I enjoy the interactive stories and games.,app_store,2025-09-28,interactive_fan,Netflix
+164,review,1,The kids' profiles don't always filter out inappropriate content effectively.,trustpilot,2025-09-27,kids_filter_fail,Netflix
+165,review,3,Wish there was an option to sort by release date for new content.,reddit,2025-09-26,sort_by_date_needed,Netflix
+166,review,5,The ability to adjust playback speed is a fantastic feature.,app_store,2025-09-25,speed_control_fan,Netflix
+167,review,2,"The download size for movies is too large, quickly fills up my device.",forum,2025-09-24,large_downloads,Netflix
+168,review,4,Love the option to set a PIN for profiles.,app_store,2025-09-23,pin_protection,Netflix
+169,review,1,The auto-play of trailers on the home screen is annoying.,trustpilot,2025-09-22,trailer_hater,Netflix
+170,review,3,Needs better integration with smart TV remote controls.,reddit,2025-09-21,smart_tv_integration,Netflix
+171,review,5,The variety of regional content is excellent.,app_store,2025-09-20,regional_content_fan,Netflix
+172,review,2,The app crashes frequently on my smart TV.,forum,2025-09-19,smart_tv_crash,Netflix
+173,review,4,I appreciate the consistent release of new original series.,app_store,2025-09-18,original_series_fan,Netflix
+174,review,1,The pricing tiers are complex and confusing.,trustpilot,2025-09-17,confusing_pricing_netflix,Netflix
+175,review,3,Wish there was a watchlist sharing feature.,reddit,2025-09-16,watchlist_sharing,Netflix
+176,review,5,The 'remind me' feature for upcoming shows is very helpful.,app_store,2025-09-15,remind_me_fan,Netflix
+177,review,2,The audio description feature is not available for many titles.,forum,2025-09-14,audio_description_missing,Netflix
+178,review,4,Love the ability to skip credits automatically.,app_store,2025-09-13,skip_credits_fan,Netflix
+179,review,1,The buffering issues make it unwatchable sometimes.,trustpilot,2025-09-12,unwatchable_buffering,Netflix
+180,review,3,"Needs more options for parental controls, beyond just profiles.",reddit,2025-09-11,advanced_parental_controls,Netflix
+181,review,5,The interactive content keeps me engaged.,app_store,2025-09-10,engaged_viewer,Netflix
+182,review,2,The search results are not always relevant to my query.,forum,2025-09-09,irrelevant_search_results,Netflix
+183,review,4,I like the 'Top 10 in your country' feature for discovering popular shows.,app_store,2025-09-08,top10_fan,Netflix
+184,review,1,The limited number of simultaneous streams is frustrating for families.,trustpilot,2025-09-07,limited_streams,Netflix
+185,review,3,Wish there was an option to permanently hide content I've already watched.,reddit,2025-09-06,hide_watched_content,Netflix
+186,review,5,The picture-in-picture mode on mobile is very convenient.,app_store,2025-09-05,pip_fan,Netflix
+187,review,2,The app sometimes freezes when I try to cast to my TV.,forum,2025-09-04,casting_freeze,Netflix
+188,review,4,The quality of original movies has improved significantly.,app_store,2025-09-03,improved_movies,Netflix
+189,review,1,The lack of new popular movies is disappointing.,trustpilot,2025-09-02,no_new_movies,Netflix
+190,review,3,The UI sometimes feels clunky and slow to respond.,reddit,2025-09-01,clunky_ui_netflix,Netflix

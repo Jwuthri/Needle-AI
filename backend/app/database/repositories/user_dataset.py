@@ -26,6 +26,10 @@ class UserDatasetRepository:
         table_name: str,
         row_count: int = 0,
         description: Optional[str] = None,
+        field_metadata: Optional[list] = None,
+        column_stats: Optional[dict] = None,
+        sample_data: Optional[list] = None,
+        vector_store_columns: Optional[dict] = None,
         meta: Optional[dict] = None
     ) -> UserDataset:
         """Create a new user dataset."""
@@ -35,6 +39,10 @@ class UserDatasetRepository:
             table_name=table_name,
             row_count=row_count,
             description=description,
+            field_metadata=field_metadata,
+            column_stats=column_stats,
+            sample_data=sample_data,
+            vector_store_columns=vector_store_columns,
             meta=meta
         )
         db.add(user_dataset)
@@ -52,16 +60,23 @@ class UserDatasetRepository:
     @staticmethod
     async def get_by_table_name(
         db: AsyncSession,
-        user_id: str,
-        table_name: str
+        table_name: str,
+        user_id: Optional[str] = None,
     ) -> Optional[UserDataset]:
         """Get user dataset by user ID and table name."""
-        result = await db.execute(
-            select(UserDataset).filter(
-                UserDataset.user_id == user_id,
-                UserDataset.table_name == table_name
+        if user_id:
+            result = await db.execute(
+                select(UserDataset).filter(
+                    UserDataset.user_id == user_id,
+                    UserDataset.table_name == table_name
+                )
             )
-        )
+        else:
+            result = await db.execute(
+                select(UserDataset).filter(
+                    UserDataset.table_name == table_name
+                )
+            )
         return result.scalar_one_or_none()
 
     @staticmethod

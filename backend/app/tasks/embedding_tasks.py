@@ -8,7 +8,7 @@ from typing import List, Optional
 from celery import group
 
 from app.core.celery_app import celery_app
-from app.database.session import get_db_session
+from app.database.session import get_async_session
 from app.database.repositories.review import ReviewRepository
 from app.services.embedding_service import get_embedding_service
 
@@ -35,7 +35,7 @@ def generate_review_embedding(self, review_id: str) -> dict:
         import asyncio
         
         async def _generate():
-            async with get_db_session() as db:
+            async with get_async_session() as db:
                 # Get review
                 review = await ReviewRepository.get_by_id(db, review_id)
                 if not review:
@@ -88,7 +88,7 @@ def generate_embeddings_batch(self, company_id: Optional[str] = None, batch_size
         import asyncio
         
         async def _generate_batch():
-            async with get_db_session() as db:
+            async with get_async_session() as db:
                 # Get reviews without embeddings
                 reviews = await ReviewRepository.get_reviews_without_embeddings(
                     db, 
@@ -171,7 +171,7 @@ def generate_all_embeddings(
         import asyncio
         
         async def _count_reviews():
-            async with get_db_session() as db:
+            async with get_async_session() as db:
                 reviews = await ReviewRepository.get_reviews_without_embeddings(
                     db, 
                     limit=10000,  # Get count up to 10k
@@ -242,7 +242,7 @@ def regenerate_review_embedding(self, review_id: str) -> dict:
         import asyncio
         
         async def _regenerate():
-            async with get_db_session() as db:
+            async with get_async_session() as db:
                 # Get review
                 review = await ReviewRepository.get_by_id(db, review_id)
                 if not review:

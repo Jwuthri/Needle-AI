@@ -440,6 +440,10 @@ async def base_app_exception_handler(request: Request, exc: BaseAppException) ->
 
 async def validation_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Handle FastAPI/Pydantic validation exceptions."""
+    # Log the actual validation errors for debugging
+    if hasattr(exc, "errors"):
+        logger.error(f"Validation errors: {exc.errors()}")
+    
     validation_error = ValidationError(
         message="Request validation failed",
         cause=exc

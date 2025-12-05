@@ -10,6 +10,7 @@ from .company import Company
 from .credit_transaction import CreditTransaction, TransactionTypeEnum
 from .data_import import DataImport, ImportStatusEnum, ImportTypeEnum
 from .llm_call import LLMCall, LLMCallStatusEnum, LLMCallTypeEnum
+from .product_intelligence import ProductIntelligence
 from .review import Review
 from .review_source import ReviewSource, SourceTypeEnum
 from .scraping_job import JobStatusEnum, ScrapingJob
@@ -33,6 +34,7 @@ __all__ = [
     "ReviewSource",
     "ScrapingJob",
     "Review",
+    "ProductIntelligence",
     "UserCredit",
     "CreditTransaction",
     "DataImport",

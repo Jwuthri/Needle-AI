@@ -85,21 +85,21 @@ class Settings(BaseSettings):
     database_max_overflow: int = Field(default=30, ge=0, le=100, description="Database max overflow")
     database_pool_timeout: int = Field(default=30, ge=1, le=300, description="Database pool timeout")
 
-    # Redis Configuration
-    redis_url: str = Field(default="redis://localhost:6379/0", description="Redis connection URL")
-    redis_password: Optional[str] = Field(default=None, description="Redis password")
-    redis_max_connections: int = Field(default=100, ge=1, le=1000, description="Redis max connections")
-    redis_socket_timeout: int = Field(default=5, ge=1, le=60, description="Redis socket timeout")
-    redis_health_check_interval: int = Field(default=30, ge=5, le=300, description="Redis health check interval")
+    # Valkey Configuration (backward compatible with Redis URLs)
+    redis_url: str = Field(default="valkeys://localhost:6379/0", description="Valkey/Redis connection URL")
+    redis_password: Optional[str] = Field(default=None, description="Valkey/Redis password")
+    redis_max_connections: int = Field(default=100, ge=1, le=1000, description="Valkey max connections")
+    redis_socket_timeout: int = Field(default=5, ge=1, le=60, description="Valkey socket timeout")
+    redis_health_check_interval: int = Field(default=30, ge=5, le=300, description="Valkey health check interval")
 
     # WebSocket Configuration (for real-time updates)
     websocket_heartbeat_interval: int = Field(default=30, ge=10, le=300, description="WebSocket heartbeat interval in seconds")
     websocket_max_connections: int = Field(default=1000, ge=1, le=10000, description="Maximum concurrent WebSocket connections")
 
     # LLM Configuration
-    llm_provider: str = Field(default="openrouter", description="LLM provider")
+    llm_provider: str = Field(default="openai", description="LLM provider")
     openrouter_api_key: Optional[str] = Field(default=None, description="OpenRouter API key")
-    default_model: str = Field(default="gpt-5-mini", description="Default LLM model")
+    default_model: str = Field(default="gpt-5-nano", description="Default LLM model")
     max_tokens: int = Field(default=1000, ge=1, le=32000, description="Maximum tokens per request")
     temperature: float = Field(default=0.7, ge=0.0, le=2.0, description="LLM temperature")
     site_url: Optional[str] = Field(default=None, description="Site URL for OpenRouter referrer tracking")
@@ -133,6 +133,7 @@ class Settings(BaseSettings):
     
     # Security Configuration (Guardrails)
     openai_api_key: Optional[str] = Field(default=None, description="OpenAI API key for moderation")
+    anthropic_api_key: Optional[str] = Field(default=None, description="Anthropic API key for Claude models")
     enable_pii_detection: bool = Field(default=True, description="Enable PII detection and redaction")
     enable_injection_detection: bool = Field(default=True, description="Enable prompt injection detection")
     enable_content_moderation: bool = Field(default=True, description="Enable content moderation")
@@ -149,8 +150,17 @@ class Settings(BaseSettings):
     
     # Apify Configuration (Web Scraping)
     apify_api_token: Optional[str] = Field(default=None, description="Apify API token")
-    apify_reddit_actor_id: str = Field(default="", description="Apify Reddit scraper actor ID")
-    apify_twitter_actor_id: str = Field(default="", description="Apify Twitter scraper actor ID")
+    apify_reddit_actor_id: str = Field(default="trudax/reddit-scraper", description="Apify Reddit scraper actor ID")
+    apify_twitter_actor_id: str = Field(default="apidojo/tweet-scraper", description="Apify Twitter scraper actor ID")
+    apify_g2_actor_id: str = Field(default="epctex/g2-scraper", description="Apify G2 scraper actor ID")
+    apify_trustpilot_actor_id: str = Field(default="compass/trustpilot-scraper", description="Apify Trustpilot scraper actor ID")
+    
+    # ZenRows Configuration (Anti-bot Web Scraping)
+    zenrows_api_key: Optional[str] = Field(default=None, description="ZenRows API key for anti-bot scraping")
+    
+    # ScrapingBee Configuration (Anti-bot Web Scraping)
+    scrapingbee_api_key: Optional[str] = Field(default=None, description="ScrapingBee API key for anti-bot scraping")
+    
     
     # Stripe Configuration (Payments)
     stripe_secret_key: Optional[str] = Field(default=None, description="Stripe secret key")
@@ -159,8 +169,9 @@ class Settings(BaseSettings):
     stripe_currency: str = Field(default="usd", description="Default currency for Stripe")
     
     # Review Scraping Costs (per review in credits)
-    reddit_review_cost: float = Field(default=0.01, ge=0.0, description="Cost per Reddit review")
-    twitter_review_cost: float = Field(default=0.01, ge=0.0, description="Cost per Twitter review")
+    g2_review_cost: float = Field(default=0.02, ge=0.0, description="Cost per G2 review")
+    trustpilot_review_cost: float = Field(default=0.015, ge=0.0, description="Cost per Trustpilot review")
+    trustradius_review_cost: float = Field(default=0.02, ge=0.0, description="Cost per TrustRadius review")
     csv_review_cost: float = Field(default=0.0, ge=0.0, description="Cost per CSV imported review")
     
     # Credit Packages (amount in USD: credits)
@@ -272,8 +283,20 @@ class Settings(BaseSettings):
     )
 
     # Celery Configuration (Background Tasks)
-    celery_broker_url: str = Field(default="redis://localhost:6379/1", description="Celery broker URL")
-    celery_result_backend: str = Field(default="redis://localhost:6379/1", description="Celery result backend")
+    celery_broker_url: str = Field(default="valkeys://localhost:6379/1", description="Celery broker URL (Valkey/Redis)")
+    celery_result_backend: str = Field(default="valkeys://localhost:6379/1", description="Celery result backend (Valkey/Redis)")
+    
+    @field_validator('celery_broker_url', 'celery_result_backend')
+    @classmethod
+    def ensure_redis_db(cls, v: str) -> str:
+        """Ensure Valkey URL has database number."""
+        if v:
+            # If URL doesn't end with /number, add /0
+            if v.startswith(('redis://', 'rediss://', 'valkey://', 'valkeys://')):
+                if not re.search(r'/\d+$', v):
+                    v = v.rstrip('/') + '/0'
+        return v
+    
     celery_task_always_eager: bool = Field(default=False, description="Execute tasks synchronously for testing")
     celery_task_routes: Dict[str, Dict[str, str]] = Field(
         default={
@@ -409,13 +432,13 @@ class Settings(BaseSettings):
 
     def get_redis_url_with_auth(self, db: Optional[int] = None) -> str:
         """
-        Get Redis URL with authentication if password is provided.
+        Get Valkey/Redis URL with authentication if password is provided.
 
         Args:
             db: Database number to use (overrides URL default)
 
         Returns:
-            Complete Redis URL with authentication
+            Complete Valkey/Redis URL with authentication
         """
         # Check if we have a password
         password = self.get_secret("redis_password")
@@ -426,15 +449,16 @@ class Settings(BaseSettings):
             base_url = self.redis_url
         elif password:
             # Parse existing URL to add password
-            # Extract components from redis_url (e.g., redis://localhost:6379/0)
-            match = re.match(r'redis://([^/]+)(/.+)?', self.redis_url)
+            # Extract components from redis_url (e.g., valkeys://localhost:6379/0)
+            match = re.match(r'(valkeys?|rediss?)://([^/]+)(/.+)?', self.redis_url)
             if match:
-                host_port = match.group(1)
-                db_part = match.group(2) or "/0"
-                base_url = f"redis://:{password}@{host_port}{db_part}"
+                protocol = match.group(1)
+                host_port = match.group(2)
+                db_part = match.group(3) or "/0"
+                base_url = f"{protocol}://:{password}@{host_port}{db_part}"
             else:
                 # Fallback to default format
-                base_url = f"redis://:{password}@localhost:6379/0"
+                base_url = f"valkeys://:{password}@localhost:6379/0"
         else:
             # No password, use existing URL
             base_url = self.redis_url
